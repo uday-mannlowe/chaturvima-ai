@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChaturVima - 3D Team Behavioral Diagnostic Report</title>
+    <link rel="stylesheet" href="template.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<body>
+    <!-- Header -->
+    <header class="report-header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">
+                    <span class="logo-cube"></span>
+                </div>
+                <span class="logo-text">ChaturVima</span>
+            </div>
+<div class="report-meta">
+    <button id="downloadPdfBtn" class="pdf-download-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download PDF
+    </button>
+    <span class="meta-badge">Behavioral Diagnostics</span>
+</div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <p class="hero-subtitle">3D Team Behavioral Diagnostic Report</p>
+            <h1 class="hero-title">Collective, System-Level Team Dynamics</h1>
+            <div class="hero-info">
+                <div class="info-item">
+                    <span class="info-label">Prepared for</span>
+                    <span class="info-value">Managers and Leadership</span>
+                </div>
+                <div class="info-divider"></div>
+                <div class="info-item">
+                    <span class="info-label">Framework</span>
+                    <span class="info-value">ChaturVima Behavioral Diagnostics</span>
+                </div>
+                <div class="info-divider"></div>
+                <div class="info-item">
+                    <span class="info-label">Date</span>
+                    <span class="info-value">October 26, 2023</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-visual">
+            <div class="visual-rings">
+                <div class="ring ring-1"></div>
+                <div class="ring ring-2"></div>
+                <div class="ring ring-3"></div>
+            </div>
+        </div>
+    </section>
+
+    <main class="report-main">
+        <!-- Section 1: Team Health Overview -->
+        <section class="report-section">
+            <div class="section-header">
+                <span class="section-number">01</span>
+                <h2 class="section-title">Team Health Overview</h2>
+                <p class="section-tagline">A Surface of Calm, A Foundation of Strain</p>
+            </div>
+            
+            <div class="content-card highlight-card">
+                <div class="highlight-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 16v-4M12 8h.01"></path>
+                    </svg>
+                </div>
+                <div class="highlight-content">
+                    <h3>Primary Finding</h3>
+                    <p><strong>Superficial stability masking underlying strain.</strong> Imagine a pond that looks perfectly calm on the surface, but just beneath, the water is swirling with different currents moving in conflicting directions.</p>
+                </div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon amber">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
+                        </svg>
+                    </div>
+                    <h4>Team State</h4>
+                    <p class="metric-value">Adaptive Holding Pattern</p>
+                    <p class="metric-desc">The group has instinctively chosen to maintain a steady, predictable operational rhythm to avoid disruption.</p>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon green">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                    </div>
+                    <h4>Department State</h4>
+                    <p class="metric-value">Operational Predictability</p>
+                    <p class="metric-desc">Provides a stable backdrop that reinforces the team's outward calm.</p>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon red">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h4>Health Risk</h4>
+                    <p class="metric-value">Emotional & Cognitive Fatigue</p>
+                    <p class="metric-desc">Team members overthink interactions and withhold authentic perspectives to keep the peace.</p>
+                </div>
+            </div>
+
+            <div class="content-card">
+                <h3>Specific Pattern</h3>
+                <div class="pattern-badge">
+                    <span class="pattern-label">Passive synchronization with leadership signals</span>
+                </div>
+                <p>Instead of openly discussing goals, challenges, or concerns, the team is quietly and constantly trying to interpret and align with what they <em>think</em> the boss wants. This creates an unspoken pressure to conform and suppresses genuine dialogue.</p>
+            </div>
+        </section>
+
+        <!-- Section 2: Behavioral Stages -->
+        <section class="report-section">
+            <div class="section-header">
+                <span class="section-number">02</span>
+                <h2 class="section-title">Interpretation of Team Behavioral Stages</h2>
+                <p class="section-tagline">The Unspoken Dance</p>
+            </div>
+
+            <div class="stages-container">
+                <div class="stage-card boss">
+                    <div class="stage-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </div>
+                    <div class="stage-header">
+                        <h3>The Boss's Stage</h3>
+                        <span class="stage-badge">Honeymoon: Initial Reality Check</span>
+                    </div>
+                    <p class="stage-pattern"><strong>Over-optimistic direction-setting</strong></p>
+                    <p>Enthusiastic and focused on setting a positive, forward-looking vision. The complex realities of implementation are beginning to surface. There may be a gap between their optimistic vision and the team's day-to-day experience.</p>
+                </div>
+
+                <div class="stage-card employee">
+                    <div class="stage-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                    </div>
+                    <div class="stage-header">
+                        <h3>The Employee's Stage</h3>
+                        <span class="stage-badge">Self-introspection: Openness to Change</span>
+                    </div>
+                    <p class="stage-pattern"><strong>Overthinking boss cues</strong></p>
+                    <p>Team members are thinking deeply about their roles and the team's direction. They are willing to adapt but uncertain about how. Significant mental energy is spent analyzing the boss's words, tone, and actions for hidden meaning.</p>
+                </div>
+
+                <div class="stage-card team">
+                    <div class="stage-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                    </div>
+                    <div class="stage-header">
+                        <h3>The Team's Collective Stage</h3>
+                        <span class="stage-badge">Adaptive Holding Pattern: Unspoken Alignment Testing</span>
+                    </div>
+                    <p class="stage-pattern"><strong>Passive, watchful state</strong></p>
+                    <p>Team members are not openly debating ideas or strategies. Instead, they are quietly testing the waters with each other and carefully observing the boss to gauge what is <em>really</em> wanted, creating a culture of assumption and guesswork.</p>
+                </div>
+            </div>
+
+            <div class="archetype-section">
+                <h3>Interaction Archetypes</h3>
+                <div class="archetype-grid">
+                    <div class="archetype-card">
+                        <span class="archetype-label">2D Archetype</span>
+                        <h4>Pseudo-alignment</h4>
+                        <p>On the surface, there is agreement and forward motion, but underneath, there is <strong>deeper fragmentation</strong> because true understanding and connection are missing.</p>
+                    </div>
+                    <div class="archetype-card featured">
+                        <span class="archetype-label">3D Archetype</span>
+                        <h4>Collective stability maintained through avoidance of confrontation</h4>
+                        <p>The entire system—boss, employees, and team—is unconsciously collaborating to keep things calm by not addressing the underlying tensions.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Risks and Blockers -->
+        <section class="report-section risks-section">
+            <div class="section-header">
+                <span class="section-number">03</span>
+                <h2 class="section-title">Team-Level Risks and Blockers</h2>
+                <p class="section-tagline">The Hidden Costs of Avoidance</p>
+            </div>
+
+            <div class="risks-grid">
+                <div class="risk-card">
+                    <div class="risk-number">1</div>
+                    <h4>Innovation Stagnation</h4>
+                    <p>A team that prioritizes "synchronization" and avoids confrontation will stop generating diverse, challenging ideas. People will offer only what they think will be approved.</p>
+                </div>
+                <div class="risk-card">
+                    <div class="risk-number">2</div>
+                    <h4>Escalation of Minor Issues</h4>
+                    <p>Small misunderstandings or frustrations are left unspoken. Over time, these can accumulate and suddenly erupt over a seemingly minor trigger.</p>
+                </div>
+                <div class="risk-card">
+                    <div class="risk-number">3</div>
+                    <h4>Talent Drain</h4>
+                    <p>The most thoughtful employees may become emotionally fatigued by the constant overthinking and lack of authentic connection. They are at highest risk of disengaging.</p>
+                </div>
+                <div class="risk-card">
+                    <div class="risk-number">4</div>
+                    <h4>Decision-Making Bottlenecks</h4>
+                    <p>If every decision requires team members to silently decipher the boss's preferences, the process becomes slow and inefficient.</p>
+                </div>
+                <div class="risk-card">
+                    <div class="risk-number">5</div>
+                    <h4>Erosion of Psychological Safety</h4>
+                    <p>The unspoken rule becomes "don't rock the boat." This erodes trust, as team members learn that authenticity is risky.</p>
+                </div>
+            </div>
+
+            <div class="blocker-card">
+                <div class="blocker-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                </div>
+                <div class="blocker-content">
+                    <h4>Primary Blocker</h4>
+                    <p>The <strong>absence of a structured, safe mechanism</strong> for processing the gap between the boss's optimistic direction and the team's operational reality and introspective concerns.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: Recommendations -->
+        <section class="report-section recommendations-section">
+            <div class="section-header">
+                <span class="section-number">04</span>
+                <h2 class="section-title">Team Development Recommendations</h2>
+                <p class="section-tagline">Building a Sustainable Rhythm</p>
+            </div>
+
+            <div class="recommendations-grid">
+                <div class="recommendation-card">
+                    <div class="rec-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                    </div>
+                    <h4>Introduce "Clarity Sprints"</h4>
+                    <p>Institute short, regular meetings (e.g., weekly 30-minute "Alignment Check-ins") with a sole focus: to explicitly connect the boss's strategic vision with the team's tactical reality.</p>
+                    <div class="rec-format">
+                        <span class="format-label">Format:</span>
+                        <span>"Here's the goal. What does this mean for our work this week? What one thing feels unclear?"</span>
+                    </div>
+                </div>
+
+                <div class="recommendation-card">
+                    <div class="rec-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <h4>Create a "Feedback Ritual"</h4>
+                    <p>Design a low-stakes, structured way for the team to give and receive feedback upward and laterally.</p>
+                    <div class="rec-format">
+                        <span class="format-label">Example:</span>
+                        <span>Anonymous monthly poll: "On a scale of 1-5, how clear were our priorities this month?"</span>
+                    </div>
+                </div>
+
+                <div class="recommendation-card">
+                    <div class="rec-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h4>Facilitate "Pattern Recognition" Sessions</h4>
+                    <p>Quarterly, bring the team together for a facilitated session not about tasks, but about <em>how</em> they work.</p>
+                    <div class="rec-format">
+                        <span class="format-label">Focus:</span>
+                        <span>Help the group identify their own behavioral patterns to build collective self-awareness.</span>
+                    </div>
+                </div>
+
+                <div class="recommendation-card">
+                    <div class="rec-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                    </div>
+                    <h4>Reframe "Conflict" as "Clarification"</h4>
+                    <p>As a team, agree that the goal of debate is not to win, but to clarify.</p>
+                    <div class="rec-format">
+                        <span class="format-label">Language:</span>
+                        <span>"Help me understand your perspective on..." or "My interpretation of that goal is X. Is that aligned with yours?"</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 5: Organizational Impact -->
+        <section class="report-section">
+            <div class="section-header">
+                <span class="section-number">05</span>
+                <h2 class="section-title">Organizational Psychological Impact</h2>
+                <p class="section-tagline">The Department's Double-Edged Sword</p>
+            </div>
+
+            <div class="impact-grid">
+                <div class="impact-card positive">
+                    <div class="impact-header">
+                        <div class="impact-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            </svg>
+                        </div>
+                        <h4>The Enabling Effect</h4>
+                        <span class="impact-label">Positive Shield</span>
+                    </div>
+                    <p>The predictable department environment provides a crucial sense of security. It means the team is not also battling external chaos, shifting priorities, or bureaucratic instability. This external stability allows the team to enter an "Adaptive Holding Pattern" instead of outright dysfunction.</p>
+                </div>
+
+                <div class="impact-card negative">
+                    <div class="impact-header">
+                        <div class="impact-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path>
+                                <path d="M15 9l-6 6M9 9l6 6"></path>
+                            </svg>
+                        </div>
+                        <h4>The Constraining Effect</h4>
+                        <span class="impact-label">The Mask</span>
+                    </div>
+                    <p>This departmental predictability <strong>masks the team's internal relational issues</strong>. Because everything looks stable from the outside, there is no urgent organizational trigger to address the underlying "relational drift." The department's health can inadvertently validate the team's avoidance.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 6: Triadic View -->
+        <section class="report-section">
+            <div class="section-header">
+                <span class="section-number">06</span>
+                <h2 class="section-title">Triadic View</h2>
+                <p class="section-tagline">Employee–Boss–Department: The Stress Triangle</p>
+            </div>
+
+            <div class="triadic-visual">
+                <div class="triangle-container">
+                    <div class="triangle-node node-boss">
+                        <span class="node-label">Boss</span>
+                    </div>
+                    <div class="triangle-node node-employee">
+                        <span class="node-label">Employee</span>
+                    </div>
+                    <div class="triangle-node node-dept">
+                        <span class="node-label">Department</span>
+                    </div>
+                    <div class="triangle-line line-1"></div>
+                    <div class="triangle-line line-2"></div>
+                    <div class="triangle-line line-3"></div>
+                </div>
+            </div>
+
+            <div class="triadic-details">
+                <div class="triadic-card stress">
+                    <div class="triadic-header">
+                        <span class="triadic-arrow">Employee ↔ Boss</span>
+                        <span class="stress-level high">Primary Stress Channel</span>
+                    </div>
+                    <p>The employee's <strong>"Overthinking"</strong> is a direct response to the boss's <strong>"Over-optimistic direction-setting."</strong> The employee is trying to bridge the clarity gap on their own, leading to mental fatigue.</p>
+                </div>
+
+                <div class="triadic-card buffer">
+                    <div class="triadic-header">
+                        <span class="triadic-arrow">Team ↔ Boss</span>
+                        <span class="stress-level medium">Shock Absorber</span>
+                    </div>
+                    <p>The team collectively acts as a shock absorber. They absorb the tension between the boss's optimism and the individual employees' introspection by "synchronizing" passively.</p>
+                </div>
+
+                <div class="triadic-card reference">
+                    <div class="triadic-header">
+                        <span class="triadic-arrow">Team ↔ Department</span>
+                        <span class="stress-level low">Reference & Refuge</span>
+                    </div>
+                    <p>The team uses the department's predictability as a <strong>reference manual and a hiding place</strong>. Their internal relational drift is hidden behind the department's competent, steady-state facade.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 7: Departmental Influence Map -->
+        <section class="report-section">
+            <div class="section-header">
+                <span class="section-number">07</span>
+                <h2 class="section-title">Departmental Influence Map</h2>
+                <p class="section-tagline">How the Wider Environment Shapes Behavior</p>
+            </div>
+
+            <div class="table-wrapper">
+                <table class="influence-table">
+                    <thead>
+                        <tr>
+                            <th>Departmental Trait</th>
+                            <th>Influence on Team Behavior</th>
+                            <th>Resulting Team Pattern</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Clear, Standardized Processes</strong></td>
+                            <td>Provides a safe, default script for action.</td>
+                            <td>Team focuses on <strong>process compliance</strong> over creative problem-solving or strategic discussion.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Established Reporting Rhythms</strong></td>
+                            <td>Creates regular intervals for performance visibility.</td>
+                            <td>Team <strong>manages impressions</strong> for these reports, reinforcing the "pseudo-alignment."</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Stable Hierarchical Structure</strong></td>
+                            <td>Clarifies formal lines of authority.</td>
+                            <td>Reinforces <strong>passive synchronization with leadership</strong>. Lateral peer collaboration may be undervalued.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Predictable Resource Allocation</strong></td>
+                            <td>Reduces anxiety about budget or tool scarcity.</td>
+                            <td>Can reduce the sense of urgency for open debate about priorities.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Section 8: Role Alignment Score -->
+        <section class="report-section">
+            <div class="section-header">
+                <span class="section-number">08</span>
+                <h2 class="section-title">Role Alignment Score</h2>
+                <p class="section-tagline">Clarity of Purpose vs. Clarity of Interaction</p>
+            </div>
+
+            <div class="alignment-grid">
+                <div class="alignment-card">
+                    <div class="alignment-header">
+                        <h4>Role-to-Task Alignment</h4>
+                        <span class="alignment-score medium-high">MEDIUM-HIGH</span>
+                    </div>
+                    <div class="alignment-bar">
+                        <div class="bar-fill" style="width: 75%;"></div>
+                    </div>
+                    <p>Team members generally understand their individual tasks and how to execute them. The operational <strong>"what"</strong> is clear.</p>
+                </div>
+
+                <div class="alignment-card">
+                    <div class="alignment-header">
+                        <h4>Role-to-Strategy Alignment</h4>
+                        <span class="alignment-score low-medium">LOW-MEDIUM</span>
+                    </div>
+                    <div class="alignment-bar">
+                        <div class="bar-fill" style="width: 35%;"></div>
+                    </div>
+                    <p>The connection between daily tasks and the boss's vision/strategy is weak and open to interpretation. The strategic <strong>"why"</strong> is fuzzy.</p>
+                </div>
+
+                <div class="alignment-card">
+                    <div class="alignment-header">
+                        <h4>Role-to-Role Interaction Alignment</h4>
+                        <span class="alignment-score low">LOW</span>
+                    </div>
+                    <div class="alignment-bar">
+                        <div class="bar-fill" style="width: 20%;"></div>
+                    </div>
+                    <p>This is the critical gap. The unspoken rules of engagement—how to give feedback, how to disagree—are unclear and stressful. The relational <strong>"how"</strong> is the primary source of strain.</p>
+                </div>
+            </div>
+
+            <div class="overall-score-card">
+                <div class="overall-header">
+                    <h4>Overall Collective Alignment Score</h4>
+                    <span class="overall-badge">LOW-MEDIUM</span>
+                </div>
+                <p>The team is aligned on process but misaligned on purpose and interaction, creating a foundation that is brittle under pressure.</p>
+            </div>
+        </section>
+
+        <!-- Section 9: Collective SWOT -->
+        <section class="report-section">
+            <div class="section-header">
+                <span class="section-number">09</span>
+                <h2 class="section-title">Collective SWOT Analysis</h2>
+                <p class="section-tagline">For the Individual Inside the Department</p>
+            </div>
+
+            <div class="swot-grid">
+                <div class="swot-card strengths">
+                    <div class="swot-header">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                        </svg>
+                        <h4>Strengths</h4>
+                        <span class="swot-label">Internal, Helpful</span>
+                    </div>
+                    <ul>
+                        <li><strong>High Adaptability:</strong> Skilled at reading subtle cues and adjusting behavior accordingly.</li>
+                        <li><strong>Process Discipline:</strong> Strong ability to work within established systems and deliver reliable outputs.</li>
+                        <li><strong>Thoughtful Reflection:</strong> A natural tendency to introspect, which is a strength for personal growth.</li>
+                    </ul>
+                </div>
+
+                <div class="swot-card weaknesses">
+                    <div class="swot-header">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                        </svg>
+                        <h4>Weaknesses</h4>
+                        <span class="swot-label">Internal, Harmful</span>
+                    </div>
+                    <ul>
+                        <li><strong>Communication Hesitancy:</strong> Reluctance to voice concerns or propose alternative ideas.</li>
+                        <li><strong>Risk Aversion:</strong> A preference for the known, safe path over innovative approaches.</li>
+                        <li><strong>Prone to Assumption:</strong> A tendency to interpret silence or ambiguity negatively.</li>
+                    </ul>
+                </div>
+
+                <div class="swot-card opportunities">
+                    <div class="swot-header">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="16"></line>
+                            <line x1="8" y1="12" x2="16" y2="12"></line>
+                        </svg>
+                        <h4>Opportunities</h4>
+                        <span class="swot-label">External, Helpful</span>
+                    </div>
+                    <ul>
+                        <li><strong>Stable Platform:</strong> The predictable department provides a secure base to practice new communication skills.</li>
+                        <li><strong>Leadership Openness:</strong> The boss's "Initial Reality Check" phase indicates receptiveness to grounded feedback.</li>
+                        <li><strong>Collective Fatigue as Catalyst:</strong> The shared fatigue can be a unifying force for change.</li>
+                    </ul>
+                </div>
+
+                <div class="swot-card threats">
+                    <div class="swot-header">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        <h4>Threats</h4>
+                        <span class="swot-label">External, Harmful</span>
+                    </div>
+                    <ul>
+                        <li><strong>Complacency Trap:</strong> Success of "Steady State" can lead to overlooking internal strain until breaking point.</li>
+                        <li><strong>Misinterpretation of Silence:</strong> Leadership may interpret quiet compliance as full engagement.</li>
+                        <li><strong>Cultural Reinforcement:</strong> Broader culture may punish behaviors the team needs to develop.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 10: Action Navigator -->
+        <section class="report-section action-section">
+            <div class="section-header">
+                <span class="section-number">10</span>
+                <h2 class="section-title">Action Navigator</h2>
+                <p class="section-tagline">Departmental Enablers & Barriers</p>
+            </div>
+
+            <div class="phases-container">
+                <!-- Phase 1 -->
+                <div class="phase-card">
+                    <div class="phase-header">
+                        <div class="phase-badge">PHASE 1</div>
+                        <div class="phase-timeline">Weeks 1-4</div>
+                    </div>
+                    <h3 class="phase-title">Create Safety & Awareness</h3>
+                    <p class="phase-goal"><strong>Goal:</strong> Break the cycle of avoidance and establish that it is safe to discuss "how we work."</p>
+                    
+                    <div class="action-item primary">
+                        <div class="action-header">
+                            <span class="action-type">Primary Action</span>
+                            <span class="action-name">Surface underlying tensions using facilitated cross-layer sessions</span>
+                        </div>
+                        <div class="action-details">
+                            <div class="action-what">
+                                <strong>What to Do:</strong> Engage a neutral facilitator to run a 2-hour "Team Working Agreement" workshop. Focus on creating team norms for communication, feedback, and decision-making.
+                            </div>
+                            <div class="enabler-barrier">
+                                <div class="enabler">
+                                    <span class="label">Departmental Enabler:</span>
+                                    <span>Use the department's stable meeting rhythms—schedule it as a standard quarterly offsite.</span>
+                                </div>
+                                <div class="barrier">
+                                    <span class="label">Barrier to Overcome:</span>
+                                    <span>The culture of "managing impressions." Frame the session as an investment in long-term efficiency.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-item supporting">
+                        <div class="action-header">
+                            <span class="action-type">Supporting Action</span>
+                            <span class="action-name">Clarify execution insecurities with conflict-processing formats</span>
+                        </div>
+                        <div class="action-details">
+                            <div class="action-what">
+                                <strong>What to Do:</strong> Introduce a simple template for project kick-offs: "Here is the goal. Here are my concerns. What are yours?" Model this as a leader.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Phase 2 -->
+                <div class="phase-card">
+                    <div class="phase-header">
+                        <div class="phase-badge">PHASE 2</div>
+                        <div class="phase-timeline">Weeks 5-12</div>
+                    </div>
+                    <h3 class="phase-title">Build New Skills & Rituals</h3>
+                    <p class="phase-goal"><strong>Goal:</strong> Replace passive synchronization with active alignment and replace overthinking with clear dialogue.</p>
+                    
+                    <div class="action-item primary">
+                        <div class="action-header">
+                            <span class="action-type">Primary Action</span>
+                            <span class="action-name">Rebuild suppressed feedback through safety-restoration practices</span>
+                        </div>
+                        <div class="action-details">
+                            <div class="action-what">
+                                <strong>What to Do:</strong> Implement the structured "Feedback Ritual" (e.g., monthly anonymous poll + discussion). Start with low-stakes topics.
+                            </div>
+                            <div class="enabler-barrier">
+                                <div class="enabler">
+                                    <span class="label">Departmental Enabler:</span>
+                                    <span>Leverage the department's familiarity with standardized processes—make the feedback ritual repeatable.</span>
+                                </div>
+                                <div class="barrier">
+                                    <span class="label">Barrier to Overcome:</span>
+                                    <span>Risk aversion. Emphasize continuous improvement, not punishment. Celebrate the act of giving feedback.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-item supporting">
+                        <div class="action-header">
+                            <span class="action-type">Supporting Action</span>
+                            <span class="action-name">Reframe suppressed feedback with boundary-reset practices</span>
+                        </div>
+                        <div class="action-details">
+                            <div class="action-what">
+                                <strong>What to Do:</strong> Leaders explicitly state the "bounds" of decisions. E.g., "The strategic goal is non-negotiable, but the implementation method is completely open for your debate."
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Phase 3 -->
+                <div class="phase-card">
+                    <div class="phase-header">
+                        <div class="phase-badge">PHASE 3</div>
+                        <div class="phase-timeline">Ongoing, after Week 12</div>
+                    </div>
+                    <h3 class="phase-title">Anchor & Integrate</h3>
+                    <p class="phase-goal"><strong>Goal:</strong> Make healthy communication and clear alignment the new, sustainable normal.</p>
+                    
+                    <div class="action-item primary">
+                        <div class="action-header">
+                            <span class="action-type">Primary Action</span>
+                            <span class="action-name">Strengthen role-boundary confusion via structured reflection cycles</span>
+                        </div>
+                        <div class="action-details">
+                            <div class="action-what">
+                                <strong>What to Do:</strong> Institute quarterly "Pattern Recognition" sessions. Review the Working Agreement. Ask: "Are we living by these norms? What pattern helped us? What held us back?"
+                            </div>
+                            <div class="enabler-barrier">
+                                <div class="enabler">
+                                    <span class="label">Departmental Enabler:</span>
+                                    <span>The department's operational predictability provides the consistent timeline and mental space for reflection.</span>
+                                </div>
+                                <div class="barrier">
+                                    <span class="label">Barrier to Overcome:</span>
+                                    <span>Priority of task execution over relational work. Tie reflection directly to outcomes.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-item supporting">
+                        <div class="action-header">
+                            <span class="action-type">Supporting Action</span>
+                            <span class="action-name">Surface identity drift patterns to re-anchor teams in purpose</span>
+                        </div>
+                        <div class="action-details">
+                            <div class="action-what">
+                                <strong>What to Do:</strong> Connect team rituals back to the department and company mission. Regularly ask, "How did the work we did this month contribute to our larger purpose?"
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Conclusion -->
+        <section class="conclusion-section">
+            <div class="conclusion-content">
+                <h2>Conclusion</h2>
+                <p>Your team is a capable group maintaining output through considerable, hidden effort. The path forward is not about working harder, but about <strong>working differently</strong>—replacing silent guesswork with structured dialogue, and fragile avoidance with resilient clarity.</p>
+                <p>The departmental stability is your greatest asset in this transition, providing the calm waters in which to practice these new skills. The recommended actions provide a phased map to transform your team's stability from one based on avoidance to one founded on <strong>authentic alignment and psychological safety</strong>.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="report-footer">
+        <div class="footer-content">
+            <div class="footer-note">
+                <p><strong>ChaturVima Diagnostic Note:</strong> This report identifies emergent behavioral patterns within a team system. It is a developmental tool for leaders and is not a substitute for professional individual psychological assessment.</p>
+            </div>
+            <div class="footer-branding">
+                <div class="logo">
+                    <div class="logo-icon small">
+                        <span class="logo-cube"></span>
+                    </div>
+                    <span class="logo-text">ChaturVima</span>
+                </div>
+                <p class="copyright">© 2023 ChaturVima Behavioral Diagnostics</p>
+            </div>
+        </div>
+ </footer>
+
+<script>
+    document.getElementById('downloadPdfBtn').addEventListener('click', async function() {
+        const button = this;
+        const originalText = button.innerHTML;
+        
+        // Show loading state
+        button.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Generating PDF...';
+        button.disabled = true;
+        
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 10;
+            
+            // Get all sections
+            const sections = [
+                document.querySelector('.hero'),
+                ...document.querySelectorAll('.report-section'),
+                document.querySelector('.conclusion-section')
+            ].filter(el => el);
+            
+            let isFirstPage = true;
+            
+            for (const section of sections) {
+                if (!isFirstPage) {
+                    pdf.addPage();
+                }
+                
+                // Render section to canvas
+                const canvas = await html2canvas(section, {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: '#f8fafc'
+                });
+                
+                const imgData = canvas.toDataURL('image/jpeg', 0.8);
+                const imgWidth = pageWidth - (2 * margin);
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                
+                // If section is taller than one page, split it
+                if (imgHeight > pageHeight - (2 * margin)) {
+                    let position = 0;
+                    let pageCount = 0;
+                    
+                    while (position < imgHeight) {
+                        if (pageCount > 0) {
+                            pdf.addPage();
+                        }
+                        
+                        const remainingHeight = imgHeight - position;
+                        const heightToAdd = Math.min(pageHeight - (2 * margin), remainingHeight);
+                        
+                        pdf.addImage(imgData, 'JPEG', margin, margin - position, imgWidth, imgHeight);
+                        
+                        position += heightToAdd;
+                        pageCount++;
+                    }
+                    
+                    isFirstPage = false;
+                } else {
+                    pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight);
+                    isFirstPage = false;
+                }
+            }
+            
+            // Save the PDF
+            pdf.save('ChaturVima-Team-Behavioral-Report.pdf');
+            
+            // Reset button
+            button.innerHTML = originalText;
+            button.disabled = false;
+            
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            button.innerHTML = originalText;
+            button.disabled = false;
+            alert('Error generating PDF. Please try again.');
+        }
+    });
+</script>
+</body>
+</html>

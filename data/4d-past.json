@@ -1,0 +1,74 @@
+{
+  "dimension": "4D",
+  "source_inputs": {
+    "three_d_result": {
+      "input_type": "docx",
+      "doc_metadata": {
+        "doc_id": "3D-HH-HH-SS-002",
+        "generated_by": "llm",
+        "generated_on": "2026-01-06"
+      },
+      "extracted_summary": {
+        "boss_stage": "Honeymoon",
+        "boss_sub_stage": "Initial Reality Check",
+        "employee_stage": "Honeymoon",
+        "employee_sub_stage": "Excitement & Optimism",
+        "department_stage": "Steady State",
+        "department_sub_stage": "Operational Predictability",
+        "dominant_patterns": [
+          "Operational stability",
+          "Low emotional engagement",
+          "Routine execution"
+        ],
+        "key_risks": [
+          "Disconnection from company reality",
+          "Shock vulnerability"
+        ],
+        "behavioral_tension_index": "Medium"
+      }
+    },
+    "company_dynamics": {
+      "boss_stage": "Honeymoon",
+      "employee_stage": "Honeymoon",
+      "department_stage": "Steady State",
+      "company_stage": "Soul Searching",
+      "logical_outcomes": [
+        "Leadership optimism contrasts with company survival mode",
+        "Employees feel directionless amid chaos",
+        "Restructuring or layoffs may follow"
+      ],
+      "actions": {
+        "against_outcome_1": [
+          "Urgent leadership alignment workshop",
+          "Shift KPIs toward stabilization",
+          "Transparent crisis communication"
+        ],
+        "against_outcome_2": [
+          "Department-level clarity sessions",
+          "Short-term achievable goals",
+          "Manager-led employee check-ins"
+        ],
+        "against_outcome_3": [
+          "Develop restructuring contingency plan",
+          "Provide counseling and support",
+          "Engage external crisis advisors"
+        ]
+      }
+    }
+  },
+  "four_d_context": {
+    "system_alignment_state": "Fragmented",
+    "fragility_level": "Critical",
+    "organizational_inertia": "Moderate",
+    "intervention_urgency": "High"
+  },
+  "llm_objective": {
+    "primary_goal": "Guide leadership through systemic crisis response",
+    "outputs_required": [
+      "crisis leadership playbook",
+      "employee trust preservation strategy",
+      "post-crisis recovery roadmap"
+    ],
+    "tone": "calm, directive, executive-grade"
+  }
+}

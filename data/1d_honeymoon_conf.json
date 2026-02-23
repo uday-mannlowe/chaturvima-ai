@@ -1,0 +1,75 @@
+{
+  "dimension": "1D",
+
+  "behavioral_stage": {
+    "stage": "Honeymoon",
+    "sub_stage": "Confidence and Over-Reliance on Past Success",
+    "sub_stage_definition": "Strong self-belief driven by prior achievements, with an assumption that past strategies will continue to work without adaptation."
+  },
+
+  "employee_questionnaire": [
+    {
+      "question_id": "H_CP_01",
+      "question_text": "You rely on past successes to navigate your current challenges.",
+      "answer": 4
+    },
+    {
+      "question_id": "H_CP_02",
+      "question_text": "You assume that what worked in the past will work in your current role without much adaptation.",
+      "answer": 4
+    },
+    {
+      "question_id": "H_CP_03",
+      "question_text": "You feel confident that you have all the skills and tools required for your current responsibilities.",
+      "answer": 5
+    },
+    {
+      "question_id": "H_CP_04",
+      "question_text": "You feel enthusiastic about your current role, believing you can make a big impact.",
+      "answer": 5
+    }
+  ],
+
+  "individual_swot": {
+    "strengths": [
+      {
+        "area": "Confidence & Authority",
+        "description": "Carries strong self-belief derived from prior achievements."
+      }
+    ],
+    "weaknesses": [
+      {
+        "area": "Adaptability Blind Spot",
+        "description": "May apply outdated methods without sufficient validation."
+      }
+    ],
+    "opportunities": [
+      {
+        "area": "Contextual Learning",
+        "description": "Can integrate past success with present realities."
+      }
+    ],
+    "threats": [
+      {
+        "area": "Stagnation Risk",
+        "description": "Overconfidence may block innovation and feedback."
+      }
+    ]
+  },
+
+  "recommendation_framework": {
+    "framework_name": "Honeymoon Calibration Framework",
+    "principles": [
+      "Honor past success without being trapped by it",
+      "Replace assumption with validation"
+    ],
+    "recommended_actions": [
+      {
+        "focus_area": "Reality Validation",
+        "recommendation": "Test assumptions against current context before acting.",
+        "priority": "High",
+        "time_horizon": "Immediate"
+      }
+    ]
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "dimension": "1D",
+
+  "employye_profile": {
+    "name": "rameshwar",
+    "position": "Project Manager",
+    "department": "Operations",
+    "date_of_assessment": "2026-16-01"
+  },
+
+  "stage_result": {
+    "dominant_stage": "Steady-State",
+    "dominant_substage": "Dynamic Balance",
+    "confidence": "HIGH",
+    "reason": "Steady-State has the highest own-stage score (34.80). Inside Steady-State, Dynamic Balance has the highest own-substage score (7.80)."
+  },
+
+  "weights_from_excel": {
+    "columns": [
+      "honeymoon_score",
+      "self_introspection_score",
+      "soul_searching_score",
+      "steady_state_score"
+    ],
+
+    "stage_totals": {
+      "Honeymoon": {
+        "honeymoon_score": 32.4,
+        "self_introspection_score": 7.2,
+        "soul_searching_score": 7.2,
+        "steady_state_score": 7.2
+      },
+      "Self-Introspection": {
+        "honeymoon_score": 7.6,
+        "self_introspection_score": 34.2,
+        "soul_searching_score": 7.6,
+        "steady_state_score": 7.6
+      },
+      "Soul-Searching": {
+        "honeymoon_score": 7.33,
+        "self_introspection_score": 7.33,
+        "soul_searching_score": 33.0,
+        "steady_state_score": 7.33
+      },
+      "Steady-State": {
+        "honeymoon_score": 7.73,
+        "self_introspection_score": 7.73,
+        "soul_searching_score": 7.73,
+        "steady_state_score": 34.8
+      }
+    },
+
+    "steady_state_substage_own_scores": {
+      "Dynamic Balance": 7.8,
+      "Stability and Alignment": 7.2,
+      "Emerging Challenges": 6.6,
+      "Operational Predictability": 6.6
+    },
+
+    "grand_total": {
+      "honeymoon_score": 55.07,
+      "self_introspection_score": 56.47,
+      "soul_searching_score": 55.53,
+      "steady_state_score": 56.93
+    }
+  },
+
+  "recommendation_source": {
+    "file_name": "Recommendations for Framework.xlsx",
+    "sheet_used": "Dynamic Balance",
+    "extraction_mode": "STRICT_EXCEL"
+  },
+
+  "swot": {
+    "strengths": [
+      "1. Ability to maintain core stability while adapting to change.",
+      "2. Strong alignment with organizational goals ensures focus during transitions.",
+      "3. Collaborative mindset fosters effective communication and teamwork.",
+      "4. Established processes and frameworks provide a strong foundation for dynamic decision-making."
+    ],
+    "weaknesses": [
+      "1. Struggles to prioritize initiatives in dynamic environments.",
+      "2. Risk of losing momentum if balance shifts toward complacency or overreaction.",
+      "3. Resistance to change may hinder adaptability in rapidly evolving situations.",
+      "4. May struggle to balance long-term goals with short-term adaptations."
+    ],
+    "opportunities": [
+      "1. Opportunity to enhance agility and resilience during transitions.",
+      "2. Ability to create innovative solutions while maintaining operational stability.",
+      "3. Opportunity to position the organization as a model of flexibility and stability.",
+      "4. Potential to lead by example in navigating complex transitions."
+    ],
+    "threats": [
+      "1. Overextension may lead to burnout or resource inefficiency.",
+      "2. External disruptions can amplify misalignment if not managed proactively.",
+      "3. Miscommunication during shifts may erode stakeholder trust.",
+      "4. Over-reliance on existing structures may hinder innovation."
+    ]
+  },
+
+  "framework": {
+    "name": "Dynamic Balance",
+
+    "recommendation_blocks": [
+      {
+        "title": "Leverage Your Strengths",
+        "description": "Dynamic balance thrives on the ability to adapt to new challenges while maintaining a steady operational core. Leverage your team’s collaborative mindset and alignment with organizational goals to navigate transitions effectively. Use established processes as a foundation for agile decision-making, ensuring that short-term actions remain aligned with long-term objectives. Highlight your ability to remain flexible without losing focus, which instills confidence among stakeholders."
+      },
+      {
+        "title": "Mitigate Weaknesses",
+        "description": "Dynamic environments can overwhelm teams if priorities are unclear or resistance to change persists. Address these weaknesses by fostering a culture of adaptability and openness to innovation. Regularly review goals and initiatives to ensure they align with evolving conditions. Strike a balance between long-term planning and the need for immediate action. Empower your team to act decisively while maintaining accountability and strategic focus."
+      },
+      {
+        "title": "Seize Opportunities",
+        "description": "Dynamic balance offers a unique opportunity to position your organization as a leader in navigating complex transitions. Use this stage to explore innovative solutions that align with shifting demands while leveraging the stability of existing frameworks. Engage your team in collaborative problem-solving to drive creativity and adaptability. Strengthen resilience by embedding flexibility into your organizational culture, ensuring preparedness for future disruptions."
+      },
+      {
+        "title": "Address Threats",
+        "description": "External disruptions and internal misalignment can threaten stability during transitions. To mitigate these threats, maintain proactive communication with stakeholders to align expectations and goals. Monitor industry trends and emerging risks to anticipate challenges before they escalate. Ensure that resource allocation is balanced to avoid overextension while addressing immediate priorities. By staying vigilant and adaptable, you can navigate disruptions without compromising operational integrity."
+      },
+      {
+        "title": "Adopt a Balanced Approach",
+        "description": "Balancing stability with agility is key to thriving in dynamic environments. Focus on maintaining a steady foundation while experimenting with incremental changes. Use this phase to refine processes and foster a culture of continuous improvement. Encourage feedback and collaboration to ensure that your team remains engaged and aligned with organizational goals. By combining flexibility with a strong operational core, you can create a resilient and adaptable organization."
+      }
+    ],
+
+    "actionable_steps": [
+      "Conduct regular assessments of internal and external conditions to identify emerging challenges and opportunities.",
+      "Develop a framework for prioritizing actions based on impact and feasibility.",
+      "Encourage cross-functional collaboration to drive innovative problem-solving.",
+      "Regularly review and adjust strategic goals to align with changing circumstances.",
+      "Communicate transparently with stakeholders to ensure alignment and trust during transitions.",
+      "Invest in training and resources to equip your team with skills for adaptability and resilience.",
+      "Monitor resource allocation to balance short-term tasks with long-term strategic initiatives.",
+      "Experiment with small-scale pilots to test new strategies without disrupting core operations.",
+      "Celebrate successes to reinforce a culture of adaptability and continuous improvement.",
+      "Document lessons learned during transitions to inform future strategies."
+    ],
+
+    "strategic_recommendations": [
+      "\"Dynamic Balance\" represents the art of navigating transitions with stability and adaptability.",
+      "This phase emphasizes the importance of being proactive and reactive—anticipating challenges while also responding efficiently when changes occur, using them as a catalyst for growth and transformation."
+    ]
+  }
+}

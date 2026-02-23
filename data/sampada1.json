@@ -1,0 +1,376 @@
+{
+  "dimension": "1D",
+
+  "employee_profile": {
+    "name": "ameya joshi",
+    "position": "Software Engineer",
+    "department": "Development",
+    "date_of_assessment": "2026-19-01"
+  },
+
+  "stage_selection": {
+    "dominant_stage": "Steady-State",
+    "dominant_substage": "Emerging Challenges",
+    "secondary_substage": "Operational Predictability",
+    "reason": {
+      "steady_state_own_stage_score": 38.4,
+      "self_introspection_own_stage_score": 31.2,
+      "honeymoon_own_stage_score": 22.8,
+      "soul_searching_own_stage_score": 21.6,
+      "top_steady_state_substage_scores": {
+        "Emerging Challenges": 7.8,
+        "Operational Predictability": 7.8,
+        "Dynamic Balance": 7.2,
+        "Stability and Alignment": 7.2
+      }
+    }
+  },
+
+  "weights_from_excel": {
+    "columns": [
+      "honeymoon_score",
+      "self_introspection_score",
+      "soul_searching_score",
+      "steady_state_score"
+    ],
+
+    "stage_totals": [
+      {
+        "stage_name": "Honeymoon",
+        "honeymoon_score": 22.8,
+        "self_introspection_score": 5.07,
+        "soul_searching_score": 5.07,
+        "steady_state_score": 5.07
+      },
+      {
+        "stage_name": "Self-Introspection",
+        "honeymoon_score": 6.93,
+        "self_introspection_score": 31.2,
+        "soul_searching_score": 6.93,
+        "steady_state_score": 7.07
+      },
+      {
+        "stage_name": "Soul-Searching",
+        "honeymoon_score": 4.82,
+        "self_introspection_score": 4.82,
+        "soul_searching_score": 21.6,
+        "steady_state_score": 4.82
+      },
+      {
+        "stage_name": "Steady-State",
+        "honeymoon_score": 8.51,
+        "self_introspection_score": 8.51,
+        "soul_searching_score": 8.51,
+        "steady_state_score": 38.4
+      }
+    ],
+
+    "stage_breakdown": {
+      "Honeymoon": {
+        "sub_stages": [
+          {
+            "name": "Confidence and Over-Reliance on Past Success",
+            "honeymoon_score": 2.4,
+            "self_introspection_score": 0.53,
+            "soul_searching_score": 0.53,
+            "steady_state_score": 0.53
+          },
+          {
+            "name": "Excitement and Optimism",
+            "honeymoon_score": 4.8,
+            "self_introspection_score": 1.07,
+            "soul_searching_score": 1.07,
+            "steady_state_score": 1.07
+          },
+          {
+            "name": "Initial Reality Check",
+            "honeymoon_score": 4.8,
+            "self_introspection_score": 1.07,
+            "soul_searching_score": 1.07,
+            "steady_state_score": 1.07
+          },
+          {
+            "name": "Sustained Confidence with Subtle Complacency",
+            "honeymoon_score": 3.0,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 0.67,
+            "steady_state_score": 0.67
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Self-Introspection Stage",
+            "honeymoon_score": 3.6,
+            "self_introspection_score": 0.8,
+            "soul_searching_score": 0.8,
+            "steady_state_score": 0.8
+          },
+          {
+            "name": "Overlap with Soul-Searching Stage",
+            "honeymoon_score": 1.8,
+            "self_introspection_score": 0.4,
+            "soul_searching_score": 0.4,
+            "steady_state_score": 0.4
+          },
+          {
+            "name": "Overlap with Steady State",
+            "honeymoon_score": 2.4,
+            "self_introspection_score": 0.53,
+            "soul_searching_score": 0.53,
+            "steady_state_score": 0.53
+          }
+        ]
+      },
+
+      "Self-Introspection": {
+        "sub_stages": [
+          {
+            "name": "Acknowledgment of Problems",
+            "honeymoon_score": 1.6,
+            "self_introspection_score": 7.2,
+            "soul_searching_score": 1.6,
+            "steady_state_score": 1.6
+          },
+          {
+            "name": "Analyzing Causes",
+            "honeymoon_score": 1.47,
+            "self_introspection_score": 6.6,
+            "soul_searching_score": 1.47,
+            "steady_state_score": 1.47
+          },
+          {
+            "name": "Exploration of Solutions",
+            "honeymoon_score": 1.33,
+            "self_introspection_score": 6.0,
+            "soul_searching_score": 1.33,
+            "steady_state_score": 1.33
+          },
+          {
+            "name": "Partial Acceptance of Responsibility",
+            "honeymoon_score": 1.33,
+            "self_introspection_score": 6.0,
+            "soul_searching_score": 1.33,
+            "steady_state_score": 1.47
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "honeymoon_score": 0.27,
+            "self_introspection_score": 1.2,
+            "soul_searching_score": 0.27,
+            "steady_state_score": 0.27
+          },
+          {
+            "name": "Overlap with Soul-Searching",
+            "honeymoon_score": 0.4,
+            "self_introspection_score": 1.8,
+            "soul_searching_score": 0.4,
+            "steady_state_score": 0.4
+          },
+          {
+            "name": "Overlap with Steady State",
+            "honeymoon_score": 0.53,
+            "self_introspection_score": 2.4,
+            "soul_searching_score": 0.53,
+            "steady_state_score": 0.53
+          }
+        ]
+      },
+
+      "Soul-Searching": {
+        "sub_stages": [
+          {
+            "name": "Actionable Transformation",
+            "honeymoon_score": 0.8,
+            "self_introspection_score": 0.8,
+            "soul_searching_score": 3.6,
+            "steady_state_score": 0.8
+          },
+          {
+            "name": "Deep Frustration",
+            "honeymoon_score": 0.81,
+            "self_introspection_score": 0.81,
+            "soul_searching_score": 3.6,
+            "steady_state_score": 0.81
+          },
+          {
+            "name": "Openness to Change",
+            "honeymoon_score": 1.2,
+            "self_introspection_score": 1.2,
+            "soul_searching_score": 5.4,
+            "steady_state_score": 1.2
+          },
+          {
+            "name": "Questioning Fundamentals",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 3.0,
+            "steady_state_score": 0.67
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 3.0,
+            "steady_state_score": 0.67
+          },
+          {
+            "name": "Overlap with Self-Introspection",
+            "honeymoon_score": 0.27,
+            "self_introspection_score": 0.27,
+            "soul_searching_score": 1.2,
+            "steady_state_score": 0.27
+          },
+          {
+            "name": "Overlap with Steady State",
+            "honeymoon_score": 0.4,
+            "self_introspection_score": 0.4,
+            "soul_searching_score": 1.8,
+            "steady_state_score": 0.4
+          }
+        ]
+      },
+
+      "Steady-State": {
+        "sub_stages": [
+          {
+            "name": "Dynamic Balance",
+            "honeymoon_score": 1.59,
+            "self_introspection_score": 1.59,
+            "soul_searching_score": 1.59,
+            "steady_state_score": 7.2
+          },
+          {
+            "name": "Emerging Challenges",
+            "honeymoon_score": 1.73,
+            "self_introspection_score": 1.73,
+            "soul_searching_score": 1.73,
+            "steady_state_score": 7.8
+          },
+          {
+            "name": "Operational Predictability",
+            "honeymoon_score": 1.73,
+            "self_introspection_score": 1.73,
+            "soul_searching_score": 1.73,
+            "steady_state_score": 7.8
+          },
+          {
+            "name": "Stability and Alignment",
+            "honeymoon_score": 1.59,
+            "self_introspection_score": 1.59,
+            "soul_searching_score": 1.59,
+            "steady_state_score": 7.2
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 0.67,
+            "steady_state_score": 3.0
+          },
+          {
+            "name": "Overlap with Self-Introspection",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 0.67,
+            "steady_state_score": 3.0
+          },
+          {
+            "name": "Overlap with Soul-Searching",
+            "honeymoon_score": 0.53,
+            "self_introspection_score": 0.53,
+            "soul_searching_score": 0.53,
+            "steady_state_score": 2.4
+          }
+        ]
+      }
+    },
+
+    "grand_total": {
+      "honeymoon_score": 43.06,
+      "self_introspection_score": 49.6,
+      "soul_searching_score": 42.11,
+      "steady_state_score": 55.36
+    }
+  },
+
+  "recommendation_framework_output": {
+    "selected_framework_sheet": "Emerging Challenges",
+
+    "swot": {
+      "strengths": [
+        "Awareness of potential inefficiencies enables early intervention.",
+        "Stable operational foundation provides a platform for transformation.",
+        "Strong stakeholder trust fosters collaboration during changes.",
+        "Clear understanding of organizational goals supports focused decision-making."
+      ],
+      "weaknesses": [
+        "Resistance to change may slow response to emerging issues.",
+        "Over-reliance on current workflows can lead to inefficiency.",
+        "Difficulty in prioritizing actions for multiple challenges.",
+        "Insufficient foresight/contingency planning can increase risk exposure."
+      ],
+      "opportunities": [
+        "Adapt processes to align with evolving market or organizational needs.",
+        "Build a culture of innovation and proactive change.",
+        "Improve agility through better planning and prioritization systems.",
+        "Strengthen resilience and long-term competitiveness."
+      ],
+      "threats": [
+        "Rapid changes may outpace the organization's ability to respond.",
+        "Competitors with faster adaptability may gain advantage.",
+        "Employee morale can drop if challenges are unmanaged.",
+        "Miscommunication during transitions can reduce stakeholder trust."
+      ]
+    },
+
+    "framework": {
+      "name": "Emerging Challenges",
+      "recommendation_blocks": [
+        {
+          "title": "Leverage Your Strengths",
+          "description": "Use stable foundations and stakeholder trust to respond proactively while staying aligned with goals."
+        },
+        {
+          "title": "Mitigate Weaknesses",
+          "description": "Reduce resistance to change with prioritization frameworks, stronger planning, and improved contingency thinking."
+        },
+        {
+          "title": "Seize Opportunities",
+          "description": "Use challenges as a chance to modernize workflows, improve agility, and strengthen strategic decision-making."
+        },
+        {
+          "title": "Address Threats",
+          "description": "Counter disruptions and competitive pressure with transparent communication and timely execution."
+        },
+        {
+          "title": "Adopt a Balanced Approach",
+          "description": "Balance operational continuity with flexibility to absorb changes without losing stability."
+        }
+      ],
+
+      "actionable_steps": [
+        "Conduct a thorough risk assessment to identify potential challenges and their impact.",
+        "Develop a prioritized action plan to address the most pressing challenges first.",
+        "Engage stakeholders in identifying innovative solutions to emerging problems.",
+        "Monitor industry trends to anticipate and prepare for future disruptions.",
+        "Foster a culture of adaptability by encouraging openness to new ideas and approaches.",
+        "Regularly review and adjust workflows to ensure alignment with evolving needs.",
+        "Communicate consistently with employees and stakeholders about the rationale for changes.",
+        "Implement small-scale pilots to test new strategies before rolling them out broadly.",
+        "Provide training and resources to equip employees with the skills needed to adapt.",
+        "Celebrate successes in overcoming challenges to reinforce a culture of resilience."
+      ],
+
+      "strategic_recommendations": [
+        "Emerging challenges signal a transition period that requires proactive planning, alignment and innovation.",
+        "Use challenges as catalysts for resilience, stability and transformation while keeping long-term goals aligned."
+      ]
+    }
+  }
+}

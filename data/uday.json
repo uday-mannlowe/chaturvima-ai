@@ -1,0 +1,375 @@
+{
+  "dimension": "1D",
+
+  "employee_profile": {
+    "name": "uday ",
+    "position": "Software Engineer",
+    "department": "Development",
+    "date_of_assessment": "19-01-2026"
+  },
+
+  "candidate_stage_classification": {
+    "type": "HYBRID",
+    "primary_stage": "Steady-State",
+    "secondary_stage": "Self-Introspection",
+    "selection_basis": {
+      "highest_primary_stage_own_score": 37.2,
+      "second_highest_stage_own_score": 38.4,
+      "note": "Candidate is stable (Steady-State) while strongly engaging in problem-reflection (Self-Introspection)."
+    }
+  },
+
+  "weights_from_excel": {
+    "columns": [
+      "steady_state_score",
+      "soul_searching_score",
+      "self_introspection_score",
+      "honeymoon_score"
+    ],
+
+    "stage_totals": [
+      {
+        "stage_name": "Honeymoon",
+        "steady_state_score": 7.73,
+        "soul_searching_score": 7.73,
+        "self_introspection_score": 7.73,
+        "honeymoon_score": 34.8
+      },
+      {
+        "stage_name": "Self-Introspection",
+        "steady_state_score": 8.53,
+        "soul_searching_score": 8.53,
+        "self_introspection_score": 38.4,
+        "honeymoon_score": 8.53
+      },
+      {
+        "stage_name": "Soul-Searching",
+        "steady_state_score": 6.53,
+        "soul_searching_score": 29.4,
+        "self_introspection_score": 6.53,
+        "honeymoon_score": 6.53
+      },
+      {
+        "stage_name": "Steady-State",
+        "steady_state_score": 37.2,
+        "soul_searching_score": 8.27,
+        "self_introspection_score": 8.27,
+        "honeymoon_score": 8.27
+      }
+    ],
+
+    "stage_breakdown": {
+      "Honeymoon": {
+        "sub_stages": [
+          {
+            "name": "Confidence and Over-Reliance on Past Success",
+            "steady_state_score": 1.6,
+            "soul_searching_score": 1.6,
+            "self_introspection_score": 1.6,
+            "honeymoon_score": 7.2
+          },
+          {
+            "name": "Excitement and Optimism",
+            "steady_state_score": 2.0,
+            "soul_searching_score": 2.0,
+            "self_introspection_score": 2.0,
+            "honeymoon_score": 9.0
+          },
+          {
+            "name": "Initial Reality Check",
+            "steady_state_score": 1.6,
+            "soul_searching_score": 1.6,
+            "self_introspection_score": 1.6,
+            "honeymoon_score": 7.2
+          },
+          {
+            "name": "Sustained Confidence with Subtle Complacency",
+            "steady_state_score": 0.67,
+            "soul_searching_score": 0.67,
+            "self_introspection_score": 0.67,
+            "honeymoon_score": 3.0
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Self-Introspection Stage",
+            "steady_state_score": 0.93,
+            "soul_searching_score": 0.93,
+            "self_introspection_score": 0.93,
+            "honeymoon_score": 4.2
+          },
+          {
+            "name": "Overlap with Soul-Searching Stage",
+            "steady_state_score": 0.53,
+            "soul_searching_score": 0.53,
+            "self_introspection_score": 0.53,
+            "honeymoon_score": 2.4
+          },
+          {
+            "name": "Overlap with Steady State",
+            "steady_state_score": 0.4,
+            "soul_searching_score": 0.4,
+            "self_introspection_score": 0.4,
+            "honeymoon_score": 1.8
+          }
+        ]
+      },
+
+      "Self-Introspection": {
+        "sub_stages": [
+          {
+            "name": "Acknowledgment of Problems",
+            "steady_state_score": 1.47,
+            "soul_searching_score": 1.47,
+            "self_introspection_score": 6.6,
+            "honeymoon_score": 1.47
+          },
+          {
+            "name": "Analyzing Causes",
+            "steady_state_score": 1.87,
+            "soul_searching_score": 1.87,
+            "self_introspection_score": 8.4,
+            "honeymoon_score": 1.87
+          },
+          {
+            "name": "Exploration of Solutions",
+            "steady_state_score": 1.87,
+            "soul_searching_score": 1.87,
+            "self_introspection_score": 8.4,
+            "honeymoon_score": 1.87
+          },
+          {
+            "name": "Partial Acceptance of Responsibility",
+            "steady_state_score": 1.87,
+            "soul_searching_score": 1.87,
+            "self_introspection_score": 8.4,
+            "honeymoon_score": 1.87
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "steady_state_score": 0.4,
+            "soul_searching_score": 0.4,
+            "self_introspection_score": 1.8,
+            "honeymoon_score": 0.4
+          },
+          {
+            "name": "Overlap with Soul-Searching",
+            "steady_state_score": 0.53,
+            "soul_searching_score": 0.53,
+            "self_introspection_score": 2.4,
+            "honeymoon_score": 0.53
+          },
+          {
+            "name": "Overlap with Steady State",
+            "steady_state_score": 0.53,
+            "soul_searching_score": 0.53,
+            "self_introspection_score": 2.4,
+            "honeymoon_score": 0.53
+          }
+        ]
+      },
+
+      "Soul-Searching": {
+        "sub_stages": [
+          {
+            "name": "Actionable Transformation",
+            "steady_state_score": 1.2,
+            "soul_searching_score": 5.4,
+            "self_introspection_score": 1.2,
+            "honeymoon_score": 1.2
+          },
+          {
+            "name": "Deep Frustration",
+            "steady_state_score": 1.2,
+            "soul_searching_score": 5.4,
+            "self_introspection_score": 1.2,
+            "honeymoon_score": 1.2
+          },
+          {
+            "name": "Openness to Change",
+            "steady_state_score": 1.73,
+            "soul_searching_score": 7.8,
+            "self_introspection_score": 1.73,
+            "honeymoon_score": 1.73
+          },
+          {
+            "name": "Questioning Fundamentals",
+            "steady_state_score": 1.2,
+            "soul_searching_score": 5.4,
+            "self_introspection_score": 1.2,
+            "honeymoon_score": 1.2
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "steady_state_score": 0.4,
+            "soul_searching_score": 1.8,
+            "self_introspection_score": 0.4,
+            "honeymoon_score": 0.4
+          },
+          {
+            "name": "Overlap with Self-Introspection",
+            "steady_state_score": 0.4,
+            "soul_searching_score": 1.8,
+            "self_introspection_score": 0.4,
+            "honeymoon_score": 0.4
+          },
+          {
+            "name": "Overlap with Steady State",
+            "steady_state_score": 0.4,
+            "soul_searching_score": 1.8,
+            "self_introspection_score": 0.4,
+            "honeymoon_score": 0.4
+          }
+        ]
+      },
+
+      "Steady-State": {
+        "sub_stages": [
+          {
+            "name": "Dynamic Balance",
+            "steady_state_score": 8.4,
+            "soul_searching_score": 1.87,
+            "self_introspection_score": 1.87,
+            "honeymoon_score": 1.87
+          },
+          {
+            "name": "Emerging Challenges",
+            "steady_state_score": 6.6,
+            "soul_searching_score": 1.47,
+            "self_introspection_score": 1.47,
+            "honeymoon_score": 1.47
+          },
+          {
+            "name": "Operational Predictability",
+            "steady_state_score": 7.2,
+            "soul_searching_score": 1.6,
+            "self_introspection_score": 1.6,
+            "honeymoon_score": 1.6
+          },
+          {
+            "name": "Stability and Alignment",
+            "steady_state_score": 7.2,
+            "soul_searching_score": 1.6,
+            "self_introspection_score": 1.6,
+            "honeymoon_score": 1.6
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "steady_state_score": 2.4,
+            "soul_searching_score": 0.53,
+            "self_introspection_score": 0.53,
+            "honeymoon_score": 0.53
+          },
+          {
+            "name": "Overlap with Self-Introspection",
+            "steady_state_score": 3.0,
+            "soul_searching_score": 0.67,
+            "self_introspection_score": 0.67,
+            "honeymoon_score": 0.67
+          },
+          {
+            "name": "Overlap with Soul-Searching",
+            "steady_state_score": 2.4,
+            "soul_searching_score": 0.53,
+            "self_introspection_score": 0.53,
+            "honeymoon_score": 0.53
+          }
+        ]
+      }
+    },
+
+    "grand_total": {
+      "steady_state_score": 60.0,
+      "soul_searching_score": 53.93,
+      "self_introspection_score": 60.93,
+      "honeymoon_score": 58.13
+    }
+  },
+
+  "framework_output": {
+    "frameworks": [
+      {
+        "priority": 1,
+        "stage": "Steady-State",
+        "substage": "Dynamic Balance",
+        "swot": {
+          "strengths": [
+            "Ability to maintain core stability while adapting to change.",
+            "Strong alignment with organizational goals ensures focus during transitions.",
+            "Collaborative mindset fosters effective communication and teamwork.",
+            "Established processes and frameworks support consistent decision-making."
+          ],
+          "weaknesses": [
+            "Struggles to prioritize initiatives in highly dynamic environments.",
+            "Risk of losing momentum if balance shifts toward complacency.",
+            "Resistance to change may reduce adaptability.",
+            "May struggle to balance short-term changes with long-term goals."
+          ],
+          "opportunities": [
+            "Enhance agility and resilience during transitions.",
+            "Create innovation while maintaining operational stability.",
+            "Become a role model of stability + adaptability.",
+            "Lead effectively through complex transitions."
+          ],
+          "threats": [
+            "Overextension can cause burnout and inefficiency.",
+            "External disruptions can create misalignment.",
+            "Weak communication can reduce stakeholder trust.",
+            "Over-reliance on existing systems may reduce innovation."
+          ]
+        },
+        "actions": [
+          "Run regular assessments of internal & external factors affecting balance.",
+          "Use a clear prioritization framework aligned with goals.",
+          "Strengthen cross-functional collaboration for innovation + stability.",
+          "Review and adjust strategy frequently based on environment signals.",
+          "Ensure transparent stakeholder communication during transitions."
+        ]
+      },
+      {
+        "priority": 2,
+        "stage": "Self-Introspection",
+        "substage": "Analyzing Causes",
+        "swot": {
+          "strengths": [
+            "High awareness of problems and root causes.",
+            "Strong critical thinking and structured analysis.",
+            "Willingness to reflect and learn from setbacks.",
+            "Ability to connect patterns and identify triggers."
+          ],
+          "weaknesses": [
+            "Overthinking can delay execution.",
+            "May focus too much on problems instead of solutions.",
+            "Can become self-critical and lose confidence.",
+            "Decision fatigue due to excessive analysis."
+          ],
+          "opportunities": [
+            "Convert insights into repeatable solutions.",
+            "Improve decision-making with evidence-based thinking.",
+            "Create stronger long-term strategies.",
+            "Build a problem-solving culture in the team."
+          ],
+          "threats": [
+            "Analysis paralysis can slow progress.",
+            "Continuous reflection may reduce motivation.",
+            "Overemphasis on correction may impact morale.",
+            "Misinterpretation of root cause may lead to wrong actions."
+          ]
+        },
+        "actions": [
+          "Set a strict analysis time window (example: 48-hour decision window).",
+          "Use root-cause tools: 5-Whys / Fishbone / Pareto analysis.",
+          "Convert insights into 2–3 small experiments (quick pilots).",
+          "Track learnings weekly: what worked / failed / why.",
+          "Balance reflection with execution (70% action + 30% introspection)."
+        ]
+      }
+    ]
+  }
+}

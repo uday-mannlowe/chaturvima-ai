@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+jinja2
+groq 
+python-dotenv
+openai
+langchain
+langchain-community
+sentence-transformers
+faiss-cpu
+pypdf
+langchain-text-splitters
+python-dotenv
+openai
+uvicorn

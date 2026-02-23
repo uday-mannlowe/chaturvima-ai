@@ -1,0 +1,83 @@
+{
+  "dimension": "1D",
+
+  "behavioral_stage": {
+    "stage": "Honeymoon",
+    "primary_sub_stage": {
+      "name": "Confidence and Over-Reliance on Past Success",
+      "definition": "Strong self-belief driven by prior achievements, assuming past strategies will continue to work without adaptation."
+    },
+    "secondary_sub_stages": [
+      {
+        "name": "Initial Reality Check",
+        "definition": "Early signs of friction and challenge are emerging, but confidence remains largely intact."
+      }
+    ]
+  },
+
+  "employee_questionnaire": [
+    {
+      "question_id": "H_CP_01",
+      "question_text": "You rely on past successes to navigate your current challenges.",
+      "answer": 4
+    },
+    {
+      "question_id": "H_CP_02",
+      "question_text": "You assume that what worked in the past will work in your current role without much adaptation.",
+      "answer": 4
+    },
+    {
+      "question_id": "H_IRC_01",
+      "question_text": "You have recently encountered challenges that made you question your initial confidence.",
+      "answer": 3
+    },
+    {
+      "question_id": "H_CP_03",
+      "question_text": "You feel confident that you have all the skills and tools required for your current responsibilities.",
+      "answer": 5
+    }
+  ],
+
+  "individual_swot": {
+    "strengths": [
+      {
+        "area": "Confidence & Authority",
+        "description": "Strong self-belief and decisiveness based on prior success."
+      }
+    ],
+    "weaknesses": [
+      {
+        "area": "Delayed Adaptation",
+        "description": "Early warning signals may be rationalized rather than acted upon."
+      }
+    ],
+    "opportunities": [
+      {
+        "area": "Early Calibration",
+        "description": "Reality checks provide an opportunity to adapt before deeper issues form."
+      }
+    ],
+    "threats": [
+      {
+        "area": "Compounded Misalignment",
+        "description": "Ignoring early signals may lead to sharper future corrections."
+      }
+    ]
+  },
+
+  "recommendation_framework": {
+    "framework_name": "Honeymoon Reality Calibration Framework",
+    "principles": [
+      "Respect confidence but interrogate assumptions",
+      "Treat friction as early data"
+    ],
+    "recommended_actions": [
+      {
+        "focus_area": "Signal Recognition",
+        "recommendation": "Actively list recent challenges and identify which assumptions they challenge.",
+        "priority": "High",
+        "time_horizon": "Immediate"
+      }
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "dimension": "4D",
+  "framework": "ChaturVima",
+  "input_artifacts": {
+    "three_d_result": {
+      "type": "docx",
+      "usage": "full_document_context",
+      "file_path": "C:\\uday mannlowe\\chaturvima\\generated report\\GENERATED_REPORT3d.docx"
+    }
+  },
+  "four_d_stages": {
+    "boss": {
+      "stage": "Honeymoon",
+      "sub_stage": "Initial Reality Check"
+    },
+    "employee": {
+      "stage": "Honeymoon",
+      "sub_stage": "Passive Alignment"
+    },
+    "department": {
+      "stage": "Honeymoon",
+      "sub_stage": "Operational Comfort"
+    },
+    "organization": {
+      "stage": "Honeymoon",
+      "sub_stage": "Growth Optimism"
+    }
+  },
+  "selected_logical_outcome": {
+    "id": "LO-1",
+    "statement": "Overconfidence at all levels leads to complacency."
+  },
+  "action_navigator": {
+    "linked_to_logical_outcome": "LO-1",
+    "actions": [
+      "Conduct regular feedback sessions to create awareness about blind spots and overconfidence.",
+      "Develop a culture of humility by recognizing areas for improvement.",
+      "Establish KPIs that challenge teams to move beyond comfort zones.",
+      "Implement periodic performance reviews to identify complacency.",
+      "Introduce external benchmarking against industry standards."
+    ]
+  },
+  "processing_note": {
+    "rule": "LLM must reason only within provided stages, logical outcome, and mapped actions"
+  }
+}

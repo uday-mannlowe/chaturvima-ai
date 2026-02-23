@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChaturVima Growth Report</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @page {
+            size: A4;
+            margin: 20mm;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+
+        /* Header */
+        .report-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            position: relative;
+        }
+
+        .logo-space {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            width: 200px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-space img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .report-header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .report-header .subtitle {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+
+        .employee-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .info-box {
+            background: rgba(255,255,255,0.15);
+            padding: 12px;
+            border-radius: 6px;
+            backdrop-filter: blur(10px);
+        }
+
+        .info-box label {
+            font-size: 11px;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-box .value {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        /* Content */
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+            page-break-inside: avoid;
+        }
+
+        .section-title {
+            font-size: 24px;
+            color: #667eea;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+            font-weight: 600;
+        }
+
+        .subsection-title {
+            font-size: 18px;
+            color: #764ba2;
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+        }
+
+        .section-content {
+            font-size: 14px;
+            text-align: justify;
+            margin-bottom: 15px;
+        }
+
+        /* Stage Badge */
+        .stage-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+
+        .substage-badge {
+            display: inline-block;
+            background: #f0f0f0;
+            color: #764ba2;
+            padding: 6px 16px;
+            border-radius: 15px;
+            font-weight: 500;
+            margin: 5px 0;
+            font-size: 13px;
+            border: 2px solid #764ba2;
+        }
+
+        /* Score Table */
+        .score-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .score-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .score-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .score-table tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+
+        .score-table tr:hover {
+            background: #f0f0f0;
+        }
+
+        .score-value {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        /* SWOT Analysis */
+        .swot-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .swot-box {
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .swot-box.strengths {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+        }
+
+        .swot-box.weaknesses {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        }
+
+        .swot-box.opportunities {
+            background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
+        }
+
+        .swot-box.threats {
+            background: linear-gradient(135deg, #fccb90 0%, #d57eeb 100%);
+        }
+
+        .swot-box h3 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .swot-box ul {
+            list-style-position: inside;
+            padding-left: 10px;
+        }
+
+        .swot-box li {
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        /* Action Plan */
+        .action-phase {
+            background: #f9f9f9;
+            padding: 20px;
+            border-left: 4px solid #667eea;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .action-phase h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .action-item {
+            margin: 15px 0;
+            padding-left: 20px;
+        }
+
+        .action-item strong {
+            color: #764ba2;
+        }
+
+        .action-steps {
+            margin-left: 20px;
+            margin-top: 8px;
+        }
+
+        .action-steps li {
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        /* Indicators List */
+        .indicators-list {
+            background: #f0f4ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .indicators-list li {
+            margin-bottom: 10px;
+            padding-left: 10px;
+            position: relative;
+        }
+
+        .indicators-list li:before {
+            content: "▸";
+            color: #667eea;
+            position: absolute;
+            left: -10px;
+            font-weight: bold;
+        }
+
+        /* Highlight Box */
+        .highlight-box {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 5px solid #ff6b6b;
+        }
+
+        /* Footer */
+        .report-footer {
+            background: #f5f5f5;
+            padding: 30px 40px;
+            text-align: center;
+            border-top: 3px solid #667eea;
+        }
+
+        .confidence-level {
+            display: inline-block;
+            background: #4caf50;
+            color: white;
+            padding: 10px 25px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .footer-note {
+            font-size: 12px;
+            color: #666;
+            font-style: italic;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* Print Styles */
+        @media print {
+            body {
+                background: white;
+            }
+            
+            .container {
+                box-shadow: none;
+                max-width: 100%;
+            }
+
+            .section {
+                page-break-inside: avoid;
+            }
+
+            .swot-grid {
+                page-break-inside: avoid;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .employee-info {
+                grid-template-columns: 1fr;
+            }
+
+            .swot-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .report-header {
+                padding: 20px;
+            }
+
+            .logo-space {
+                position: static;
+                margin: 20px auto 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="report-header">
+            <div class="logo-space">
+                <img src="./chatur logo.png" alt="ChaturVima Logo">
+            </div>
+            <h1>Employee Personal Insights</h1>
+            <div class="subtitle">ChaturVima Growth Report</div>
+            
+            <div class="employee-info">
+                <div class="info-box">
+                    <label>Employee</label>
+                    <div class="value">Manwa</div>
+                </div>
+                <div class="info-box">
+                    <label>Designation</label>
+                    <div class="value">Software Engineer</div>
+                </div>
+                <div class="info-box">
+                    <label>Report Date</label>
+                    <div class="value">January 14, 2026</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+            <!-- Section 1: Purpose -->
+            <div class="section">
+                <h2 class="section-title">1. Purpose of the Assessment</h2>
+                <p class="section-content">
+                    This assessment has been conducted to provide you, Manwa, with a deep and structured understanding of your current professional behavioral patterns. The goal is not to judge or label, but to offer a clear mirror reflecting how you operate within your role. By identifying your dominant emotional and behavioral stage, this report aims to unlock self-awareness, highlight your inherent strengths, and illuminate potential blind spots. Ultimately, this serves as a personalized roadmap for your sustainable growth, helping you navigate your current work environment more effectively and prepare for future challenges and opportunities. It is a tool for empowerment, designed to give you the insights needed to take charge of your professional development.
+                </p>
+            </div>
+
+            <!-- Section 2: Dimension Overview -->
+            <div class="section">
+                <h2 class="section-title">2. Dimension Overview & Scope</h2>
+                <p class="section-content">
+                    This is a <strong>1D (Individual) Diagnostic Report</strong>. It focuses exclusively on you as an individual contributor—your internal drivers, behavioral tendencies, emotional stage, and personal operating style. It analyzes how you approach your work, manage tasks, respond to challenges, and contribute from your unique position.
+                </p>
+                
+                <h3 class="subsection-title">What this report covers:</h3>
+                <ul class="section-content">
+                    <li>Your primary emotional and behavioral stage based on observed patterns</li>
+                    <li>Your psychological profile and internal motivators</li>
+                    <li>A personal SWOT analysis to frame your strengths and development areas</li>
+                    <li>A tailored action plan for personal improvement</li>
+                </ul>
+
+                <h3 class="subsection-title">What this report does NOT cover:</h3>
+                <ul class="section-content">
+                    <li>Your skills or technical competencies</li>
+                    <li>Your relationships with specific team members (covered in 2D/Relationship reports)</li>
+                    <li>Team dynamics or organizational culture (covered in 3D/Team and 4D/Organization reports)</li>
+                    <li>Any form of mental health diagnosis or personality labeling</li>
+                </ul>
+            </div>
+
+            <!-- Section 3: Inputs & Assessment -->
+            <div class="section">
+                <h2 class="section-title">3. Inputs & Assessment Instruments</h2>
+                <p class="section-content">
+                    This diagnostic report is generated using the proprietary <strong>ChaturVima behavioral framework</strong>. The analysis is based on a structured assessment of behavioral indicators aligned with the framework's defined stages. The primary data source for this report is the quantified scoring derived from your assessed behavioral patterns, which maps your responses and observable tendencies onto the ChaturVima stage model. The recommendations and SWOT analysis are directly pulled from the framework's authoritative recommendation engine, ensuring the guidance is evidence-based and aligned with your identified stage of "Emerging Challenges."
+                </p>
+            </div>
+
+            <!-- Section 4: Employee Profile -->
+            <div class="section">
+                <h2 class="section-title">4. Employee Profile Summary</h2>
+                <p class="section-content">
+                    You, Manwa, are a Software Engineer. This role typically requires a blend of deep technical expertise, systematic problem-solving, and the ability to deliver reliable, functional code. The context of software engineering involves navigating defined requirements, evolving technologies, and the constant balance between building stable systems and adapting to new bugs or feature requests. This report interprets your behavioral patterns within this specific professional context.
+                </p>
+            </div>
+
+            <!-- Section 5: Emotional Stage -->
+            <div class="section">
+                <h2 class="section-title">5. Emotional Stage Interpretation</h2>
+                
+                <h3 class="subsection-title">5.1. Definition of Dominant Stage and Predominant Substage</h3>
+                <p class="section-content">
+                    According to the ChaturVima framework, your dominant stage is the <span class="stage-badge">Steady-State Stage</span>
+                </p>
+                <p class="section-content">
+                    <strong>Steady-State Stage Definition:</strong> At this stage, individuals operate consistently and reliably. Goals are met as planned, and commitments or promises are fulfilled. Their behavior reflects stability, efficiency, and a balanced approach to work, maintaining steady performance without major fluctuations.
+                </p>
+                <p class="section-content">
+                    Within the Steady-State stage, your predominant substage is <span class="substage-badge">Emerging Challenges</span>
+                </p>
+                <p class="section-content">
+                    <strong>Emerging Challenges Substage Definition:</strong> Subtle inefficiencies or external shifts begin to appear. These early warning signs highlight the need for proactive adjustments to maintain performance. It is a phase where stability is present, but the environment is signaling that change is on the horizon.
+                </p>
+                <p class="section-content">
+                    Your secondary substage influence is <strong>Operational Predictability</strong>, which means you have a strong foundation of routine and reliable outcomes to draw upon.
+                </p>
+
+                <h3 class="subsection-title">5.2. Interpretation</h3>
+                <p class="section-content">
+                    Your profile indicates that you are fundamentally a stable and reliable performer (Steady-State). You have established effective workflows and likely have a strong grasp of your core responsibilities, leading to consistent output. However, you are currently operating within the "Emerging Challenges" substage. This suggests that while your foundation is solid, you are beginning to encounter early signs of change, pressure, or inefficiency. These could manifest as new types of bugs, shifting project requirements, the introduction of new tools, or a sense that the existing ways of working might need tweaking to stay effective. You are not in crisis, but the system (both internal and external) is presenting signals that some proactive attention is needed to prevent future disruptions and maintain your high level of steady performance.
+                </p>
+
+                <h3 class="subsection-title">5.3. Behavioral Indicators</h3>
+                <div class="indicators-list">
+                    <ul>
+                        <li><strong>Noticing Subtle Inefficiencies:</strong> You might see that certain repetitive tasks could be automated, or that a particular piece of code is becoming difficult to maintain.</li>
+                        <li><strong>Awareness of External Shifts:</strong> You are likely cognizant of new technologies, frameworks, or business priorities that could impact your work in the near future.</li>
+                        <li><strong>Experiencing Minor, Recurring Hurdles:</strong> Small delays, "quick fixes" that keep recurring, or minor miscommunications that happen more often than they should.</li>
+                        <li><strong>Balancing Stability with the Need for Change:</strong> You feel the pull between relying on your proven, predictable methods and the growing sense that some adaptation will be necessary.</li>
+                    </ul>
+                </div>
+
+                <h3 class="subsection-title">5.4. Stage Level Score Summary and Interpretation</h3>
+                <table class="score-table">
+                    <thead>
+                        <tr>
+                            <th>Behavioral Stage</th>
+                            <th>Own-Stage Score</th>
+                            <th>Interpretation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Steady-State</strong></td>
+                            <td><span class="score-value">38.4</span></td>
+                            <td>This is your dominant operating zone. You score highest in behaviors associated with consistency, reliability, and fulfilling commitments. This is your home base.</td>
+                        </tr>
+                        <tr>
+                            <td>Self-Introspection</td>
+                            <td><span class="score-value">31.2</span></td>
+                            <td>You have a significant secondary tendency to analyze situations and your role within them. This analytical skill supports your problem-solving.</td>
+                        </tr>
+                        <tr>
+                            <td>Honeymoon</td>
+                            <td><span class="score-value">22.8</span></td>
+                            <td>There is a moderate level of optimism and confidence in your approach, which is a positive asset.</td>
+                        </tr>
+                        <tr>
+                            <td>Soul-Searching</td>
+                            <td><span class="score-value">21.6</span></td>
+                            <td>You have a lower tendency toward deep frustration or questioning of fundamentals, which aligns with your stable core.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="section-content">
+                    <strong>Overall Interpretation:</strong> The scores confirm a strong anchor in the Steady-State stage. The significantly high score in your own stage (38.4) versus others solidifies that reliability and consistent execution are your key strengths. The profile suggests you are a grounded professional who is now sensing the initial ripples of change that require your steady attention.
+                </p>
+            </div>
+
+            <!-- Section 6: Psychological Profile -->
+            <div class="section">
+                <h2 class="section-title">6. Psychological Profile & Tendencies</h2>
+                <p class="section-content">
+                    Your psychological profile is that of a <strong>Stable Achiever facing a Complexity Threshold</strong>. Your primary tendency is to seek order, predictability, and the satisfaction of delivering on what was promised. You likely derive a sense of accomplishment from checking off tasks, building robust systems, and being someone others can depend on. You are not prone to dramatic swings in motivation or approach.
+                </p>
+                <p class="section-content">
+                    Currently, a secondary tendency is emerging: <strong>Proactive Vigilance</strong>. You are psychologically beginning to scan the horizon, mentally noting friction points, and weighing the cost of current processes against future demands. There might be an internal dialogue between the comfort of the "tried and true" and the logical acknowledgment that "this could be done better." Your Self-Introspection score supports this, indicating you naturally lean into analyzing causes and effects, which is a perfect skill set for this substage.
+                </p>
+            </div>
+
+            <!-- Section 7: Internal Drivers & Stressors -->
+            <div class="section">
+                <h2 class="section-title">7. Internal Drivers & Stressors</h2>
+                
+                <h3 class="subsection-title">Internal Drivers (What Motivates You):</h3>
+                <ul class="section-content">
+                    <li><strong>Mastery and Reliability:</strong> The drive to build things that work well and last.</li>
+                    <li><strong>Efficiency:</strong> A desire for clean, logical, and effective processes.</li>
+                    <li><strong>Predictable Success:</strong> Motivation comes from planning, executing, and seeing the expected outcome materialize.</li>
+                    <li><strong>Being a Go-To Expert:</strong> The satisfaction that comes from being trusted to handle your domain competently.</li>
+                </ul>
+
+                <h3 class="subsection-title">Internal Stressors (Sources of Tension):</h3>
+                <ul class="section-content">
+                    <li><strong>The Disruption of Routine:</strong> Changes that feel arbitrary or that threaten your established, efficient ways of working.</li>
+                    <li><strong>Ambiguity in Prioritization:</strong> When it's unclear which of several "emerging challenges" deserves your focus first, leading to potential inefficiency.</li>
+                    <li><strong>The Fear of Instability:</strong> Concern that changes might compromise the reliability and quality you have worked hard to build.</li>
+                    <li><strong>Uncertain Impact:</strong> Stress from not knowing how significant a new challenge might become if not addressed.</li>
+                </ul>
+            </div>
+
+            <!-- Section 8: SWOT Analysis -->
+            <div class="section">
+                <h2 class="section-title">8. Individual SWOT Analysis</h2>
+                <p class="section-content">This analysis frames your current personal professional context.</p>
+                
+                <div class="swot-grid">
+                    <div class="swot-box strengths">
+                        <h3>💪 Strengths</h3>
+                        <ul>
+                            <li>Stable Operational Foundation: You have a reliable way of working that supports consistent execution, even when minor issues arise.</li>
+                            <li>Strong Goal Alignment: You understand how your work connects to business objectives, which helps you stay focused on what matters.</li>
+                            <li>Earned Stakeholder Trust: Your reliability has likely built a reservoir of trust, which means you have support when you need to propose or navigate changes.</li>
+                        </ul>
+                    </div>
+
+                    <div class="swot-box weaknesses">
+                        <h3>⚠️ Weaknesses</h3>
+                        <ul>
+                            <li>Resistance to Change: A preference for stability may unconsciously slow down your response to necessary adaptations.</li>
+                            <li>Over-Dependency on Current Workflows: Heavy reliance on existing methods can sometimes blind you to simpler or more innovative improvements.</li>
+                            <li>Prioritization Gaps: When faced with multiple new challenges, you might struggle to systematically identify which one to tackle first for maximum impact.</li>
+                        </ul>
+                    </div>
+
+                    <div class="swot-box opportunities">
+                        <h3>🚀 Opportunities</h3>
+                        <ul>
+                            <li>Become More Agile: You have the chance to modernize your personal processes and planning systems, turning your stability into adaptable strength.</li>
+                            <li>Leverage Challenges for Growth: These emerging issues are a platform to innovate, upskill (e.g., learn a new tool), and demonstrate proactive problem-solving.</li>
+                            <li>Build Long-Term Resilience: By learning to navigate these early challenges effectively, you will build personal resilience for complex future projects.</li>
+                        </ul>
+                    </div>
+
+                    <div class="swot-box threats">
+                        <h3>⚡ Threats</h3>
+                        <ul>
+                            <li>Rapid Market/Technology Changes: If emerging challenges are ignored, rapid external shifts could disrupt your stable performance.</li>
+                            <li>Competitive Disadvantage: Peers or competitors who adapt faster may gain an advantage in efficiency or capability.</li>
+                            <li>Erosion of Trust: If communication breaks down during a period of change, it can reduce the trust and morale you've built.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 9: Action Navigator -->
+            <div class="section">
+                <h2 class="section-title">9. Action Navigator – Personal Improvement Plan</h2>
+                <p class="section-content">
+                    This is a phase-wise, practical plan to navigate your "Emerging Challenges" substage proactively. The tone is <strong>proactively alerting (non-alarming)</strong>, encouraging readiness and strategic action.
+                </p>
+
+                <div class="action-phase">
+                    <h4>Phase 1: Foundation & Focus (Next 7 Days)</h4>
+                    <div class="action-item">
+                        <strong>Action 1: Conduct a Personal Risk & Impact Review</strong>
+                        <ul class="action-steps">
+                            <li><strong>Step 1:</strong> Dedicate 60 minutes to list every "nagging task," "inefficient process," or "new thing to learn" that has crossed your mind recently. Aim for 5-10 items.</li>
+                            <li><strong>Step 2:</strong> Rate each one on a simple scale: High Impact (affects core deliverables or well-being), Medium, or Low Impact.</li>
+                            <li><strong>Step 3:</strong> From the High Impact list, choose the ONE that, if solved, would make the biggest positive difference to your weekly work. Write down a simple problem statement for it.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="action-phase">
+                    <h4>Phase 2: Pilot & Learn (Days 8-21)</h4>
+                    <div class="action-item">
+                        <strong>Action 2: Run a Solution Pilot</strong>
+                        <ul class="action-steps">
+                            <li><strong>Step 1:</strong> For your chosen challenge, brainstorm 2-3 potential solutions. Don't seek the perfect fix; look for a "good enough" improvement you can test.</li>
+                            <li><strong>Step 2:</strong> Select the solution that offers the best balance of impact vs. effort. Plan a small, low-risk pilot—perhaps applying it to a single module, a one-week sprint, or a specific type of task.</li>
+                            <li><strong>Step 3:</strong> Define one metric to track (e.g., "Time spent on X," "Number of recurrences of bug Y," "My subjective stress level about this on a 1-5 scale"). Track it at the start and end of your pilot week.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="action-phase">
+                    <h4>Phase 3: Integrate & Communicate (Ongoing Habit)</h4>
+                    <div class="action-item">
+                        <strong>Action 3: Strengthen Your Communication Loop</strong>
+                        <ul class="action-steps">
+                            <li><strong>Step 1:</strong> When you start your pilot, briefly inform your manager or a teammate: "I'm testing a new approach to [X challenge] this week to see if it improves [Y metric]. I'll share what I find."</li>
+                            <li><strong>Step 2:</strong> At the end of the pilot, take 5 minutes to decide: Adopt, Adapt, or Abandon the solution. Briefly document the outcome.</li>
+                            <li><strong>Step 3:</strong> Make this 3-phase cycle a quarterly habit. Set a calendar reminder to "Review Emerging Challenges."</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 10: Value Contribution -->
+            <div class="section">
+                <h2 class="section-title">10. Value Contribution to Higher Dimensions</h2>
+                <p class="section-content">
+                    Your personal growth in navigating the "Emerging Challenges" substage has a direct and positive ripple effect on your team and the wider organization.
+                </p>
+
+                <h3 class="subsection-title">Contribution to Team (2D Dimension):</h3>
+                <p class="section-content">
+                    By proactively solving your own workflow challenges, you reduce bottlenecks and friction points for your teammates. Your improved prioritization and clear communication become a model for others, raising the team's overall operational clarity. You transition from being just a reliable coder to a reliable problem-solver, a more valuable team asset.
+                </p>
+
+                <h3 class="subsection-title">Contribution to Organization (3D & 4D Dimensions):</h3>
+                <p class="section-content">
+                    Organizations thrive on employees who maintain steady performance while adapting. By developing this muscle, you directly contribute to organizational agility and resilience. You help prevent small inefficiencies from scaling into systemic problems, saving time and resources. Your journey from stability through adaptive change is a microcosm of the innovation and continuous improvement that organizations need to survive and thrive. Your personal steadiness, combined with a newly honed proactive agility, makes you a cornerstone of a modern, high-performing workplace.
+                </p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="report-footer">
+            <div class="confidence-level">Report Confidence Level: HIGH</div>
+            <p class="footer-note">
+                This report is based on the ChaturVima behavioral framework and is intended for developmental purposes. It reflects patterns, not fixed traits, and is designed to support your ongoing professional journey.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

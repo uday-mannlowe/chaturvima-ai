@@ -1,0 +1,130 @@
+{
+    "dimension": "1D",
+  "metadata": {
+    "framework": "ChaturVima",
+    "assessment_version": "v1.2",
+    "assessment_date": "2026-01-28",
+    "source": "Revised Employee Model Weights + SWOT + Action Framework",
+    "generated_by": "scoring_engine_v1",
+    "confidence_level": "high"
+  },
+
+  "employee_profile": {
+    "employee_id": "EMP_001",
+    "employee_name": "Vishal",
+    "role": "Software Engineer",
+    "department": "Engineering",
+    "experience_years": 3.5,
+    "location": "India"
+  },
+
+  "scoring_engine_output": {
+    "stage_totals": [
+      {
+        "stage_name": "Honeymoon",
+        "honeymoon_score": 25.41,
+        "self_introspection_score": 9.04,
+        "soul_searching_score": 6.25,
+        "steady_state_score": 6.25
+      },
+      {
+        "stage_name": "Self-Introspection",
+        "honeymoon_score": 9.35,
+        "self_introspection_score": 42.0,
+        "soul_searching_score": 9.35,
+        "steady_state_score": 9.35
+      },
+      {
+        "stage_name": "Soul-Searching",
+        "honeymoon_score": 8.54,
+        "self_introspection_score": 8.54,
+        "soul_searching_score": 38.4,
+        "steady_state_score": 8.54
+      },
+      {
+        "stage_name": "Steady-State",
+        "honeymoon_score": 8.79,
+        "self_introspection_score": 8.79,
+        "soul_searching_score": 8.79,
+        "steady_state_score": 39.6
+      }
+    ],
+
+    "grand_total": {
+      "honeymoon_score": 52.09,
+      "self_introspection_score": 68.37,
+      "soul_searching_score": 62.79,
+      "steady_state_score": 63.74
+    }
+  },
+
+  "stage_analysis_inputs": {
+    "dominant_stage": "Self-Introspection",
+    "pre_dominant_stage": "Steady-State",
+    "dominant_sub_stage": "Partial Acceptance of Responsibility",
+    "analysis_rationale": [
+      "Highest cumulative score observed in Self-Introspection",
+      "Strong presence of responsibility-oriented sub-stage signals",
+      "Balanced overlap with Steady-State indicating readiness for stability"
+    ]
+  },
+
+  "swot_reference": {
+    "reference_file": "Recommendations for Framework.xlsx",
+    "stage": "Self-Introspection",
+    "sub_stage": "Partial Acceptance of Responsibility",
+
+    "strengths": [
+      "Strong self-awareness",
+      "Willingness to take responsibility",
+      "Openness to feedback"
+    ],
+
+    "weaknesses": [
+      "Execution delays due to over-analysis",
+      "Hesitation in decision ownership"
+    ],
+
+    "opportunities": [
+      "Leadership readiness development",
+      "Skill acceleration through feedback loops",
+      "Higher-impact individual contribution"
+    ],
+
+    "threats": [
+      "Emotional fatigue from prolonged reflection",
+      "Loss of momentum if action is delayed"
+    ]
+  },
+
+  "actionable_framework": {
+    "stage": "Self-Introspection",
+    "sub_stage": "Partial Acceptance of Responsibility",
+
+    "actionable_steps": [
+      "Define one clear personal responsibility area and own outcomes end-to-end.",
+      "Set weekly execution goals with visible deliverables, not just planning milestones.",
+      "Time-box reflection and analysis activities to avoid overthinking.",
+      "Review progress every 7 days and identify one concrete action for improvement.",
+      "Actively seek feedback on decisions taken, not only on intentions.",
+      "Prioritize actions that create visible impact over perfect solutions.",
+      "Document lessons learned after each completed task to reinforce accountability.",
+      "Reduce dependency by resolving issues independently before escalation.",
+      "Track personal execution metrics such as task completion rate and decision turnaround time.",
+      "Acknowledge and celebrate completed actions to build confidence through execution."
+    ]
+  },
+
+  "risk_and_guardrails": {
+    "early_warning_signals": [
+      "Repeated planning without execution",
+      "Avoidance of decision ownership",
+      "Drop in energy or engagement levels"
+    ],
+    "mitigation_steps": [
+      "Introduce weekly execution check-ins",
+      "Limit planning time per task",
+      "Reinforce accountability through visible ownership"
+    ]
+  }
+}

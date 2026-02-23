@@ -1,0 +1,314 @@
+{
+    "dimension": "1D",
+  "employee_details": {
+    "employee_name": "Sahil Agarwal",
+    "designation": "Marketing Manager",
+    "dominant_stage": "Self-Introspection",
+    "pre_dominant_substage": [
+      "Analyzing Causes",
+      "Exploration of Solutions"
+    ]
+  },
+
+  "weights_from_excel": {
+    "columns": [
+      "honeymoon_score",
+      "self_introspection_score",
+      "soul_searching_score",
+      "steady_state_score"
+    ],
+
+    "stage_totals": [
+      {
+        "stage_name": "Honeymoon",
+        "honeymoon_score": 25.41,
+        "self_introspection_score": 9.04,
+        "soul_searching_score": 6.25,
+        "steady_state_score": 6.25
+      },
+      {
+        "stage_name": "Self-Introspection",
+        "honeymoon_score": 9.35,
+        "self_introspection_score": 42.0,
+        "soul_searching_score": 9.35,
+        "steady_state_score": 9.35
+      },
+      {
+        "stage_name": "Soul-Searching",
+        "honeymoon_score": 8.54,
+        "self_introspection_score": 8.54,
+        "soul_searching_score": 38.4,
+        "steady_state_score": 8.54
+      },
+      {
+        "stage_name": "Steady-State",
+        "honeymoon_score": 8.79,
+        "self_introspection_score": 8.79,
+        "soul_searching_score": 8.79,
+        "steady_state_score": 39.6
+      }
+    ],
+
+    "stage_breakdown": {
+      "Honeymoon": {
+        "sub_stages": [
+          {
+            "name": "Confidence and Over-RReliance on Past Success",
+            "honeymoon_score": 3.27,
+            "self_introspection_score": 1.86,
+            "soul_searching_score": 0.93,
+            "steady_state_score": 0.93
+          },
+          {
+            "name": "Excitement and Optimism",
+            "honeymoon_score": 4.47,
+            "self_introspection_score": 2.13,
+            "soul_searching_score": 1.2,
+            "steady_state_score": 1.2
+          },
+          {
+            "name": "Initial Reality Check",
+            "honeymoon_score": 6.6,
+            "self_introspection_score": 1.46,
+            "soul_searching_score": 1.46,
+            "steady_state_score": 1.46
+          },
+          {
+            "name": "Sustained Confidence with Subtle Complacency",
+            "honeymoon_score": 3.27,
+            "self_introspection_score": 1.86,
+            "soul_searching_score": 0.93,
+            "steady_state_score": 0.93
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Self-Introspection Stage",
+            "honeymoon_score": 4.2,
+            "self_introspection_score": 0.93,
+            "soul_searching_score": 0.93,
+            "steady_state_score": 0.93
+          },
+          {
+            "name": "Overlap with Soul-Searching Stage",
+            "honeymoon_score": 1.8,
+            "self_introspection_score": 0.4,
+            "soul_searching_score": 0.4,
+            "steady_state_score": 0.4
+          },
+          {
+            "name": "Overlap with Steady State",
+            "honeymoon_score": 1.8,
+            "self_introspection_score": 0.4,
+            "soul_searching_score": 0.4,
+            "steady_state_score": 0.4
+          }
+        ]
+      },
+
+      "Self-Introspection": {
+        "sub_stages": [
+          {
+            "name": "Acknowledgment of Problems",
+            "honeymoon_score": 1.73,
+            "self_introspection_score": 7.8,
+            "soul_searching_score": 1.73,
+            "steady_state_score": 1.73
+          },
+          {
+            "name": "Analyzing Causes",
+            "honeymoon_score": 1.87,
+            "self_introspection_score": 8.4,
+            "soul_searching_score": 1.87,
+            "steady_state_score": 1.87
+          },
+          {
+            "name": "Exploration of Solutions",
+            "honeymoon_score": 1.87,
+            "self_introspection_score": 8.4,
+            "soul_searching_score": 1.87,
+            "steady_state_score": 1.87
+          },
+          {
+            "name": "Partial Acceptance of Responsibility",
+            "honeymoon_score": 2.01,
+            "self_introspection_score": 9.0,
+            "soul_searching_score": 2.01,
+            "steady_state_score": 2.01
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 3.0,
+            "soul_searching_score": 0.67,
+            "steady_state_score": 0.67
+          },
+          {
+            "name": "Overlap with Soul-Searching",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 3.0,
+            "soul_searching_score": 0.67,
+            "steady_state_score": 0.67
+          },
+          {
+            "name": "Overlap with Steady State",
+            "honeymoon_score": 0.53,
+            "self_introspection_score": 2.4,
+            "soul_searching_score": 0.53,
+            "steady_state_score": 0.53
+          }
+        ]
+      },
+
+      "Soul-Searching": {
+        "sub_stages": [
+          {
+            "name": "Actionable Transformation",
+            "honeymoon_score": 1.2,
+            "self_introspection_score": 1.2,
+            "soul_searching_score": 5.4,
+            "steady_state_score": 1.2
+          },
+          {
+            "name": "Deep Frustration",
+            "honeymoon_score": 1.87,
+            "self_introspection_score": 1.87,
+            "soul_searching_score": 8.4,
+            "steady_state_score": 1.87
+          },
+          {
+            "name": "Openness to Change",
+            "honeymoon_score": 1.73,
+            "self_introspection_score": 1.73,
+            "soul_searching_score": 7.8,
+            "steady_state_score": 1.73
+          },
+          {
+            "name": "Questioning Fundamentals",
+            "honeymoon_score": 1.87,
+            "self_introspection_score": 1.87,
+            "soul_searching_score": 8.4,
+            "steady_state_score": 1.87
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 3.0,
+            "steady_state_score": 0.67
+          },
+          {
+            "name": "Overlap with Self-Introspection",
+            "honeymoon_score": 0.53,
+            "self_introspection_score": 0.53,
+            "soul_searching_score": 2.4,
+            "steady_state_score": 0.53
+          },
+          {
+            "name": "Overlap with Steady State",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 3.0,
+            "steady_state_score": 0.67
+          }
+        ]
+      },
+
+      "Steady-State": {
+        "sub_stages": [
+          {
+            "name": "Dynamic Balance",
+            "honeymoon_score": 1.59,
+            "self_introspection_score": 1.59,
+            "soul_searching_score": 1.59,
+            "steady_state_score": 7.2
+          },
+          {
+            "name": "Emerging Challenges",
+            "honeymoon_score": 1.73,
+            "self_introspection_score": 1.73,
+            "soul_searching_score": 1.73,
+            "steady_state_score": 7.8
+          },
+          {
+            "name": "Operational Predictability",
+            "honeymoon_score": 1.73,
+            "self_introspection_score": 1.73,
+            "soul_searching_score": 1.73,
+            "steady_state_score": 7.8
+          },
+          {
+            "name": "Stability and Alignment",
+            "honeymoon_score": 1.87,
+            "self_introspection_score": 1.87,
+            "soul_searching_score": 1.87,
+            "steady_state_score": 8.4
+          }
+        ],
+        "overlaps": [
+          {
+            "name": "Overlap with Honeymoon",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 0.67,
+            "steady_state_score": 3.0
+          },
+          {
+            "name": "Overlap with Self-Introspection",
+            "honeymoon_score": 0.67,
+            "self_introspection_score": 0.67,
+            "soul_searching_score": 0.67,
+            "steady_state_score": 3.0
+          },
+          {
+            "name": "Overlap with Soul-Searching",
+            "honeymoon_score": 0.53,
+            "self_introspection_score": 0.53,
+            "soul_searching_score": 0.53,
+            "steady_state_score": 2.4
+          }
+        ]
+      }
+    },
+
+    "grand_total": {
+      "honeymoon_score": 52.09,
+      "self_introspection_score": 68.37,
+      "soul_searching_score": 62.79,
+      "steady_state_score": 63.74
+    }
+  },
+
+  "selected_frameworks": [
+    {
+      "priority": 1,
+      "stage": "Self-Introspection",
+      "substage": "Analyzing Causes",
+      "reason": "This is a pre-dominant substage and has strong introspection score (8.4).",
+      "actions": [
+        "Use root-cause analysis tools (5-Whys / Fishbone) to map real causes, not symptoms.",
+        "Write 3 causes, 3 evidence points for each cause, and 1 action per cause.",
+        "Set a time limit for analysis (example: 48 hours) and move to execution.",
+        "Track weekly outcomes and validate if the cause assumptions were correct.",
+        "Convert learning into one repeatable checklist/process."
+      ]
+    },
+    {
+      "priority": 2,
+      "stage": "Self-Introspection",
+      "substage": "Exploration of Solutions",
+      "reason": "Pre-dominant substage and has strong introspection score (8.4).",
+      "actions": [
+        "Brainstorm 5 possible solutions, then shortlist top 2 using impact vs effort.",
+        "Run small pilots instead of full rollout (fast validation).",
+        "Gather feedback from 2 stakeholders before final implementation.",
+        "Document what worked and standardize the solution into the workflow.",
+        "Define measurable KPIs (example: lead conversion %, campaign ROI, customer reach)."
+      ]
+    }
+  ]
+}

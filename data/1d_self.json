@@ -1,0 +1,70 @@
+{
+  "dimension": "1D",
+
+  "behavioral_stage": {
+    "stage": "Self-Introspection",
+    "sub_stage": "Analyzing Cause",
+    "sub_stage_definition": "Active examination of problems and root causes, with partial distance from ownership."
+  },
+
+  "employee_questionnaire": [
+    {
+      "question_id": "SI_AC_01",
+      "question_text": "You have spent time analyzing the root causes of the challenges you are facing.",
+      "answer": 4
+    },
+    {
+      "question_id": "SI_AC_02",
+      "question_text": "You are exploring data, feedback, or inputs to understand issues.",
+      "answer": 4
+    },
+    {
+      "question_id": "SI_AC_03",
+      "question_text": "You feel you have identified the main causes of current challenges.",
+      "answer": 3
+    }
+  ],
+
+  "individual_swot": {
+    "strengths": [
+      {
+        "area": "Analytical Depth",
+        "description": "Strong diagnostic thinking."
+      }
+    ],
+    "weaknesses": [
+      {
+        "area": "Action Delay",
+        "description": "May overanalyze before acting."
+      }
+    ],
+    "opportunities": [
+      {
+        "area": "Insight Conversion",
+        "description": "Can turn analysis into precise action."
+      }
+    ],
+    "threats": [
+      {
+        "area": "Stagnation Through Analysis",
+        "description": "Extended diagnosis may stall progress."
+      }
+    ]
+  },
+
+  "recommendation_framework": {
+    "framework_name": "Insight-to-Action Bridge Framework",
+    "principles": [
+      "Limit analysis cycles",
+      "Prefer experiments over certainty"
+    ],
+    "recommended_actions": [
+      {
+        "focus_area": "Action Commitment",
+        "recommendation": "Translate insights into one testable action.",
+        "priority": "High",
+        "time_horizon": "Immediate"
+      }
+    ]
+  }
+}
