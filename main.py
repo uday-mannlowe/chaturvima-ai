@@ -276,15 +276,20 @@ class WorkerPool:
                         dimension = nd_data["dimension"]
                         print(f"📐 Worker {worker_id}: dimension detected = {dimension}")
 
-                        # Generate report text via LLM
-                        report_text: str = await asyncio.wait_for(
-                            asyncio.to_thread(generate_text_report, nd_data),
-                            timeout=Config.GROQ_TIMEOUT_SECONDS,
+                        # Generate report payload via LLM. For 2D this returns
+                        # both reports in order: employee (1D) then boss (2D).
+                        reports_payload = await asyncio.wait_for(
+                            asyncio.to_thread(generate_multi_reports_structured, nd_data),
+                            timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
                         )
 
                         # Render full HTML page
                         html_doc = _render_employee_report_html(
-                            employee_id, dimension, report_text, frappe_data
+                            employee_id=employee_id,
+                            dimension=dimension,
+                            report_payload=reports_payload,
+                            nd_data=nd_data,
+                            frappe_data=frappe_data,
                         )
 
                         # Save to html_data/{employee_id}.html
@@ -976,167 +981,89 @@ def _frappe_headers() -> dict:
 def _render_employee_report_html(
     employee_id: str,
     dimension: str,
-    report_text: str,
+    report_payload: Union[str, Dict[str, Any]],
+    nd_data: dict,
     frappe_data: dict,
 ) -> str:
-    """Convert LLM plain-text report + Frappe metadata into a full styled HTML page."""
+    """Render employee report using html/index.html with dynamic multi-report data."""
 
     msg = frappe_data.get("message", frappe_data)
-    dominant_stage     = msg.get("dominant_stage", "—")
-    dominant_sub_stage = msg.get("dominant_sub_stage", "—")
-    questionnaires     = msg.get("questionnaires_considered", [])
-    generated_date     = datetime.now().strftime("%d %B %Y")
+    dominant_stage = str(msg.get("dominant_stage", "-"))
+    dominant_sub_stage = str(msg.get("dominant_sub_stage", "-"))
+    questionnaires = msg.get("questionnaires_considered", [])
+    generated_date = datetime.now().strftime("%d %B %Y")
 
-    # ── Convert plain text → HTML blocks ──────────────────────────────────
-    lines = report_text.splitlines()
-    body_parts: List[str] = []
-    buffer: List[str] = []
-
-    def _flush():
-        if buffer:
-            para = " ".join(buffer).strip()
-            if para:
-                body_parts.append(f'<p class="section-content">{html_lib.escape(para)}</p>')
-            buffer.clear()
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            _flush()
-            continue
-        # Numbered section headings like "1. Purpose..." or ALL-CAPS headings
-        if re.match(r"^\d+[\.)\s]+[A-Z]", stripped) or re.match(r"^[A-Z][A-Z\s\-&]{4,}$", stripped):
-            _flush()
-            body_parts.append(f'<h2 class="section-title">{html_lib.escape(stripped)}</h2>')
-        elif re.match(r"^[A-Z][^.!?]{0,60}:$", stripped):
-            _flush()
-            body_parts.append(f'<h3 class="subsection-title">{html_lib.escape(stripped)}</h3>')
-        else:
-            buffer.append(stripped)
-    _flush()
-    report_body = "\n".join(body_parts)
-
-    # ── Stage score table rows ─────────────────────────────────────────────
-    stage_rows = ""
-    for st in msg.get("stages", []):
-        stage_rows += (
-            f"<tr>"
-            f"<td>{html_lib.escape(st['stage'])}</td>"
-            f"<td>{st['score']:.2f}</td>"
-            f"<td>{st['percentage']:.1f}%</td>"
-            f"</tr>"
-        )
+    employee_name = (
+        msg.get("employee_name")
+        or msg.get("employee_full_name")
+        or msg.get("employee")
+        or employee_id
+    )
+    designation = (
+        msg.get("designation")
+        or msg.get("role")
+        or msg.get("employee_role")
+        or "Employee"
+    )
 
     dimension_label = {
-        "1D": "1D – Individual Assessment",
-        "2D": "2D – Employee-Boss Relationship",
-        "3D": "3D – Team Assessment",
-        "4D": "4D – Organisational Assessment",
-    }.get(dimension, dimension)
+        "1D": "1D - Individual Assessment",
+        "2D": "2D - Employee-Boss Relationship",
+        "3D": "3D - Team Assessment",
+        "4D": "4D - Organisational Assessment",
+    }.get(dimension, str(dimension))
 
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ChaturVima Report – {html_lib.escape(employee_id)}</title>
-  <style>
-    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    @page {{ size: A4; margin: 20mm; }}
-    body {{
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      line-height: 1.7; color: #2d2d2d; background: #f0f2f5;
-    }}
-    .container {{
-      max-width: 860px; margin: 32px auto; background: #fff;
-      border-radius: 10px; box-shadow: 0 4px 30px rgba(0,0,0,.12); overflow: hidden;
-    }}
-    .report-header {{
-      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-      color: #fff; padding: 44px 48px 36px;
-    }}
-    .report-header h1 {{ font-size: 28px; font-weight: 700; margin-bottom: 6px; }}
-    .report-header .subtitle {{ font-size: 15px; opacity: .85; margin-bottom: 24px; }}
-    .meta-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }}
-    .meta-box {{ background: rgba(255,255,255,.18); border-radius: 6px; padding: 12px 16px; }}
-    .meta-box .label {{
-      font-size: 10px; text-transform: uppercase;
-      letter-spacing: .08em; opacity: .75; margin-bottom: 4px;
-    }}
-    .meta-box .value {{ font-size: 14px; font-weight: 600; }}
-    .scores-section {{
-      padding: 28px 48px; background: #fafafa; border-bottom: 1px solid #e5e7eb;
-    }}
-    .scores-section h2 {{ font-size: 16px; font-weight: 600; color: #4f46e5; margin-bottom: 14px; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
-    th {{ background: #4f46e5; color: #fff; text-align: left; padding: 9px 14px; font-weight: 600; }}
-    td {{ padding: 8px 14px; border-bottom: 1px solid #e5e7eb; }}
-    tr:nth-child(even) td {{ background: #f3f4f6; }}
-    .report-body {{ padding: 36px 48px 48px; }}
-    .section-title {{
-      font-size: 18px; font-weight: 700; color: #4f46e5;
-      margin: 32px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #e0e7ff;
-    }}
-    .subsection-title {{ font-size: 15px; font-weight: 600; color: #6366f1; margin: 18px 0 8px; }}
-    .section-content {{ font-size: 14.5px; color: #374151; margin-bottom: 12px; }}
-    .report-footer {{
-      background: #1e1b4b; color: rgba(255,255,255,.6);
-      text-align: center; padding: 18px 40px; font-size: 12px;
-    }}
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="report-header">
-      <h1>ChaturVima Diagnostic Report</h1>
-      <p class="subtitle">Behavioural Stage Assessment</p>
-      <div class="meta-grid">
-        <div class="meta-box">
-          <div class="label">Employee ID</div>
-          <div class="value">{html_lib.escape(employee_id)}</div>
-        </div>
-        <div class="meta-box">
-          <div class="label">Dimension</div>
-          <div class="value">{html_lib.escape(dimension_label)}</div>
-        </div>
-        <div class="meta-box">
-          <div class="label">Dominant Stage</div>
-          <div class="value">{html_lib.escape(dominant_stage)}</div>
-        </div>
-        <div class="meta-box">
-          <div class="label">Dominant Sub-Stage</div>
-          <div class="value">{html_lib.escape(dominant_sub_stage)}</div>
-        </div>
-        <div class="meta-box">
-          <div class="label">Report Date</div>
-          <div class="value">{generated_date}</div>
-        </div>
-        <div class="meta-box">
-          <div class="label">Questionnaires</div>
-          <div class="value">{html_lib.escape(', '.join(questionnaires))}</div>
-        </div>
-      </div>
-    </div>
-    <div class="scores-section">
-      <h2>Stage Score Summary</h2>
-      <table>
-        <thead><tr><th>Stage</th><th>Score</th><th>Percentage</th></tr></thead>
-        <tbody>{stage_rows}</tbody>
-      </table>
-    </div>
-    <div class="report-body">
-      {report_body}
-    </div>
-    <div class="report-footer">
-      Confidential – ChaturVima Framework &nbsp;|&nbsp; Generated on {generated_date}
-    </div>
-  </div>
-</body>
-</html>"""
+    report_type = f"{dimension_label} Growth Report"
+    report_subtitle = f"ChaturVima {dimension_label} Diagnostic Report"
+    questionnaire_text = ", ".join(str(q) for q in questionnaires) if questionnaires else "-"
+    report_sections = _normalize_reports(report_payload, nd_data)
 
+    stage_rows: List[Dict[str, str]] = []
+    for st in msg.get("stages", []):
+        try:
+            score = float(st.get("score", 0))
+        except (TypeError, ValueError):
+            score = 0.0
+        try:
+            percentage = float(st.get("percentage", 0))
+        except (TypeError, ValueError):
+            percentage = 0.0
+        stage_rows.append({
+            "stage": str(st.get("stage", "-")),
+            "score": f"{score:.2f}",
+            "percentage": f"{percentage:.1f}",
+        })
+
+    context = {
+        "page_title": f"ChaturVima Growth Report - {employee_name}",
+        "report_heading": "ChaturVima Diagnostic Report",
+        "report_subtitle": report_subtitle,
+        "employee_name": employee_name,
+        "designation": designation,
+        "report_type": report_type,
+        "employee_id": employee_id,
+        "dimension_label": dimension_label,
+        "generated_date": generated_date,
+        "dominant_stage": dominant_stage,
+        "dominant_sub_stage": dominant_sub_stage,
+        "questionnaire_text": questionnaire_text,
+        "stage_rows": stage_rows,
+        "report_sections": report_sections,
+    }
+
+    try:
+        env = Environment(
+            loader=FileSystemLoader(Config.TEMPLATE_DIR),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
+        template = env.get_template("index.html")
+        return template.render(**context)
+    except Exception as exc:
+        print(f"⚠️ Employee template rendering failed: {exc}")
+        return _render_report_html(report_payload, nd_data)
 
 # ============================================================================
-# EMPLOYEE REPORT – API ENDPOINTS
+# EMPLOYEE REPORT - API ENDPOINTS
 # ============================================================================
 
 @app.get(

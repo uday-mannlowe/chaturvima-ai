@@ -17,6 +17,9 @@ services:
       - MAX_QUEUE_SIZE=${MAX_QUEUE_SIZE:-100}
       - GROQ_RATE_LIMIT_PER_MINUTE=${GROQ_RATE_LIMIT_PER_MINUTE:-30}
       - GROQ_TIMEOUT_SECONDS=${GROQ_TIMEOUT_SECONDS:-120}
+      # Frappe authentication
+      - FRAPPE_API_KEY=${FRAPPE_API_KEY}
+      - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
     volumes:
       # Persist vector DB and data
       - ./vector_db:/app/vector_db
