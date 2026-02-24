@@ -1405,6 +1405,299 @@ IMPORTANT:
     return response.choices[0].message.content.strip()
 
 
+# ============================================================================
+# FRAPPE → ND INPUT MAPPER
+# Called by main.py worker when processing employee_report jobs
+# ============================================================================
+
+# Sub-stage name → plain-English definition
+_SUB_STAGE_DEFINITIONS: Dict[str, str] = {
+    "Excitement and Optimism - Honeymoon": (
+        "The employee is riding a wave of high energy and positivity, "
+        "enthusiastically embracing their role and the organisation's potential."
+    ),
+    "Confidence and Over-Reliance on Past Success - Honeymoon": (
+        "Strong self-assurance dominates, often drawing on prior achievements "
+        "without yet fully adapting to the new context."
+    ),
+    "Initial Reality Check - Honeymoon": (
+        "Early challenges appear; confidence remains high, but subtle signals "
+        "of complexity and difficulty are beginning to surface."
+    ),
+    "Sustained Confidence with Subtle Complacency - Honeymoon": (
+        "Continued optimism masks emerging blind spots; performance feels "
+        "steady but underlying complacency is quietly building."
+    ),
+    "Overlap with Self-Introspection Stage - Honeymoon": (
+        "The employee is bridging from the Honeymoon phase into self-examination, "
+        "noticing gaps between expectation and reality."
+    ),
+    "Overlap with Soul-Searching Stage - Honeymoon": (
+        "Deeper questioning begins to co-exist with the lingering enthusiasm "
+        "of the Honeymoon phase."
+    ),
+    "Overlap with Steady State - Honeymoon": (
+        "Initial excitement is settling into a more grounded and consistent "
+        "operational rhythm."
+    ),
+    "Acknowledgment of Problems - Self-Introspection": (
+        "The employee recognises that challenges exist and is beginning to "
+        "honestly assess gaps in performance or alignment."
+    ),
+    "Analyzing Cause - Self-Introspection": (
+        "Active investigation into the root causes of difficulties; curiosity replaces denial."
+    ),
+    "Partial Acceptance of Responsibility - Self-Introspection": (
+        "Ownership of some shortcomings is emerging, though full accountability is still developing."
+    ),
+    "Exploration of Solutions - Self-Introspection": (
+        "Energy is redirected toward identifying practical ways forward."
+    ),
+    "Deep Frustration - Soul-Searching": (
+        "Intense emotional difficulty accompanies a fundamental questioning of fit, values, and purpose."
+    ),
+    "Questioning Fundamentals - Soul-Searching": (
+        "Core assumptions about role, identity, and direction are being re-examined at a deep level."
+    ),
+    "Openness to Change - Soul-Searching": (
+        "Willingness to let go of old patterns and embrace a new trajectory is beginning to emerge."
+    ),
+    "Actionable Transformation - Soul-Searching": (
+        "Concrete steps toward meaningful change are being taken; momentum is building toward a new equilibrium."
+    ),
+    "Stability and Alignment - Steady State": (
+        "The employee operates with a stable, integrated sense of purpose and consistent, reliable performance."
+    ),
+    "Operational Predictability - Steady State": (
+        "Outputs and behaviours are highly consistent; the employee is a dependable anchor for their team."
+    ),
+    "Emerging Challenges - Steady State": (
+        "New complexities appear on the horizon; vigilance and proactive adaptation are becoming important."
+    ),
+    "Dynamic Balance - Steady State": (
+        "The employee actively balances stability with growth, thriving in an environment of continuous improvement."
+    ),
+}
+
+
+def detect_dimension(questionnaires: List[str]) -> str:
+    """
+    Derive the ChaturVima dimension from the number of questionnaires considered.
+
+    Rules:
+        1 questionnaire  (e.g. ["Self"])           → "1D"
+        2 questionnaires (e.g. ["Boss", "Self"])   → "2D"
+        3 questionnaires                           → "3D"
+        4 questionnaires                           → "4D"
+        Any other count                            → "1D" (safe fallback)
+
+    The Frappe API has no 'dimension' field; this function derives it from
+    questionnaires_considered so that main.py never needs to hard-code a dimension.
+    """
+    count = len(questionnaires)
+    mapping = {1: "1D", 2: "2D", 3: "3D", 4: "4D"}
+    dimension = mapping.get(count)
+    if dimension is None:
+        print(
+            f"⚠️  detect_dimension: unexpected count ({count}) for {questionnaires}. "
+            f"Defaulting to 1D."
+        )
+        dimension = "1D"
+    print(f"📐 detect_dimension: {count} questionnaire(s) → {dimension}")
+    return dimension
+
+
+def _frappe_strip_stage_suffix(name: str) -> str:
+    """'Initial Reality Check - Honeymoon' → 'Initial Reality Check'"""
+    return re.sub(r"\s*-\s*\w[\w\s\-]*$", "", name).strip()
+
+
+def _frappe_build_swot(stage: str) -> Dict[str, Any]:
+    swot_map: Dict[str, Any] = {
+        "Honeymoon": {
+            "strengths":     [{"area": "Enthusiasm",    "description": "High energy and eagerness to contribute."},
+                              {"area": "Optimism",       "description": "Positive outlook drives initiative."}],
+            "weaknesses":    [{"area": "Overconfidence", "description": "May underestimate complexity."},
+                              {"area": "Limited Context", "description": "Decisions based on incomplete organisational understanding."}],
+            "opportunities": [{"area": "Early Wins",     "description": "Momentum can be channelled into impactful quick wins."},
+                              {"area": "Relationship Building", "description": "Fresh energy attracts collaborative alliances."}],
+            "threats":       [{"area": "Expectation Mismatch", "description": "Reality may not match initial expectations."},
+                              {"area": "Burnout Risk",   "description": "Unsustained high pace may lead to fatigue."}],
+        },
+        "Self-Introspection": {
+            "strengths":     [{"area": "Self-Awareness",     "description": "Growing ability to recognise personal blind spots."},
+                              {"area": "Reflective Capacity", "description": "Willingness to question and recalibrate."}],
+            "weaknesses":    [{"area": "Decision Paralysis",  "description": "Over-analysis may slow action."},
+                              {"area": "Emotional Volatility", "description": "Inner conflict can affect day-to-day performance."}],
+            "opportunities": [{"area": "Course Correction", "description": "Insight gained now prevents larger issues later."},
+                              {"area": "Skill Deepening",    "description": "Reflection reveals targeted development areas."}],
+            "threats":       [{"area": "Disengagement",      "description": "Prolonged uncertainty risks motivation decline."},
+                              {"area": "Confidence Erosion",  "description": "Excessive self-criticism may undermine capability."}],
+        },
+        "Soul-Searching": {
+            "strengths":     [{"area": "Courage",        "description": "Willingness to face difficult truths about oneself."},
+                              {"area": "Values Clarity",  "description": "Deep questioning leads to stronger personal alignment."}],
+            "weaknesses":    [{"area": "Instability",    "description": "Performance may be inconsistent during this phase."},
+                              {"area": "Isolation Risk",  "description": "Intense introspection can reduce peer engagement."}],
+            "opportunities": [{"area": "Transformation",        "description": "Profound personal realignment is possible."},
+                              {"area": "Authentic Leadership",   "description": "Emerging clarity enables more genuine influence."}],
+            "threats":       [{"area": "Prolonged Crisis", "description": "Without support, the phase may become entrenched."},
+                              {"area": "Exit Risk",        "description": "Unresolved soul-searching may lead to disengagement or attrition."}],
+        },
+        "Steady-State": {
+            "strengths":     [{"area": "Reliability",           "description": "Consistent, dependable performance."},
+                              {"area": "Institutional Knowledge", "description": "Deep understanding of processes and people."}],
+            "weaknesses":    [{"area": "Complacency Risk",  "description": "Stability may reduce appetite for growth."},
+                              {"area": "Change Resistance",  "description": "Established patterns may resist necessary evolution."}],
+            "opportunities": [{"area": "Mentorship",            "description": "Experience positions the employee as a team anchor."},
+                              {"area": "Strategic Contribution", "description": "Stability frees bandwidth for higher-level impact."}],
+            "threats":       [{"area": "Stagnation",             "description": "Absence of challenge may dull engagement over time."},
+                              {"area": "Disruption Vulnerability", "description": "Major changes may destabilise a settled rhythm."}],
+        },
+    }
+    return swot_map.get(stage, swot_map["Honeymoon"])
+
+
+def _frappe_build_recommendation(stage: str) -> Dict[str, Any]:
+    rec_map: Dict[str, Any] = {
+        "Honeymoon": {
+            "framework_name": "Grounded Momentum Framework",
+            "principles": [
+                "Channel enthusiasm into structured learning.",
+                "Validate assumptions with evidence before acting.",
+                "Build relationships intentionally, not just reactively.",
+            ],
+            "recommended_actions": [
+                {"focus_area": "Reality Testing",  "recommendation": "Schedule weekly check-ins with your manager to align perceptions with expectations.", "priority": "High",   "time_horizon": "Immediate"},
+                {"focus_area": "Skill Anchoring",   "recommendation": "Identify 2-3 core competencies to deepen rather than spreading attention broadly.",   "priority": "Medium", "time_horizon": "Short Term"},
+                {"focus_area": "Feedback Loop",     "recommendation": "Actively solicit honest feedback from peers to surface blind spots early.",            "priority": "High",   "time_horizon": "Short Term"},
+            ],
+        },
+        "Self-Introspection": {
+            "framework_name": "Reflective Recalibration Framework",
+            "principles": [
+                "Treat friction as information, not failure.",
+                "Distinguish between self-critique and self-awareness.",
+                "Action is the antidote to over-analysis.",
+            ],
+            "recommended_actions": [
+                {"focus_area": "Root Cause Mapping",     "recommendation": "Journal key challenges and identify recurring patterns to address systematically.", "priority": "High",   "time_horizon": "Short Term"},
+                {"focus_area": "Accountability Partner", "recommendation": "Find a trusted peer or mentor to share reflections with and hold yourself accountable.", "priority": "Medium", "time_horizon": "Short Term"},
+                {"focus_area": "Small Wins Strategy",    "recommendation": "Deliberately pursue achievable goals to rebuild confidence incrementally.",         "priority": "High",   "time_horizon": "Immediate"},
+            ],
+        },
+        "Soul-Searching": {
+            "framework_name": "Values Realignment Framework",
+            "principles": [
+                "Uncertainty is a signal of growth, not failure.",
+                "Re-anchoring to core values creates sustainable direction.",
+                "Seek support actively; isolation compounds the challenge.",
+            ],
+            "recommended_actions": [
+                {"focus_area": "Values Clarification",  "recommendation": "Complete a structured values exercise to identify what truly matters to you at work.",   "priority": "High",   "time_horizon": "Immediate"},
+                {"focus_area": "Professional Support",  "recommendation": "Engage with a coach or counsellor to navigate the emotional dimensions of this phase.", "priority": "High",   "time_horizon": "Short Term"},
+                {"focus_area": "Micro-Commitments",     "recommendation": "Make small, visible commitments at work to maintain engagement while you recalibrate.", "priority": "Medium", "time_horizon": "Short Term"},
+            ],
+        },
+        "Steady-State": {
+            "framework_name": "Sustained Excellence Framework",
+            "principles": [
+                "Protect the stability that enables consistent delivery.",
+                "Seek intentional growth challenges to avoid complacency.",
+                "Leverage experience to elevate others around you.",
+            ],
+            "recommended_actions": [
+                {"focus_area": "Knowledge Transfer",    "recommendation": "Identify a junior colleague to mentor, formalising your institutional knowledge.",  "priority": "Medium", "time_horizon": "Short Term"},
+                {"focus_area": "Stretch Assignment",    "recommendation": "Request involvement in a cross-functional project that challenges your comfort zone.", "priority": "Medium", "time_horizon": "Mid Term"},
+                {"focus_area": "Innovation Contribution", "recommendation": "Dedicate time each sprint to exploring improvements in current processes or tools.",  "priority": "Low",    "time_horizon": "Mid Term"},
+            ],
+        },
+    }
+    return rec_map.get(stage, rec_map["Honeymoon"])
+
+
+def map_frappe_to_nd(employee_id: str, frappe_data: dict) -> dict:
+    """
+    Convert a Frappe weighted-assessment response into the ND input format
+    required by generate_text_report().
+
+    Key behaviour:
+      - Frappe JSON has NO 'dimension' field.
+      - Dimension is auto-detected via detect_dimension() using
+        len(questionnaires_considered):
+            1 item  → 1D
+            2 items → 2D
+            3 items → 3D
+            4 items → 4D
+
+    This function is the single source-of-truth for the Frappe → LLM mapping.
+    It is called by the WorkerPool in main.py (employee_report branch).
+    """
+    msg = frappe_data.get("message", frappe_data)
+
+    questionnaires: List[str] = msg.get("questionnaires_considered", [])
+    dimension: str = detect_dimension(questionnaires)
+
+    dominant_stage:     str = msg.get("dominant_stage", "Honeymoon")
+    dominant_sub_full:  str = msg.get("dominant_sub_stage", "")
+    dominant_sub_short: str = _frappe_strip_stage_suffix(dominant_sub_full)
+
+    # Stage score summary
+    stage_score_summary = []
+    for st in msg.get("stages", []):
+        stage_score_summary.append({
+            "stage":      st["stage"],
+            "score":      st["score"],
+            "percentage": st["percentage"],
+            "sub_stages": [
+                {"name": ss["sub_stage"], "score": ss["score"], "percentage": ss["percentage"]}
+                for ss in st.get("sub_stages", [])
+            ],
+        })
+
+    # Questionnaire snapshot (sub-stage scores surfaced as structured data)
+    questionnaire_snapshot = []
+    for st in msg.get("stages", []):
+        for ss in st.get("sub_stages", []):
+            questionnaire_snapshot.append({
+                "sub_stage":  ss["sub_stage"],
+                "score":      ss["score"],
+                "percentage": ss["percentage"],
+                "stage":      st["stage"],
+            })
+
+    nd_input = {
+        "dimension": dimension,   # ← derived from questionnaire count, NOT from Frappe
+        "employee_context": {
+            "employee_id":              employee_id,
+            "questionnaires_considered": questionnaires,
+            "dimension_auto_detected":  f"{len(questionnaires)} questionnaire(s) → {dimension}",
+            "assessment_date":          datetime.now().strftime("%Y-%m-%d"),
+        },
+        "behavioral_stage": {
+            "stage":               dominant_stage,
+            "sub_stage":           dominant_sub_short,
+            "sub_stage_definition": _SUB_STAGE_DEFINITIONS.get(
+                dominant_sub_full,
+                f"The employee is currently in the '{dominant_sub_full}' phase.",
+            ),
+            "stage_score_summary": stage_score_summary,
+            "logical_outcomes":    msg.get("logical_outcomes", []),
+        },
+        "employee_questionnaire":        questionnaire_snapshot,
+        "individual_swot":               _frappe_build_swot(dominant_stage),
+        "recommendation_framework":      _frappe_build_recommendation(dominant_stage),
+        "revised_employee_model_weights": {
+            "dominant_stage":    dominant_stage,
+            "dominant_sub_stage": dominant_sub_full,
+            "stage_scores": {st["stage"]: st["score"] for st in msg.get("stages", [])},
+        },
+    }
+
+    # validate_input_data normalises and confirms the dimension string
+    return validate_input_data(nd_input)
+
+
 # MAIN
 
 def _build_arg_parser() -> argparse.ArgumentParser:

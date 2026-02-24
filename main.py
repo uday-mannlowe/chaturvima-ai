@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+import httpx
 from fastapi import FastAPI, Body, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -30,6 +31,7 @@ from generate_groq import (
     generate_structured_report_by_dimension,
     resolve_input_data,
     normalize_dimension,
+    map_frappe_to_nd,
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     REPORT_TYPE_MAP,
     REPORT_TITLE_MAP
@@ -58,6 +60,22 @@ class Config:
     REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "300"))
     ENABLE_METRICS = os.getenv("ENABLE_METRICS", "true").lower() == "true"
 
+    # Frappe employee report settings
+    FRAPPE_BASE_URL = os.getenv(
+        "FRAPPE_BASE_URL",
+        "https://cvdev.m.frappe.cloud/api/method/"
+        "chaturvima_api.api.dashboard.get_employee_weighted_assessment_summary"
+    )
+    HTML_DATA_DIR = os.path.join(os.path.dirname(__file__), "html_data")
+
+    # Frappe auth – Option A: API key + secret (preferred)
+    FRAPPE_API_KEY    = os.getenv("FRAPPE_API_KEY", "")
+    FRAPPE_API_SECRET = os.getenv("FRAPPE_API_SECRET", "")
+
+    # Frappe auth – Option B: username + password (fallback)
+    FRAPPE_USERNAME = os.getenv("FRAPPE_USERNAME", "")
+    FRAPPE_PASSWORD = os.getenv("FRAPPE_PASSWORD", "")
+
 
 # ============================================================================
 # TASK QUEUE & JOB MANAGEMENT
@@ -80,10 +98,11 @@ class ReportJob:
     created_at: datetime = field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    result: Optional[Union[str, Dict[str, Any]]] = None  # ✅ Can be single report or dict of reports
+    result: Optional[Union[str, Dict[str, Any]]] = None  # Can be single report or dict of reports
     error: Optional[str] = None
-    multi_report: bool = False  # ✅ NEW: Track if this is a multi-report job
-    structured: bool = False  # ✅ NEW: Track if this job returns structured output
+    multi_report: bool = False       # Generate all reports for the dimension
+    structured: bool = False         # Section-wise structured output
+    employee_report: bool = False    # Frappe employee report flow
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -94,7 +113,8 @@ class ReportJob:
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "error": self.error,
             "multi_report": self.multi_report,
-            "structured": self.structured
+            "structured": self.structured,
+            "employee_report": self.employee_report,
         }
 
 
@@ -107,13 +127,25 @@ class ReportQueue:
         self.job_counter = 0
         self._lock = asyncio.Lock()
     
-    async def add_job(self, payload: Dict[str, Any], multi_report: bool = False, structured: bool = False) -> str:
+    async def add_job(
+        self,
+        payload: Dict[str, Any],
+        multi_report: bool = False,
+        structured: bool = False,
+        employee_report: bool = False,
+    ) -> str:
         """Add a new job to the queue"""
         async with self._lock:
             self.job_counter += 1
             job_id = f"job_{int(time.time())}_{self.job_counter}"
             
-            job = ReportJob(job_id=job_id, payload=payload, multi_report=multi_report, structured=structured)
+            job = ReportJob(
+                job_id=job_id,
+                payload=payload,
+                multi_report=multi_report,
+                structured=structured,
+                employee_report=employee_report,
+            )
             self.jobs[job_id] = job
             
             try:
@@ -222,37 +254,77 @@ class WorkerPool:
                 try:
                     # Rate limiting
                     await self.rate_limiter.acquire()
-                    
-                    # Resolve data
-                    data = resolve_input_data(job.payload)
-                    
-                    # ✅ NEW: Check if multi-report generation
-                    if job.multi_report:
-                        # Generate multiple reports
-                        print(f"📊 Generating multiple reports for dimension {data['dimension']} (structured={job.structured})")
+
+                    # ── BRANCH 1: Frappe employee report flow ──────────────────
+                    if job.employee_report:
+                        employee_id = job.payload["employee"]
+                        print(f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id}")
+
+                        async with httpx.AsyncClient(timeout=30) as client:
+                            frappe_url = f"{Config.FRAPPE_BASE_URL}?employee={employee_id}"
+                            resp = await client.get(frappe_url, headers=_frappe_headers())
+                            resp.raise_for_status()
+                            frappe_data = resp.json()
+
+                        if "message" not in frappe_data:
+                            raise ValueError(
+                                f"Unexpected Frappe response structure: {list(frappe_data.keys())}"
+                            )
+
+                        # Map Frappe JSON → ND input (dimension auto-detected)
+                        nd_data = map_frappe_to_nd(employee_id, frappe_data)
+                        dimension = nd_data["dimension"]
+                        print(f"📐 Worker {worker_id}: dimension detected = {dimension}")
+
+                        # Generate report text via LLM
+                        report_text: str = await asyncio.wait_for(
+                            asyncio.to_thread(generate_text_report, nd_data),
+                            timeout=Config.GROQ_TIMEOUT_SECONDS,
+                        )
+
+                        # Render full HTML page
+                        html_doc = _render_employee_report_html(
+                            employee_id, dimension, report_text, frappe_data
+                        )
+
+                        # Save to html_data/{employee_id}.html
+                        os.makedirs(Config.HTML_DATA_DIR, exist_ok=True)
+                        cache_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.html")
+                        with open(cache_path, "w", encoding="utf-8") as f:
+                            f.write(html_doc)
+                        print(f"💾 Worker {worker_id}: saved {cache_path}")
+
+                        job.result = html_doc  # full HTML string
+
+                    # ── BRANCH 2: Standard multi-report flow ──────────────────
+                    elif job.multi_report:
+                        data = resolve_input_data(job.payload)
+                        print(f"📊 Worker {worker_id}: multi-report dim={data['dimension']} structured={job.structured}")
                         if job.structured:
                             reports = await asyncio.wait_for(
                                 asyncio.to_thread(generate_multi_reports_structured, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 5  # More time for section-wise generation
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
                             )
                         else:
                             reports = await asyncio.wait_for(
                                 asyncio.to_thread(generate_multi_reports, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
                             )
                         job.result = reports
+
+                    # ── BRANCH 3: Standard single-report flow ─────────────────
                     else:
-                        # Generate single report (legacy or structured)
-                        print(f"📄 Generating single report for dimension {data['dimension']} (structured={job.structured})")
+                        data = resolve_input_data(job.payload)
+                        print(f"📄 Worker {worker_id}: single report dim={data['dimension']} structured={job.structured}")
                         if job.structured:
                             report = await asyncio.wait_for(
                                 asyncio.to_thread(generate_structured_report_by_dimension, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
                             )
                         else:
                             report = await asyncio.wait_for(
                                 asyncio.to_thread(generate_text_report, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS
+                                timeout=Config.GROQ_TIMEOUT_SECONDS,
                             )
                         job.result = report
                     
@@ -382,6 +454,16 @@ async def startup_event():
     print(f"Workers: {Config.MAX_CONCURRENT_GENERATIONS}")
     print(f"Queue Size: {Config.MAX_QUEUE_SIZE}")
     print(f"Rate Limit: {Config.GROQ_RATE_LIMIT_PER_MINUTE}/min")
+
+    # Frappe auth check
+    if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+        print(f"🔑 Frappe auth: API key+secret (✓ configured)")
+    elif Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
+        print(f"🔑 Frappe auth: username+password (✓ configured)")
+    else:
+        print("⚠️  Frappe auth: NO CREDENTIALS SET – employee report endpoints will return 403")
+        print("   Set FRAPPE_API_KEY + FRAPPE_API_SECRET in .env to fix this.")
+
     print("="*60 + "\n")
     
     await worker_pool.start()
@@ -845,6 +927,400 @@ async def get_dimension_info() -> Dict[str, Any]:
         "supported_dimensions": list(REPORT_TYPE_MAP.keys()),
         "dimension_report_mapping": REPORT_TYPE_MAP,
         "report_titles": REPORT_TITLE_MAP
+    }
+
+
+# ============================================================================
+# EMPLOYEE REPORT – FRAPPE AUTH HELPER
+# ============================================================================
+
+def _frappe_headers() -> dict:
+    """
+    Build HTTP headers for Frappe Cloud API calls.
+
+    Priority:
+      1. API key + secret  (FRAPPE_API_KEY + FRAPPE_API_SECRET in .env)
+         Header format:  Authorization: token <api_key>:<api_secret>
+      2. Username + password basic auth (FRAPPE_USERNAME + FRAPPE_PASSWORD)
+         Header format:  Authorization: Basic <base64(user:pass)>
+      3. No auth (will 403 on protected endpoints – useful only for local dev)
+    """
+    import base64
+    if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+        token = f"{Config.FRAPPE_API_KEY}:{Config.FRAPPE_API_SECRET}"
+        return {
+            "Authorization": f"token {token}",
+            "Content-Type": "application/json",
+        }
+    if Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
+        creds = base64.b64encode(
+            f"{Config.FRAPPE_USERNAME}:{Config.FRAPPE_PASSWORD}".encode()
+        ).decode()
+        return {
+            "Authorization": f"Basic {creds}",
+            "Content-Type": "application/json",
+        }
+    # No credentials – log a clear warning so it’s obvious in the console
+    print(
+        "⚠️  FRAPPE_AUTH: no credentials set in .env. "
+        "Set FRAPPE_API_KEY + FRAPPE_API_SECRET (or FRAPPE_USERNAME + FRAPPE_PASSWORD). "
+        "Requests to protected endpoints will return 403."
+    )
+    return {"Content-Type": "application/json"}
+
+
+# ============================================================================
+# EMPLOYEE REPORT – HTML RENDERER
+# ============================================================================
+
+def _render_employee_report_html(
+    employee_id: str,
+    dimension: str,
+    report_text: str,
+    frappe_data: dict,
+) -> str:
+    """Convert LLM plain-text report + Frappe metadata into a full styled HTML page."""
+
+    msg = frappe_data.get("message", frappe_data)
+    dominant_stage     = msg.get("dominant_stage", "—")
+    dominant_sub_stage = msg.get("dominant_sub_stage", "—")
+    questionnaires     = msg.get("questionnaires_considered", [])
+    generated_date     = datetime.now().strftime("%d %B %Y")
+
+    # ── Convert plain text → HTML blocks ──────────────────────────────────
+    lines = report_text.splitlines()
+    body_parts: List[str] = []
+    buffer: List[str] = []
+
+    def _flush():
+        if buffer:
+            para = " ".join(buffer).strip()
+            if para:
+                body_parts.append(f'<p class="section-content">{html_lib.escape(para)}</p>')
+            buffer.clear()
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            _flush()
+            continue
+        # Numbered section headings like "1. Purpose..." or ALL-CAPS headings
+        if re.match(r"^\d+[\.)\s]+[A-Z]", stripped) or re.match(r"^[A-Z][A-Z\s\-&]{4,}$", stripped):
+            _flush()
+            body_parts.append(f'<h2 class="section-title">{html_lib.escape(stripped)}</h2>')
+        elif re.match(r"^[A-Z][^.!?]{0,60}:$", stripped):
+            _flush()
+            body_parts.append(f'<h3 class="subsection-title">{html_lib.escape(stripped)}</h3>')
+        else:
+            buffer.append(stripped)
+    _flush()
+    report_body = "\n".join(body_parts)
+
+    # ── Stage score table rows ─────────────────────────────────────────────
+    stage_rows = ""
+    for st in msg.get("stages", []):
+        stage_rows += (
+            f"<tr>"
+            f"<td>{html_lib.escape(st['stage'])}</td>"
+            f"<td>{st['score']:.2f}</td>"
+            f"<td>{st['percentage']:.1f}%</td>"
+            f"</tr>"
+        )
+
+    dimension_label = {
+        "1D": "1D – Individual Assessment",
+        "2D": "2D – Employee-Boss Relationship",
+        "3D": "3D – Team Assessment",
+        "4D": "4D – Organisational Assessment",
+    }.get(dimension, dimension)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChaturVima Report – {html_lib.escape(employee_id)}</title>
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    @page {{ size: A4; margin: 20mm; }}
+    body {{
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.7; color: #2d2d2d; background: #f0f2f5;
+    }}
+    .container {{
+      max-width: 860px; margin: 32px auto; background: #fff;
+      border-radius: 10px; box-shadow: 0 4px 30px rgba(0,0,0,.12); overflow: hidden;
+    }}
+    .report-header {{
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      color: #fff; padding: 44px 48px 36px;
+    }}
+    .report-header h1 {{ font-size: 28px; font-weight: 700; margin-bottom: 6px; }}
+    .report-header .subtitle {{ font-size: 15px; opacity: .85; margin-bottom: 24px; }}
+    .meta-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }}
+    .meta-box {{ background: rgba(255,255,255,.18); border-radius: 6px; padding: 12px 16px; }}
+    .meta-box .label {{
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: .08em; opacity: .75; margin-bottom: 4px;
+    }}
+    .meta-box .value {{ font-size: 14px; font-weight: 600; }}
+    .scores-section {{
+      padding: 28px 48px; background: #fafafa; border-bottom: 1px solid #e5e7eb;
+    }}
+    .scores-section h2 {{ font-size: 16px; font-weight: 600; color: #4f46e5; margin-bottom: 14px; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+    th {{ background: #4f46e5; color: #fff; text-align: left; padding: 9px 14px; font-weight: 600; }}
+    td {{ padding: 8px 14px; border-bottom: 1px solid #e5e7eb; }}
+    tr:nth-child(even) td {{ background: #f3f4f6; }}
+    .report-body {{ padding: 36px 48px 48px; }}
+    .section-title {{
+      font-size: 18px; font-weight: 700; color: #4f46e5;
+      margin: 32px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #e0e7ff;
+    }}
+    .subsection-title {{ font-size: 15px; font-weight: 600; color: #6366f1; margin: 18px 0 8px; }}
+    .section-content {{ font-size: 14.5px; color: #374151; margin-bottom: 12px; }}
+    .report-footer {{
+      background: #1e1b4b; color: rgba(255,255,255,.6);
+      text-align: center; padding: 18px 40px; font-size: 12px;
+    }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="report-header">
+      <h1>ChaturVima Diagnostic Report</h1>
+      <p class="subtitle">Behavioural Stage Assessment</p>
+      <div class="meta-grid">
+        <div class="meta-box">
+          <div class="label">Employee ID</div>
+          <div class="value">{html_lib.escape(employee_id)}</div>
+        </div>
+        <div class="meta-box">
+          <div class="label">Dimension</div>
+          <div class="value">{html_lib.escape(dimension_label)}</div>
+        </div>
+        <div class="meta-box">
+          <div class="label">Dominant Stage</div>
+          <div class="value">{html_lib.escape(dominant_stage)}</div>
+        </div>
+        <div class="meta-box">
+          <div class="label">Dominant Sub-Stage</div>
+          <div class="value">{html_lib.escape(dominant_sub_stage)}</div>
+        </div>
+        <div class="meta-box">
+          <div class="label">Report Date</div>
+          <div class="value">{generated_date}</div>
+        </div>
+        <div class="meta-box">
+          <div class="label">Questionnaires</div>
+          <div class="value">{html_lib.escape(', '.join(questionnaires))}</div>
+        </div>
+      </div>
+    </div>
+    <div class="scores-section">
+      <h2>Stage Score Summary</h2>
+      <table>
+        <thead><tr><th>Stage</th><th>Score</th><th>Percentage</th></tr></thead>
+        <tbody>{stage_rows}</tbody>
+      </table>
+    </div>
+    <div class="report-body">
+      {report_body}
+    </div>
+    <div class="report-footer">
+      Confidential – ChaturVima Framework &nbsp;|&nbsp; Generated on {generated_date}
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+# ============================================================================
+# EMPLOYEE REPORT – API ENDPOINTS
+# ============================================================================
+
+@app.get(
+    "/debug-frappe/{employee_id}",
+    tags=["Employee Report"],
+    summary="🔍 Debug – preview Frappe data & dimension detection (no LLM call)",
+)
+async def debug_frappe(employee_id: str) -> Dict[str, Any]:
+    """
+    **Use this first when testing.**
+
+    Hits the Frappe API and shows you:
+    - Raw `questionnaires_considered` list
+    - Which dimension would be auto-detected from that list
+    - Dominant stage and sub-stage
+
+    Does **NOT** call the LLM or generate a report.
+    """
+    frappe_url = f"{Config.FRAPPE_BASE_URL}?employee={employee_id}"
+    auth_headers = _frappe_headers()
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(frappe_url, headers=auth_headers)
+            resp.raise_for_status()
+            frappe_data = resp.json()
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                502,
+                f"Frappe returned {exc.response.status_code}. "
+                f"If 403: check FRAPPE_API_KEY + FRAPPE_API_SECRET in .env. "
+                f"Response: {exc.response.text[:300]}"
+            )
+        except Exception as exc:
+            raise HTTPException(502, f"Cannot reach Frappe API: {exc}")
+
+    if "message" not in frappe_data:
+        raise HTTPException(502, f"Unexpected Frappe structure: {list(frappe_data.keys())}")
+
+    msg = frappe_data["message"]
+    questionnaires: List[str] = msg.get("questionnaires_considered", [])
+    from generate_groq import detect_dimension
+    dimension = detect_dimension(questionnaires)
+
+    return {
+        "employee": employee_id,
+        "questionnaires_considered": questionnaires,
+        "questionnaire_count": len(questionnaires),
+        "dimension_detected": dimension,
+        "dimension_rule": "1 questionnaire=1D, 2=2D, 3=3D, 4=4D",
+        "dominant_stage": msg.get("dominant_stage", "—"),
+        "dominant_sub_stage": msg.get("dominant_sub_stage", "—"),
+        "frappe_raw": frappe_data,
+    }
+
+
+@app.post(
+    "/generate-employee-report",
+    tags=["Employee Report"],
+    summary="⚡ Submit employee report job (async, uses worker queue)",
+)
+async def generate_employee_report(
+    payload: Dict[str, Any] = Body(
+        ...,
+        examples={
+            "basic": {
+                "summary": "Generate report (uses cache if exists)",
+                "value": {"employee": "HR-EMP-00031"},
+            },
+            "force": {
+                "summary": "Force regeneration (ignore cache)",
+                "value": {"employee": "HR-EMP-00031", "force_regenerate": True},
+            },
+        },
+    )
+) -> Dict[str, Any]:
+    """
+    **Main endpoint – called by the frontend when the user clicks "Generate Report".**
+
+    Internally submits a job to the **existing worker queue** so it respects
+    all concurrency limits and rate limiting already in place.
+
+    ### Request body
+    ```json
+    { "employee": "HR-EMP-00031" }                      // serves cache if present
+    { "employee": "HR-EMP-00031", "force_regenerate": true }  // always regenerates
+    ```
+
+    ### Response
+    Returns a `job_id`. Poll `GET /status/{job_id}` to check progress,
+    then call `GET /employee-report/{employee_id}` to get the cached HTML.
+
+    ### Dimension auto-detection (no `dimension` field needed)
+    ```
+    questionnaires_considered length → dimension
+    1 item   → 1D
+    2 items  → 2D
+    3 items  → 3D
+    4 items  → 4D
+    ```
+    """
+    employee_id = str(payload.get("employee", "")).strip()
+    if not employee_id:
+        raise HTTPException(400, "'employee' field is required.")
+
+    force_regenerate = bool(payload.get("force_regenerate", False))
+
+    # Serve from cache immediately – no LLM call, no queue
+    if not force_regenerate:
+        os.makedirs(Config.HTML_DATA_DIR, exist_ok=True)
+        cache_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.html")
+        if os.path.exists(cache_path):
+            print(f"📄 Cache hit – returning immediately for {employee_id}")
+            return {
+                "job_id": None,
+                "status": "cached",
+                "employee": employee_id,
+                "message": "Cached report available. Fetch it with GET /employee-report/{employee_id}",
+                "report_url": f"/employee-report/{employee_id}",
+            }
+
+    # Submit to worker queue
+    job_id = await report_queue.add_job(
+        payload={"employee": employee_id},
+        employee_report=True,
+    )
+
+    return {
+        "job_id": job_id,
+        "status": "submitted",
+        "employee": employee_id,
+        "message": (
+            f"Report generation queued. "
+            f"Poll GET /status/{job_id} until status=completed, "
+            f"then fetch HTML from GET /employee-report/{employee_id}"
+        ),
+        "poll_url": f"/status/{job_id}",
+        "report_url": f"/employee-report/{employee_id}",
+    }
+
+
+@app.get(
+    "/employee-report/{employee_id}",
+    tags=["Employee Report"],
+    summary="📄 Get the cached HTML report for an employee",
+    response_class=HTMLResponse,
+)
+async def get_employee_report(employee_id: str) -> HTMLResponse:
+    """
+    Returns the saved HTML report for the given employee.
+
+    The HTML is stored at `html_data/{employee_id}.html` on the server.
+    Call `POST /generate-employee-report` first if the report doesn't exist yet.
+    """
+    cache_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.html")
+    if not os.path.exists(cache_path):
+        raise HTTPException(
+            404,
+            f"No report found for '{employee_id}'. "
+            f"Call POST /generate-employee-report to create one.",
+        )
+    with open(cache_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
+@app.get(
+    "/employee-report/{employee_id}/exists",
+    tags=["Employee Report"],
+    summary="✅ Check if a cached report exists for an employee",
+)
+async def employee_report_exists(employee_id: str) -> Dict[str, Any]:
+    """
+    Lightweight check the frontend can use to decide whether to show
+    **"View Report"** or **"Generate Report"** button.
+    """
+    cache_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.html")
+    exists = os.path.exists(cache_path)
+    return {
+        "employee": employee_id,
+        "report_exists": exists,
+        "cached_at": (
+            datetime.fromtimestamp(os.path.getmtime(cache_path)).isoformat()
+            if exists else None
+        ),
+        "fetch_url": f"/employee-report/{employee_id}" if exists else None,
     }
 
 

@@ -69,7 +69,7 @@
 
         .employee-info {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 15px;
             margin-top: 20px;
         }
@@ -125,15 +125,6 @@
             text-align: justify;
             margin-bottom: 15px;
             line-height: 1.8;
-        }
-
-        .section-content ul, .section-content ol {
-            margin-left: 25px;
-            margin-top: 10px;
-        }
-
-        .section-content li {
-            margin-bottom: 8px;
         }
 
         /* Stage Badge */
@@ -253,25 +244,27 @@
 
         .action-phase h4 {
             color: #667eea;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
             font-size: 16px;
-            font-weight: 700;
         }
 
         .action-item {
             margin: 15px 0;
+            padding-left: 20px;
         }
 
         .action-item strong {
             color: #764ba2;
-            display: block;
-            margin-bottom: 5px;
         }
 
-        .action-item p {
+        .action-steps {
+            margin-left: 20px;
+            margin-top: 8px;
+        }
+
+        .action-steps li {
+            margin-bottom: 6px;
             font-size: 13px;
-            line-height: 1.6;
-            margin-left: 0;
         }
 
         /* Indicators List */
@@ -282,14 +275,9 @@
             margin: 15px 0;
         }
 
-        .indicators-list ul {
-            list-style: none;
-            padding: 0;
-        }
-
         .indicators-list li {
-            margin-bottom: 12px;
-            padding-left: 20px;
+            margin-bottom: 10px;
+            padding-left: 10px;
             position: relative;
             line-height: 1.6;
         }
@@ -298,36 +286,18 @@
             content: "▸";
             color: #667eea;
             position: absolute;
-            left: 0;
+            left: -10px;
             font-weight: bold;
-            font-size: 16px;
         }
 
-        /* Scope Box */
-        .scope-box {
-            background: #f0f4ff;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 15px 0;
-            border-left: 4px solid #667eea;
+        /* Drivers/Stressors Lists */
+        .drivers-stressors ul {
+            margin-left: 20px;
         }
 
-        .scope-box p {
+        .drivers-stressors li {
             margin-bottom: 10px;
-        }
-
-        /* Highlight Box */
-        .highlight-box {
-            background: linear-gradient(135deg, #fff5e6 0%, #ffe4cc 100%);
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 5px solid #ff9800;
-        }
-
-        .highlight-box p {
-            font-style: italic;
-            color: #555;
+            line-height: 1.6;
         }
 
         /* Footer */
@@ -399,7 +369,7 @@
                 <img src="./chatur logo.png" alt="ChaturVima Logo">
             </div>
             <h1>Employee Personal Insights</h1>
-            <div class="subtitle">ChaturVima Growth Report for Vishal Sahane, Software Engineer</div>
+            <div class="subtitle">ChaturVima 1D Individual Diagnostic Report</div>
             
             <div class="employee-info">
                 <div class="info-box">
@@ -407,8 +377,12 @@
                     <div class="value">Vishal Sahane</div>
                 </div>
                 <div class="info-box">
-                    <label>Role</label>
+                    <label>Designation</label>
                     <div class="value">Software Engineer</div>
+                </div>
+                <div class="info-box">
+                    <label>Report Type</label>
+                    <div class="value">Growth Report</div>
                 </div>
             </div>
         </div>
@@ -419,7 +393,7 @@
             <div class="section">
                 <h2 class="section-title">1. Purpose of the Assessment</h2>
                 <p class="section-content">
-                    This assessment has been conducted to provide you, Vishal, with a deep and structured understanding of your current behavioral and emotional patterns within your professional role. The goal is not to judge or label, but to offer a clear mirror reflecting how you operate, react, and engage with your work environment. By mapping your tendencies onto the proven ChaturVima framework, this report aims to unlock self-awareness, highlight your inherent strengths, and illuminate pathways for intentional, sustainable growth. Think of this as a personalized roadmap for professional development, designed to help you navigate challenges with greater clarity and leverage your natural capabilities to their fullest potential, ultimately contributing to both your personal satisfaction and organizational success.
+                    This ChaturVima Growth Report has been conducted to provide you, Vishal, with a deep, personalized understanding of your current behavioral and emotional patterns within your professional role. The purpose is not to judge or label, but to offer a clear mirror reflecting how you operate, think, and feel at work. By identifying your dominant behavioral stage, this assessment aims to unlock self-awareness, highlight your inherent strengths, and illuminate potential blind spots. The ultimate goal is to equip you with actionable insights that support your personal development, enhance your job satisfaction, and guide you toward more effective and fulfilling ways of working. Think of this as a personalized roadmap for your professional growth, built from your own behavioral data.
                 </p>
             </div>
 
@@ -427,20 +401,42 @@
             <div class="section">
                 <h2 class="section-title">2. Dimension Overview & Scope</h2>
                 <p class="section-content">
-                    This is a <strong>1D Individual Employee Diagnostic Report</strong>. It focuses exclusively on you as an individual within the organizational context. The dimension analyzes your internal drivers, emotional stage, behavioral patterns, stress responses, and growth potential. It examines how you show up, perform, and evolve in your role.
+                    This report focuses on the <strong>1D (Individual) Dimension</strong> of the ChaturVima framework. This dimension zooms in on you as an individual contributor—your internal drivers, your emotional responses to work situations, your consistent behavioral patterns, and your personal approach to challenges and stability. It examines how you manage your tasks, your mindset towards problems and successes, and your intrinsic motivations.
                 </p>
                 
-                <div class="scope-box">
-                    <p><strong>Scope:</strong> This report covers your personal work style, motivations, and current developmental stage. It is based on observed behavioral patterns and does not diagnose personality, mental health, or innate character traits.</p>
-                    <p><strong>Limitations:</strong> This is a snapshot of your current state within a dynamic framework. It does not predict future behavior with certainty but identifies probable trajectories based on present patterns. It is a tool for development, not a fixed evaluation.</p>
-                </div>
+                <h3 class="subsection-title">What this report covers:</h3>
+                <ul class="section-content">
+                    <li>Your primary emotional and behavioral "stage" at work</li>
+                    <li>Your psychological tendencies and internal drivers</li>
+                    <li>Your personal strengths and areas for development</li>
+                </ul>
+
+                <h3 class="subsection-title">What this report does NOT cover:</h3>
+                <ul class="section-content">
+                    <li>Your technical skills or job-specific competencies</li>
+                    <li>Your performance ratings or managerial feedback (unless inferred from behavioral patterns)</li>
+                    <li>Your relationships with specific colleagues or team dynamics (those are covered in 2D/3D dimensions)</li>
+                    <li>Any form of clinical or mental health diagnosis</li>
+                </ul>
+                <p class="section-content">
+                    This is a developmental tool focused solely on your behavioral patterns to foster self-awareness and growth.
+                </p>
             </div>
 
             <!-- Section 3: Inputs & Assessment -->
             <div class="section">
                 <h2 class="section-title">3. Inputs & Assessment Instruments</h2>
                 <p class="section-content">
-                    This diagnostic report is generated using the proprietary <strong>ChaturVima behavioral analytics framework</strong>. Your profile has been constructed through a multi-faceted assessment that analyzes behavioral indicators across four core stages and their substages. The analysis synthesizes quantitative scoring of your dominant tendencies to create this comprehensive qualitative interpretation. The data reflects patterns in how you approach work, solve problems, handle stability and change, and contribute to your ecosystem.
+                    This diagnostic report is generated using the proprietary <strong>ChaturVima behavioral analytics framework</strong>. The analysis is based on:
+                </p>
+                <ol class="section-content" style="margin-left: 20px;">
+                    <li><strong>Behavioral Data Inputs:</strong> Your responses and observable behavioral indicators mapped against the ChaturVima stage model.</li>
+                    <li><strong>Quantitative Scoring Algorithm:</strong> Your behaviors were scored across the four core stages (Honeymoon, Self-Introspection, Soul-Searching, Steady-State) and their sub-stages to identify dominant patterns.</li>
+                    <li><strong>Stage Selection Logic:</strong> The framework identified your dominant stage by finding the highest "own-stage" score, and your dominant sub-stage by finding the highest "own-substage" score within that dominant stage.</li>
+                    <li><strong>Authoritative Reference Material:</strong> All stage descriptions and interpretations are drawn directly from the established ChaturVima behavioral definitions to ensure accuracy and consistency.</li>
+                </ol>
+                <p class="section-content">
+                    This combination creates a data-driven, objective profile of your current work persona.
                 </p>
             </div>
 
@@ -448,11 +444,11 @@
             <div class="section">
                 <h2 class="section-title">4. Employee Profile Summary</h2>
                 <p class="section-content">
-                    <strong>Employee:</strong> Vishal Sahane<br>
+                    <strong>Name:</strong> Vishal Sahane<br>
                     <strong>Role:</strong> Software Engineer
                 </p>
                 <p class="section-content">
-                    <strong>Context:</strong> This report interprets Vishal's behavioral patterns as a software professional. The role typically demands a balance of deep technical focus, collaborative problem-solving, adaptability to changing requirements, and consistent, reliable output. The insights provided connect his emotional and behavioral stage to the demands and opportunities inherent in such a position.
+                    As a Software Engineer, your role inherently involves a blend of focused individual work (coding, problem-solving, designing systems) and collaborative integration within larger projects. The context of your work demands reliability, adaptability to new technologies, consistent output, and the ability to navigate both routine tasks and complex, novel challenges. This report interprets your behavioral patterns within this specific professional context, providing insights relevant to the demands and opportunities of your position.
                 </p>
             </div>
 
@@ -460,68 +456,43 @@
             <div class="section">
                 <h2 class="section-title">5. Emotional Stage Interpretation</h2>
                 
-                <h3 class="subsection-title">To Your Team (2D):</h3>
+                <h3 class="subsection-title">5.1. Definition of Dominant Stage and Predominant Sub-stage</h3>
                 <p class="section-content">
-                    You become the <strong>"Reliability Hub."</strong> Your stability reduces team anxiety and creates a predictable velocity. Your adaptive nature means you help the team pivot effectively without chaos. You model how to handle pressure with calm, making the entire team more resilient. Your process-oriented mind can help streamline team workflows, increasing collective efficiency.
-                </p>
-
-                <h3 class="subsection-title">To Your Organization (3D):</h3>
-                <p class="section-content">
-                    You embody <strong>"Sustainable Execution."</strong> Organizations need people who can reliably deliver on today's promises while competently navigating toward tomorrow's needs. You reduce operational risk through your predictability and mitigate the risks of change through your integrated adaptation. By mastering Dynamic Balance, you contribute directly to organizational agility and resilience—the ability to withstand shocks and seize opportunities without falling apart. You are a living example of the mature, valuable professional who turns strategy into consistent, adaptable reality.
-                </p>
-
-                <div class="highlight-box">
-                    <p>
-                        <strong>Final Summary:</strong> Vishal, you are operating from a position of significant strength. Your Steady-State with Dynamic Balance is a coveted and highly effective stage. This report is your toolkit to protect that strength, guard against its potential downsides, and consciously use it as a launchpad for greater impact. Your path forward is not about reinvention, but about mindful evolution—protecting your core stability while deliberately exercising your adaptive muscles. Continue to build on your reliable foundation, and remember that the most resilient structures are those designed to flex.
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="report-footer">
-            <p class="footer-note">
-                This report is confidential and intended for the developmental use of Vishal Sahane and authorized organizational development professionals within the context of the ChaturVima framework.
-            </p>
-        </div>
-    </div>
-</body>
-</html>="subsection-title">5.1. Definition of Dominant Stage and Predominant Substage</h3>
-                <p class="section-content">
-                    <strong>Dominant Stage:</strong> <span class="stage-badge">Steady-State Stage</span>
+                    Based on the assessment data, your dominant behavioral stage is the <span class="stage-badge">Steady-State Stage</span>
                 </p>
                 <p class="section-content">
-                    As defined in the reference material, the Steady-State Stage is where "individuals operate consistently and reliably. Goals are met as planned, and commitments or promises are fulfilled. Their behavior reflects stability, efficiency, and a balanced approach to work, maintaining steady performance without major fluctuations."
+                    <strong>Steady-State Stage (Definition):</strong> At this stage, individuals operate consistently and reliably. Goals are met as planned, and commitments or promises are fulfilled. Their behavior reflects stability, efficiency, and a balanced approach to work, maintaining steady performance without major fluctuations.
                 </p>
                 <p class="section-content">
-                    <strong>Predominant Substage:</strong> <span class="substage-badge">Dynamic Balance</span>
+                    Within the Steady-State Stage, your predominant sub-stage is <span class="substage-badge">Dynamic Balance</span>
                 </p>
                 <p class="section-content">
-                    Within the Steady-State Stage, your strongest expression is <strong>Dynamic Balance</strong>. The framework defines this as the point where "the organization achieves stability while staying adaptable to change. Continuous improvement and responsiveness keep operations resilient and ready for the future." For an individual, this means you have established a reliable way of working but remain open and capable of adjusting when needed.
+                    <strong>Dynamic Balance (Definition):</strong> The individual achieves stability while staying adaptable to change. Continuous improvement and responsiveness keep operations resilient and ready for the future. It is characterized by a mature equilibrium where core responsibilities are handled reliably, yet there is a conscious openness to refining processes and adapting to new demands.
                 </p>
 
                 <h3 class="subsection-title">5.2. Interpretation</h3>
                 <p class="section-content">
-                    Vishal, your assessment strongly indicates you are in a <strong>Steady-State Stage</strong>, primarily expressing <strong>Dynamic Balance</strong>. This is a mature and effective position. You are not someone thrown off course by every new bug or requirement change, nor are you rigidly stuck in old ways. You have built a foundation of reliable performance—you deliver what you promise, your work is consistent, and you have effective processes. Crucially, within this stability, you retain an ability to adapt. You can incorporate new technologies, adjust to shifting project priorities, and improve your methods without losing your core effectiveness. You are the embodiment of a resilient professional: stable but not static, predictable but not inflexible.
+                    Vishal, your profile indicates you are in a strong, effective, and mature phase of your professional life. You are not just meeting expectations reliably (the core of Steady-State), but you are operating at its most advanced level: <strong>Dynamic Balance</strong>. This suggests you have successfully integrated stability with adaptability. You likely have established, effective routines for your core software engineering duties, ensuring predictable, high-quality output. Crucially, you don't see this stability as an endpoint. Your patterns show an active engagement with "continuous improvement and responsiveness." You are probably the engineer who reliably delivers their sprint commitments while also being the one who thoughtfully suggests a better library, refactors a module for future maintainability, or calmly adapts when project requirements shift. You have moved beyond just "doing your job" to "evolving your job" in a sustainable way.
                 </p>
 
-                <h3 class="subsection-title">5.3. Behavioral Indicators</h3>
+                <h3 class="subsection-title">5.3. Behavioural Indicators</h3>
                 <p class="section-content">
-                    Based on the reference material for Steady-State and Dynamic Balance, your behavioral patterns likely include:
+                    The following indicators from the Steady-State/Dynamic Balance stage are likely manifesting in your work:
                 </p>
                 <div class="indicators-list">
                     <ul>
-                        <li><strong>Consistent Goal Fulfillment:</strong> You meet deadlines and deliver on commitments as planned, creating trust and predictability.</li>
-                        <li><strong>Efficient Operation:</strong> You have systems and processes that allow you to work effectively without constant reinvention.</li>
-                        <li><strong>Balanced Response to Change:</strong> When faced with new requirements or challenges, you assess them calmly and integrate necessary adjustments without panic or major disruption to your workflow.</li>
-                        <li><strong>Continuous Improvement Mindset:</strong> You likely look for small, incremental ways to optimize your code, processes, or collaboration, making steady progress over time.</li>
-                        <li><strong>Resilience:</strong> Your combined stability and adaptability make you resilient to the normal ups and downs of project work.</li>
+                        <li><strong>Reliable Delivery:</strong> You consistently meet deadlines and fulfill technical commitments, making you a dependable member of the team.</li>
+                        <li><strong>Process-Oriented:</strong> You have developed and follow effective personal workflows for coding, testing, and debugging.</li>
+                        <li><strong>Balanced Response to Change:</strong> You do not resist necessary changes (new tools, frameworks, requirements) but evaluate and integrate them without disrupting your core stability.</li>
+                        <li><strong>Proactive Improvement:</strong> You likely engage in activities like code reviews not just as a task, but as an opportunity to improve collective code quality. You may refactor code or update documentation without being explicitly asked.</li>
+                        <li><strong>Calm and Composed Demeanor:</strong> Your work approach is likely measured and persistent, avoiding extreme peaks of frantic effort or valleys of disengagement.</li>
+                        <li><strong>Forward-Looking Mindset:</strong> You consider the long-term health and scalability of the systems you work on, not just the immediate task.</li>
                     </ul>
                 </div>
 
                 <h3 class="subsection-title">5.4. Stage Level Score Summary and Interpretation</h3>
                 <p class="section-content">
-                    The table below summarizes your primary scores within each behavioral stage. The "Own-Stage Score" represents the strength of your expression of that particular stage's behaviors.
+                    The table below summarizes your primary scores within each behavioral stage. The "Own-Score" represents the clear, distinct behavioral signals for that stage.
                 </p>
                 <table class="score-table">
                     <thead>
@@ -535,27 +506,27 @@
                         <tr>
                             <td><strong>Steady-State</strong></td>
                             <td><span class="score-value">34.8</span></td>
-                            <td>This is your dominant zone. You operate most frequently from a place of stability, reliability, and balanced execution.</td>
+                            <td>This is your dominant zone. You exhibit strong, clear patterns of reliability, consistency, and balanced performance. This is your "home base" of operation.</td>
                         </tr>
                         <tr>
                             <td>Self-Introspection</td>
                             <td><span class="score-value">34.2</span></td>
-                            <td>A strong secondary presence. You actively analyze situations and your role in them, showing good self-awareness.</td>
+                            <td>A significant, nearly equal score. This indicates you frequently engage in analyzing situations and problems, showing a thoughtful, diagnostic mindset.</td>
                         </tr>
                         <tr>
                             <td>Soul-Searching</td>
                             <td><span class="score-value">33.0</span></td>
-                            <td>A significant presence. You are willing to put in effort, adapt, and transform your approach when needed.</td>
+                            <td>Also a strong score. This reflects a capacity for deep effort and openness to change when faced with significant challenges, showing resilience.</td>
                         </tr>
                         <tr>
                             <td>Honeymoon</td>
                             <td><span class="score-value">32.4</span></td>
-                            <td>Present, but less dominant. You have confidence, but it is tempered by experience and reality checks.</td>
+                            <td>A healthy score, indicating you retain positive energy and confidence, but it is tempered and integrated, not dominant.</td>
                         </tr>
                     </tbody>
                 </table>
                 <p class="section-content">
-                    <strong>Interpretation:</strong> Your scores are notably close across all four stages, with Steady-State having a slight edge. This is a powerful profile. It suggests you are not narrowly defined by one mode of operation. You have access to the confident energy of Honeymoon, the analytical depth of Self-Introspection, the adaptive diligence of Soul-Searching, and the reliable execution of Steady-State. Your challenge and opportunity lie in consciously choosing the right mode for the right situation, with Steady-State's Dynamic Balance serving as your "home base."
+                    <strong>Interpretation:</strong> Your scores across all four stages are remarkably close and all relatively high. This is a key finding. It does not mean you are constantly shifting between stages. Instead, it suggests you possess a <strong>well-rounded behavioral repertoire</strong>. You can access the optimistic energy of Honeymoon, the analytical mind of Self-Introspection, the gritty adaptability of Soul-Searching, and the reliable core of Steady-State as the situation demands. Your dominant Steady-State/Dynamic Balance profile is the stable platform from which you effectively deploy these other capacities. You are not a one-dimensional actor; you are a versatile professional whose default mode is stable, balanced effectiveness.
                 </p>
             </div>
 
@@ -563,7 +534,10 @@
             <div class="section">
                 <h2 class="section-title">6. Psychological Profile & Tendencies</h2>
                 <p class="section-content">
-                    Your psychological profile is that of a <strong>Stable Adapter</strong>. Your core tendency is to seek and create order, predictability, and quality in your work. You derive satisfaction from building robust systems and seeing them function well. Psychologically, you are likely averse to unnecessary chaos but are not threatened by necessary change. You process change through a lens of integration—"how does this fit into or improve the existing structure?" rather than "how do I replace everything?" You tend to be pragmatic, valuing proven methods but remaining intellectually curious about better ones. Your close scores across stages indicate a well-rounded psychological flexibility; you can be energetic, reflective, diligent, or calm as the situation demands, though your default and most comfortable state is one of calm, balanced execution.
+                    Your psychological profile is that of a <strong>Versatile Stabilizer</strong>. Your core tendency is to seek and create stability (Steady-State), but your psyche is not rigid. You have a strong internal drive for understanding (high Self-Introspection score), which means you are naturally analytical and curious about the "why" behind problems and systems. You are not content with surface-level fixes. Coupled with your Soul-Searching capacity, this means you are willing to dig deep and expend significant effort when you believe it's for a necessary change or a fundamental solution.
+                </p>
+                <p class="section-content">
+                    You likely have a balanced internal dialogue. One part of you focuses on maintaining predictability and quality in your output (the Stabilizer). Another part is constantly scanning for learning opportunities and incremental improvements (the Versatile improver). You may experience mild internal tension between the desire for a predictable, efficient workflow and the urge to innovate or overhaul something, but your Dynamic Balance sub-stage suggests you manage this tension productively, choosing the right moments for each.
                 </p>
             </div>
 
@@ -571,21 +545,23 @@
             <div class="section">
                 <h2 class="section-title">7. Internal Drivers & Stressors</h2>
                 
-                <h3 class="subsection-title">Internal Drivers (What Motivates You):</h3>
-                <ul class="section-content">
-                    <li><strong>Mastery & Efficiency:</strong> You are driven by the desire to do things well and to do them in a smart, sustainable way.</li>
-                    <li><strong>Reliability:</strong> You have a strong internal need to be seen as dependable and to deliver on your word.</li>
-                    <li><strong>Controlled Growth:</strong> You are motivated by incremental improvement and learning that enhances your stable foundation, not by disruptive, risky leaps.</li>
-                    <li><strong>Purposeful Contribution:</strong> You find motivation in work that clearly aligns with team and organizational goals, where your consistent output has a visible impact.</li>
-                </ul>
+                <div class="drivers-stressors">
+                    <h3 class="subsection-title">Internal Drivers (What Motivates You):</h3>
+                    <ol>
+                        <li><strong>Mastery and Reliability:</strong> You are driven by the deep satisfaction of doing something well, consistently, and dependably. Seeing a system run smoothly due to your work is a key motivator.</li>
+                        <li><strong>Continuous Learning and Improvement:</strong> You are motivated by the process of making things better—more efficient, more elegant, more maintainable. Learning a new technology that solves an old problem is likely energizing.</li>
+                        <li><strong>Autonomy within a Framework:</strong> You thrive when given clear objectives and the trust to determine the best, most stable way to achieve them. You value ownership over your code and processes.</li>
+                        <li><strong>Meaningful Contribution:</strong> You are driven by seeing your reliable work integrate seamlessly into the larger project's success, providing tangible value.</li>
+                    </ol>
 
-                <h3 class="subsection-title">Key Stressors (Sources of Tension):</h3>
-                <ul class="section-content">
-                    <li><strong>Sudden, Unplanned Disruption:</strong> While you can adapt, radical, last-minute changes that dismantle your planned work without clear reason are a primary stressor.</li>
-                    <li><strong>Ambiguity in Priority:</strong> Not knowing what's most important can paralyze your efficient system, leading to stress as you try to maintain stability without clear direction.</li>
-                    <li><strong>Pressure to Innovate Rapidly at the Cost of Stability:</strong> Being pushed to constantly chase "new and shiny" things without time to properly integrate them into a stable workflow can feel chaotic and unsustainable.</li>
-                    <li><strong>Complacency in Yourself or Others:</strong> You may feel stress if you sense yourself or the team slipping into a rut where improvement stops, as this threatens the "Dynamic" part of your balance.</li>
-                </ul>
+                    <h3 class="subsection-title">Internal Stressors (Sources of Tension):</h3>
+                    <ol>
+                        <li><strong>Chaotic or Constantly Shifting Priorities:</strong> While adaptable, your Steady-State core is stressed by environments that are perpetually unstable or where goals change dramatically before they can be reliably executed.</li>
+                        <li><strong>Perceived Inefficiency or Technical Debt:</strong> Your drive for improvement can cause frustration when you must work with or maintain systems that are chaotic, poorly designed, or resistant to refactoring.</li>
+                        <li><strong>Lack of Recognition for Sustained Effort:</strong> Because your work is consistently good, it may become "invisible." You might feel stress if the value of your reliability and ongoing improvements is not acknowledged.</li>
+                        <li><strong>Being Pushed into Premature "Honeymoon" Exuberance:</strong> You may feel pressured to display unrealistic optimism or to champion every new, shiny tool, which conflicts with your balanced, evaluative approach.</li>
+                    </ol>
+                </div>
             </div>
 
             <!-- Section 8: SWOT Analysis -->
@@ -596,40 +572,41 @@
                     <div class="swot-box strengths">
                         <h3>💪 Strengths (What You Do Well)</h3>
                         <ul>
-                            <li><strong>Operational Rock:</strong> You provide stability and reliability, which is the bedrock of any high-performing team.</li>
-                            <li><strong>Adaptive Executor:</strong> You can pivot and incorporate changes without melting down, making you invaluable in dynamic projects.</li>
-                            <li><strong>Process-Oriented:</strong> You naturally create and follow structures that improve predictability and quality.</li>
-                            <li><strong>Collaborative Stabilizer:</strong> Your steady demeanor and consistent output help coordinate team efforts and build trust.</li>
+                            <li>Rock-Solid Dependability: You are a cornerstone of reliability. Teams and managers can count on you to deliver quality work predictably.</li>
+                            <li>Adaptive Stability: You uniquely combine consistency with flexibility. You can absorb change without breaking your productive rhythm.</li>
+                            <li>Analytical Problem-Solving: You don't just fix bugs; you seek to understand their root cause, preventing future issues.</li>
+                            <li>Continuous Improvement Mindset: You actively look for ways to optimize your work and your environment, contributing to long-term health.</li>
+                            <li>Emotional Resilience: Your balanced stage suggests you manage work pressures and setbacks with composure, avoiding burnout cycles.</li>
                         </ul>
                     </div>
 
                     <div class="swot-box weaknesses">
-                        <h3>⚠️ Weaknesses (Areas for Development / Blind Spots)</h3>
+                        <h3>⚠️ Weaknesses (Blind Spots for Development)</h3>
                         <ul>
-                            <li><strong>Risk of Subtle Complacency:</strong> The comfort of stability can, over time, lead to a reluctance to initiate change or challenge the status quo when it's actually needed.</li>
-                            <li><strong>Prioritization Under Pressure:</strong> When multiple urgent changes hit simultaneously, your system for deciding what to adapt to first can become strained.</li>
-                            <li><strong>Innovation Speed:</strong> Your methodical approach to change may be perceived as slow when compared to more disruptive, "fail-fast" styles of innovation.</li>
-                            <li><strong>Improvement Delay:</strong> A focus on maintaining current stability can sometimes cause you to delay starting new improvement initiatives.</li>
+                            <li>Risk of Invisible Contribution: Your very reliability can sometimes make your excellent work seem routine, potentially affecting visibility for growth opportunities.</li>
+                            <li>Potential for Incrementalism: Your focus on stable improvement might, at times, make you cautious about advocating for more radical, disruptive innovations that could be beneficial.</li>
+                            <li>Over-Reliance on Internal Processes: Your effective personal systems are a strength, but could become a blind spot if they make you less open to radically different collaborative workflows suggested by others.</li>
+                            <li>Difficulty Disengaging from "Improvement Mode": Your driver to make things better might occasionally lead to over-investing time in perfecting a non-critical system when "good enough" would suffice.</li>
                         </ul>
                     </div>
 
                     <div class="swot-box opportunities">
                         <h3>🚀 Opportunities (Growth Potential)</h3>
                         <ul>
-                            <li><strong>Become an Agility Anchor:</strong> Leverage your stability to become the person who helps the team adapt successfully—providing the calm center during storms of change.</li>
-                            <li><strong>Scale Excellence:</strong> Use your process skills to document and teach your effective methods, scaling your positive impact across the team.</li>
-                            <li><strong>Lead by Example:</strong> Demonstrate how to be both reliable and flexible, setting a powerful example for sustainable high performance.</li>
-                            <li><strong>Proactive Optimization:</strong> Use your stable periods to proactively seek out and implement efficiency gains (e.g., automation, code refactoring).</li>
+                            <li>Mentorship and Knowledge Sharing: Your stable, analytical approach makes you an ideal mentor for junior engineers. Teaching can solidify your own knowledge and build leadership skills.</li>
+                            <li>Architectural Influence: Your balance of deep understanding and practical reliability positions you well to contribute to higher-level design discussions and system architecture.</li>
+                            <li>Process Leadership: You could take the lead in establishing or refining team-wide development practices, CI/CD pipelines, or code review standards, leveraging your improvement mindset.</li>
+                            <li>Strategic Technical Planning: Your forward-looking tendency can be channeled into helping plan technical roadmaps and tech debt reduction strategies.</li>
                         </ul>
                     </div>
 
                     <div class="swot-box threats">
                         <h3>⚡ Threats (Risks to Performance & Wellbeing)</h3>
                         <ul>
-                            <li><strong>Disruption Shock:</strong> A major, unexpected disruption could overwhelm your adaptive capacity if contingency planning is not in place.</li>
-                            <li><strong>Burnout from Over-Adaptation:</strong> Being forced to adapt too frequently without periods of consolidation can drain your energy and lead to burnout.</li>
-                            <li><strong>Competitive Obsolescence:</strong> If the pace of external change (e.g., new tech) vastly outstrips your integrated adaptation speed, your skills may risk becoming outdated.</li>
-                            <li><strong>Trust Erosion:</strong> If a transition or change is mismanaged and leads to a drop in your usually reliable output, it could temporarily erode the strong trust you've built.</li>
+                            <li>Stagnation in Comfort Zone: The comfort of the Steady-State could, over a very long period, reduce your appetite for the discomfort of learning brand-new, paradigm-shifting skills.</li>
+                            <li>Burnout from Unsustainable "Balance": If organizational demands become too chaotic, the energy required to maintain your dynamic balance could lead to fatigue.</li>
+                            <li>Being Taken for Granted: If your consistent high performance is not acknowledged, it may lead to diminished motivation or feeling undervalued.</li>
+                            <li>Misalignment with Hyper-Growth/Hype-Driven Cultures: In environments that exclusively reward loud, rapid experimentation over sustained, reliable execution, your style might be undervalued.</li>
                         </ul>
                     </div>
                 </div>
@@ -639,55 +616,46 @@
             <div class="section">
                 <h2 class="section-title">9. Action Navigator – Personal Improvement Plan</h2>
                 <p class="section-content">
-                    This plan is designed to reinforce your Dynamic Balance and ensure your stability becomes a platform for proactive growth, not passive comfort.
+                    This plan is designed to leverage your Dynamic Balance for sustained growth. We'll proceed in phases.
                 </p>
 
                 <div class="action-phase">
-                    <h4>Phase 1: Foundation Consolidation (Next 4 Weeks)</h4>
+                    <h4>Phase 1: Consolidate and Document (Next 1-2 Months)</h4>
                     <div class="action-item">
-                        <strong>Action 1: Weekly Stability Scan</strong>
-                        <p>Every Monday, spend 15 minutes answering: "What in my work is currently stable and reliable? What is changing or uncertain? What needs my focused attention this week to maintain balance?"</p>
+                        <strong>Action 1: Articulate Your Value</strong>
+                        <p class="section-content">Once per month, write a brief, factual summary of your key deliverables <em>and</em> one improvement you made (e.g., "Automated X process, saving Y hours per sprint"). This is not boasting; it's creating visibility for your balanced contribution.</p>
                     </div>
                     <div class="action-item">
-                        <strong>Action 2: Define Top 3 Priorities</strong>
-                        <p>Based on the scan, clearly define your top 3 priorities for the week. Write them down and share them with your manager or team for alignment.</p>
+                        <strong>Action 2: Map Your Systems</strong>
+                        <p class="section-content">Document your personal workflow for a common task (e.g., "My approach to tackling a new feature"). This clarifies your own process and creates a potential resource for others.</p>
                     </div>
-                    <div class="action-item">
-                        <strong>Action 3: Initiate One Micro-Improvement</strong>
-                        <p>Identify one small, repetitive task in your workflow. Spend 1-2 hours this month researching or building a small script/tool to automate or optimize it.</p>
-                    </div>
+                    <p class="section-content"><strong>Goal:</strong> To solidify self-awareness of your strengths and make your reliable contribution more visible.</p>
                 </div>
 
                 <div class="action-phase">
-                    <h4>Phase 2: Adaptive Strengthening (Weeks 5-8)</h4>
+                    <h4>Phase 2: Strategically Extend (Months 3-6)</h4>
                     <div class="action-item">
-                        <strong>Action 4: Conduct a "Pre-Mortem"</strong>
-                        <p>For a planned upcoming change (e.g., a library update, a new process), hold a 30-minute session with yourself or a colleague. Ask: "What could go wrong as we implement this? How can we adapt our plan now to prevent it?"</p>
+                        <strong>Action 1: Volunteer for a "Bridge" Role</strong>
+                        <p class="section-content">Proactively offer to mentor one new team member or volunteer to lead the integration of a <em>moderate</em> new tool that clearly solves an existing team pain point. This uses your stability to guide change.</p>
                     </div>
                     <div class="action-item">
-                        <strong>Action 5: Create a Contingency Checklist</strong>
-                        <p>Draft a simple one-page list titled "If X happens, then I will first do Y." Focus on 2-3 most likely disruptive scenarios in your work.</p>
+                        <strong>Action 2: Initiate One Improvement Dialogue</strong>
+                        <p class="section-content">Identify one small, recurring team inefficiency. Research a solution and present a concise proposal (e.g., "Adopting tool Z could streamline our code reviews. Here's a 2-week trial plan"). This channels your improvement drive outwardly.</p>
                     </div>
-                    <div class="action-item">
-                        <strong>Action 6: Seek Feedback on Adaptability</strong>
-                        <p>Ask a trusted peer or manager: "In the last change we handled, what did I do that helped the adaptation go smoothly? What could I have done to make it even smoother?"</p>
-                    </div>
+                    <p class="section-content"><strong>Goal:</strong> To extend your influence from individual reliability to fostering reliability and improvement in your immediate environment.</p>
                 </div>
 
                 <div class="action-phase">
-                    <h4>Phase 3: Proactive Growth (Weeks 9-12)</h4>
+                    <h4>Phase 3: Elevate and Challenge (Months 6-12)</h4>
                     <div class="action-item">
-                        <strong>Action 7: Lead an Improvement Pilot</strong>
-                        <p>Propose and run a small, time-boxed (2-week) experiment to test a new tool, technique, or process that could benefit your team. Your goal is to learn, not necessarily to revolutionize.</p>
+                        <strong>Action 1: Seek a "Stretch Stability" Project</strong>
+                        <p class="section-content">Ask for involvement in a project that is technically challenging but has a clear goal, allowing you to apply deep learning (Soul-Searching) within a stable framework.</p>
                     </div>
                     <div class="action-item">
-                        <strong>Action 8: Mentor on Stability</strong>
-                        <p>Offer to pair with a newer or more volatile team member. Share one of your personal systems for staying organized and reliable. Teaching will solidify your own practice.</p>
+                        <strong>Action 2: Conduct a "Controlled Experiment"</strong>
+                        <p class="section-content">Dedicate a small, bounded amount of time (e.g., 10% over a month) to learning a technology or approach that is <em>outside</em> your current stack, not because you have to, but to challenge your own boundaries in a low-risk way.</p>
                     </div>
-                    <div class="action-item">
-                        <strong>Action 9: Strategic Learning</strong>
-                        <p>Dedicate 2 hours per month to learning a new technology or concept not because you need it next week, but because it aligns with where your field is going in the next 12-18 months. Integrate this learning into your long-term plan.</p>
-                    </div>
+                    <p class="section-content"><strong>Goal:</strong> To prevent complacency by intentionally injecting learning challenges that respect your need for a balanced approach.</p>
                 </div>
             </div>
 
@@ -695,8 +663,31 @@
             <div class="section">
                 <h2 class="section-title">10. Value Contribution to Higher Dimensions</h2>
                 <p class="section-content">
-                    Your personal growth in <strong>Dynamic Balance</strong> creates immense value for your team (2D) and organization (3D).
+                    Your growth as an individual in Dynamic Balance creates immense value for teams (2D) and the organization (3D).
                 </p>
-        
 
-                <h3 class
+                <h3 class="subsection-title">To Your Team (2D Impact):</h3>
+                <p class="section-content">
+                    You are the <strong>anchor</strong>. Your reliability reduces team anxiety about delivery risks. Your balanced adaptability makes you a calming force during changes, helping the team transition smoothly. Your improvement mindset raises the quality bar for everyone. By becoming a mentor, you directly multiply the team's capability.
+                </p>
+
+                <h3 class="subsection-title">To Your Organization (3D Impact):</h3>
+                <p class="section-content">
+                    Employees like you are the <strong>engine of sustainable execution</strong>. You translate strategic goals into reliable, operational reality. You reduce systemic risk through consistent performance and proactive maintenance of technical health. Your approach mitigates the "boom and bust" cycles of hype-driven development, ensuring long-term product stability and customer trust. As you grow into process leadership, you help build organizational resilience and a culture of continuous, measured improvement.
+                </p>
+
+                <p class="section-content" style="margin-top: 20px; font-style: italic;">
+                    Vishal, your profile is one of mature strength and quiet effectiveness. This report is an affirmation of the valuable professional you are and a map to guide your continued, balanced evolution. The goal is not to change who you are, but to help you deploy your versatile stability with even greater intention and impact.
+                </p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="report-footer">
+            <p class="footer-note">
+                This report is confidential and intended for the developmental use of Vishal Sahane and authorized organizational development professionals within the context of the ChaturVima framework.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
