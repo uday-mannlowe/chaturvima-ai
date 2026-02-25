@@ -1,4 +1,4 @@
-"""
+﻿"""
 Improved ChaturVima Report Generator API with Multi-Report Support
 """
 import asyncio
@@ -24,17 +24,22 @@ except Exception:
     HTML = None
 
 from generate_groq import (
-    generate_text_report, 
+    generate_text_report,
     generate_multi_reports,
     generate_structured_report,
     generate_multi_reports_structured,
     generate_structured_report_by_dimension,
+    # ✅ NEW: fast parallel JSON generation (one dedicated model per report type)
+    generate_multi_reports_json,
+    generate_report_as_json,
+    MODEL_BY_REPORT_TYPE_DEDICATED,
     resolve_input_data,
     normalize_dimension,
     map_frappe_to_nd,
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     REPORT_TYPE_MAP,
-    REPORT_TITLE_MAP
+    REPORT_TITLE_MAP,
+    detect_dimension,
 )
 
 # ============================================================================
@@ -276,30 +281,137 @@ class WorkerPool:
                         dimension = nd_data["dimension"]
                         print(f"📐 Worker {worker_id}: dimension detected = {dimension}")
 
-                        # Generate report payload via LLM. For 2D this returns
-                        # both reports in order: employee (1D) then boss (2D).
-                        reports_payload = await asyncio.wait_for(
-                            asyncio.to_thread(generate_multi_reports_structured, nd_data),
-                            timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
+                        # ── NEW FAST PATH ────────────────────────────────────────────────
+                        # generate_multi_reports_json fires ONE dedicated model
+                        # per report type ALL IN PARALLEL:
+                        #   1D → MODEL_1D
+                        #   2D → MODEL_1D + MODEL_2D  (simultaneously)
+                        #   3D → MODEL_1D + MODEL_2D + MODEL_3D  (simultaneously)
+                        #   4D → all 4 models at once
+                        # Each model produces a complete structured JSON report
+                        # in ONE call instead of 10-16 section calls.
+                        # Result shape: {"dimension": "2D", "reports": {"employee": {...}, "boss": {...}}}
+                        # ─────────────────────────────────────────────────────────────
+                        multi_json_result = await asyncio.wait_for(
+                            asyncio.to_thread(generate_multi_reports_json, nd_data),
+                            timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+                        )
+                        # Unwrap to the same shape the rest of the worker expects
+                        reports_payload = multi_json_result.get("reports", {})
+                        print(
+                            f"📦 Worker {worker_id}: received {len(reports_payload)} JSON report(s) — "
+                            + ", ".join(
+                                f"{rt} ({r.get('word_count', 0)} words, model={r.get('model_used', '?')})"
+                                for rt, r in reports_payload.items()
+                            )
                         )
 
-                        # Render full HTML page
-                        html_doc = _render_employee_report_html(
-                            employee_id=employee_id,
-                            dimension=dimension,
-                            report_payload=reports_payload,
-                            nd_data=nd_data,
-                            frappe_data=frappe_data,
+                        # ── Build structured JSON payload ─────────────────────
+                        msg = frappe_data.get("message", frappe_data)
+                        employee_name = (
+                            msg.get("employee_name")
+                            or msg.get("employee_full_name")
+                            or msg.get("employee")
+                            or employee_id
                         )
+                        designation = (
+                            msg.get("designation")
+                            or msg.get("role")
+                            or msg.get("employee_role")
+                            or "Employee"
+                        )
+                        questionnaires = msg.get("questionnaires_considered", [])
+                        dimension_label = {
+                            "1D": "1D - Individual Assessment",
+                            "2D": "2D - Employee-Boss Relationship",
+                            "3D": "3D - Team Assessment",
+                            "4D": "4D - Organisational Assessment",
+                        }.get(dimension, dimension)
 
-                        # Save to html_data/{employee_id}.html
+                        stage_scores = []
+                        for st in msg.get("stages", []):
+                            try:
+                                score = float(st.get("score", 0))
+                            except (TypeError, ValueError):
+                                score = 0.0
+                            try:
+                                pct = float(st.get("percentage", 0))
+                            except (TypeError, ValueError):
+                                pct = 0.0
+                            stage_scores.append({
+                                "stage": str(st.get("stage", "-")),
+                                "score": f"{score:.2f}",
+                                "percentage": f"{pct:.1f}",
+                            })
+
+                        # Normalise reports payload into a clean list of dicts
+                        report_sections_list = []
+                        if isinstance(reports_payload, dict):
+                            for rtype, robj in reports_payload.items():
+                                if isinstance(robj, dict) and "sections" in robj:
+                                    clean_sections = []
+                                    for sec in robj.get("sections", []):
+                                        paras = sec.get("paragraphs") or _text_to_paragraphs(sec.get("text", ""))
+                                        clean_sections.append({
+                                            "id": sec.get("id", ""),
+                                            "title": sec.get("title", ""),
+                                            "paragraphs": paras,
+                                        })
+                                    report_sections_list.append({
+                                        "title": robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
+                                        "report_type": rtype,
+                                        "sections": clean_sections,
+                                    })
+
+                        json_payload = {
+                            "status": "ok",
+                            "header": {
+                                "employee_id": employee_id,
+                                "employee_name": employee_name,
+                                "designation": designation,
+                                "report_type": f"{dimension_label} Growth Report",
+                                "dimension_label": dimension_label,
+                                "dominant_stage": str(msg.get("dominant_stage", "-")),
+                                "dominant_sub_stage": str(msg.get("dominant_sub_stage", "-")),
+                                "questionnaire_text": ", ".join(str(q) for q in questionnaires) if questionnaires else "-",
+                                "generated_date": datetime.now().strftime("%d %B %Y"),
+                                "stage_scores": stage_scores,
+                            },
+                            "reports": report_sections_list,
+                        }
+
+                        # ── Save JSON only (no HTML generation) ──────────────
+                        # HTML rendering is done by the frontend using the JSON.
                         os.makedirs(Config.HTML_DATA_DIR, exist_ok=True)
-                        cache_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.html")
-                        with open(cache_path, "w", encoding="utf-8") as f:
-                            f.write(html_doc)
-                        print(f"💾 Worker {worker_id}: saved {cache_path}")
 
-                        job.result = html_doc  # full HTML string
+                        # Determine which report types were generated
+                        if isinstance(reports_payload, dict):
+                            generated_types = list(reports_payload.keys())
+                        else:
+                            generated_types = [DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension, "employee")]
+
+                        # ── Save ONE combined JSON file only ──────────────────
+                        # Shape: { status, header, reports: [ {report_type, title, sections}, ... ] }
+                        # For 1D → reports has 1 item
+                        # For 2D → reports has 2 items  (employee + boss)
+                        # For 3D → reports has 3 items  (employee + boss + team)
+                        # For 4D → reports has 4 items
+                        # Frontend fetches this ONE file and renders all tabs from it.
+                        combined_path = os.path.join(
+                            Config.HTML_DATA_DIR, f"{employee_id}.json"
+                        )
+                        with open(combined_path, "w", encoding="utf-8") as f:
+                            json.dump(json_payload, f, ensure_ascii=False, indent=2)
+                        print(f"💾 Worker {worker_id}: saved {combined_path}")
+                        print(
+                            f"📊 Reports inside: "
+                            + ", ".join(
+                                f"{r['report_type']} ({len(r.get('sections', []))} sections)"
+                                for r in json_payload.get("reports", [])
+                            )
+                        )
+
+                        job.result = json_payload  # return full JSON payload
 
                     # ── BRANCH 2: Standard multi-report flow ──────────────────
                     elif job.multi_report:
@@ -931,8 +1043,103 @@ async def get_dimension_info() -> Dict[str, Any]:
     return {
         "supported_dimensions": list(REPORT_TYPE_MAP.keys()),
         "dimension_report_mapping": REPORT_TYPE_MAP,
-        "report_titles": REPORT_TITLE_MAP
+        "report_titles": REPORT_TITLE_MAP,
+        "model_per_report_type": MODEL_BY_REPORT_TYPE_DEDICATED,
     }
+
+
+# ============================================================================
+# ✅ NEW: FAST JSON ENDPOINT — calls generate_multi_reports_json directly
+# Frontend hits this instead of the old submit → poll → result flow.
+# ============================================================================
+
+@app.post("/generate/json", tags=["Fast JSON"])
+async def generate_json_reports(
+    payload: Dict[str, Any] = Body(
+        ...,
+        examples={
+            "2D_frappe": {
+                "summary": "2D report from Frappe employee ID",
+                "value": {"employee": "HR-EMP-00031"},
+            },
+            "2D_direct": {
+                "summary": "2D report from direct input data",
+                "value": {
+                    "dimension": "2D",
+                    "data": {"behavioral_stage": {"stage": "Honeymoon"}},
+                },
+            },
+        },
+    )
+) -> Dict[str, Any]:
+    """
+    **Fastest endpoint — recommended for frontend use.**
+
+    Fires one dedicated LLM per report type, all in parallel, each returning
+    complete structured JSON in a single call.
+
+    | Dimension | Models fired simultaneously       | Typical time |
+    |-----------|-----------------------------------|--------------|
+    | 1D        | MODEL_1D                          | ~10-20s      |
+    | 2D        | MODEL_1D + MODEL_2D               | ~15-25s      |
+    | 3D        | MODEL_1D + MODEL_2D + MODEL_3D    | ~15-30s      |
+    | 4D        | MODEL_1D + MODEL_2D + MODEL_3D + MODEL_4D | ~20-35s |
+
+    ### Response shape
+    ```json
+    {
+      "dimension": "2D",
+      "reports": {
+        "employee": {
+          "title": "Individual Self-Assessment Report",
+          "report_type": "employee",
+          "model_used": "llama-3.1-8b-instant",
+          "sections": [
+            { "id": "purpose", "title": "Purpose ...", "paragraphs": ["...", "..."] },
+            ...
+          ],
+          "word_count": 3200
+        },
+        "boss": { ... }
+      }
+    }
+    ```
+    """
+    import time as _time
+    start = _time.time()
+
+    try:
+        # ── Frappe flow (employee ID given) ──────────────────────────────────
+        if "employee" in payload and "dimension" not in payload:
+            employee_id = str(payload["employee"]).strip()
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(
+                    f"{Config.FRAPPE_BASE_URL}?employee={employee_id}",
+                    headers=_frappe_headers(),
+                )
+                resp.raise_for_status()
+                frappe_data = resp.json()
+            nd_data = map_frappe_to_nd(employee_id, frappe_data)
+        else:
+            # ── Direct data flow ────────────────────────────────────────────
+            nd_data = resolve_input_data(payload)
+
+        # Fire parallel JSON generation
+        result = await asyncio.wait_for(
+            asyncio.to_thread(generate_multi_reports_json, nd_data),
+            timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+        )
+
+        elapsed = round(_time.time() - start, 2)
+        result["elapsed_seconds"] = elapsed
+        result["model_map"] = MODEL_BY_REPORT_TYPE_DEDICATED
+        print(f"✅ /generate/json completed in {elapsed}s")
+        return result
+
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Report generation timed out.")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ============================================================================
@@ -984,8 +1191,15 @@ def _render_employee_report_html(
     report_payload: Union[str, Dict[str, Any]],
     nd_data: dict,
     frappe_data: dict,
+    report_type: str = "employee",
 ) -> str:
-    """Render employee report using html/index.html with dynamic multi-report data."""
+    """
+    Render a single report type using the correct per-type template.
+    Templates:
+      employee → html/employee_report.html
+      boss     → html/boss_report.html
+      others   → html/index.html (fallback)
+    """
 
     msg = frappe_data.get("message", frappe_data)
     dominant_stage = str(msg.get("dominant_stage", "-"))
@@ -1016,7 +1230,20 @@ def _render_employee_report_html(
     report_type = f"{dimension_label} Growth Report"
     report_subtitle = f"ChaturVima {dimension_label} Diagnostic Report"
     questionnaire_text = ", ".join(str(q) for q in questionnaires) if questionnaires else "-"
-    report_sections = _normalize_reports(report_payload, nd_data)
+    # Filter to only this report type's sections (not all reports combined)
+    all_reports = _normalize_reports(report_payload, nd_data)
+    if isinstance(report_payload, dict) and not isinstance(list(report_payload.values())[0] if report_payload else None, str):
+        # Multi-report dict: find matching report type
+        matching = [r for r in all_reports if r.get("report_type") == report_type]
+        report_sections_for_type = matching if matching else all_reports
+    else:
+        report_sections_for_type = all_reports
+
+    # Flatten sections from all matching reports into a single list for this template
+    report_sections = []
+    for rpt in report_sections_for_type:
+        for sec in rpt.get("sections", []):
+            report_sections.append(sec)
 
     stage_rows: List[Dict[str, str]] = []
     for st in msg.get("stages", []):
@@ -1034,13 +1261,22 @@ def _render_employee_report_html(
             "percentage": f"{percentage:.1f}",
         })
 
+    # Build per-type subtitle
+    type_subtitle_map = {
+        "employee": f"ChaturVima {dimension_label} – Individual Assessment Report",
+        "boss": f"ChaturVima {dimension_label} – Employee–Manager Relationship Report",
+        "team": f"ChaturVima {dimension_label} – Team Assessment Report",
+        "organization": f"ChaturVima {dimension_label} – Organisational Assessment Report",
+    }
+    per_type_subtitle = type_subtitle_map.get(report_type, report_subtitle)
+
     context = {
-        "page_title": f"ChaturVima Growth Report - {employee_name}",
+        "page_title": f"ChaturVima Growth Report - {employee_name} ({report_type.title()})",
         "report_heading": "ChaturVima Diagnostic Report",
-        "report_subtitle": report_subtitle,
+        "report_subtitle": per_type_subtitle,
         "employee_name": employee_name,
         "designation": designation,
-        "report_type": report_type,
+        "report_type": f"{dimension_label} Growth Report",
         "employee_id": employee_id,
         "dimension_label": dimension_label,
         "generated_date": generated_date,
@@ -1051,15 +1287,21 @@ def _render_employee_report_html(
         "report_sections": report_sections,
     }
 
+    TEMPLATE_MAP = {
+        "employee": "employee_report.html",
+        "boss": "boss_report.html",
+    }
+    template_name = TEMPLATE_MAP.get(report_type, "index.html")
+
     try:
         env = Environment(
             loader=FileSystemLoader(Config.TEMPLATE_DIR),
             autoescape=select_autoescape(["html", "xml"]),
         )
-        template = env.get_template("index.html")
+        template = env.get_template(template_name)
         return template.render(**context)
     except Exception as exc:
-        print(f"⚠️ Employee template rendering failed: {exc}")
+        print(f"⚠️ Employee template rendering failed ({template_name}): {exc}")
         return _render_report_html(report_payload, nd_data)
 
 # ============================================================================
@@ -1173,15 +1415,15 @@ async def generate_employee_report(
     # Serve from cache immediately – no LLM call, no queue
     if not force_regenerate:
         os.makedirs(Config.HTML_DATA_DIR, exist_ok=True)
-        cache_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.html")
-        if os.path.exists(cache_path):
+        combined_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.json")
+        if os.path.exists(combined_path):
             print(f"📄 Cache hit – returning immediately for {employee_id}")
             return {
                 "job_id": None,
                 "status": "cached",
                 "employee": employee_id,
-                "message": "Cached report available. Fetch it with GET /employee-report/{employee_id}",
-                "report_url": f"/employee-report/{employee_id}",
+                "message": "Cached report available.",
+                "report_url": f"/report/{employee_id}",
             }
 
     # Submit to worker queue
@@ -1197,58 +1439,88 @@ async def generate_employee_report(
         "message": (
             f"Report generation queued. "
             f"Poll GET /status/{job_id} until status=completed, "
-            f"then fetch HTML from GET /employee-report/{employee_id}"
+            f"then fetch GET /report/{employee_id} to get all reports."
         ),
         "poll_url": f"/status/{job_id}",
-        "report_url": f"/employee-report/{employee_id}",
+        "report_url": f"/report/{employee_id}",
     }
 
 
-@app.get(
-    "/employee-report/{employee_id}",
-    tags=["Employee Report"],
-    summary="📄 Get the cached HTML report for an employee",
-    response_class=HTMLResponse,
-)
-async def get_employee_report(employee_id: str) -> HTMLResponse:
-    """
-    Returns the saved HTML report for the given employee.
+# ============================================================================
+# SINGLE REPORT ENDPOINT — returns ALL reports for an employee in one call
+# This is the ONLY endpoint the frontend needs.
+#
+# Flow:
+#   1. Frontend calls GET /report/{employee_id}
+#   2. If cached → returns JSON immediately
+#   3. If not cached → returns 404 with instructions to generate first
+#
+# JSON shape returned:
+# {
+#   "status": "ok",
+#   "header": { employee_id, employee_name, dimension_label, stage_scores, ... },
+#   "reports": [
+#     { "report_type": "employee", "title": "...", "sections": [...] },  ← 1D
+#     { "report_type": "boss",     "title": "...", "sections": [...] },  ← 2D
+#     { "report_type": "team",     "title": "...", "sections": [...] },  ← 3D
+#     { "report_type": "organization", ...}                              ← 4D
+#   ]
+# }
+# reports[] will have 1, 2, 3, or 4 items depending on dimension.
+# ============================================================================
 
-    The HTML is stored at `html_data/{employee_id}.html` on the server.
-    Call `POST /generate-employee-report` first if the report doesn't exist yet.
+@app.get(
+    "/report/{employee_id}",
+    tags=["Employee Report"],
+    summary="📦 Get all reports for an employee (single endpoint for frontend)",
+)
+async def get_employee_all_reports(employee_id: str) -> Dict[str, Any]:
     """
-    cache_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.html")
-    if not os.path.exists(cache_path):
+    **The only endpoint the frontend needs.**
+
+    Returns all generated reports for this employee in a single JSON response.
+    The `reports` array contains 1–4 items depending on the employee's dimension:
+    - 1D → `[employee]`
+    - 2D → `[employee, boss]`
+    - 3D → `[employee, boss, team]`
+    - 4D → `[employee, boss, team, organization]`
+
+    Call `POST /generate-employee-report` first if no report exists yet.
+    """
+    combined_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.json")
+    if not os.path.exists(combined_path):
         raise HTTPException(
             404,
-            f"No report found for '{employee_id}'. "
-            f"Call POST /generate-employee-report to create one.",
+            detail={
+                "error": f"No report found for employee '{employee_id}'.",
+                "action": "Call POST /generate-employee-report to generate the report first.",
+                "generate_url": "/generate-employee-report",
+                "body": {"employee": employee_id},
+            }
         )
-    with open(cache_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+    with open(combined_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-@app.get(
-    "/employee-report/{employee_id}/exists",
-    tags=["Employee Report"],
-    summary="✅ Check if a cached report exists for an employee",
-)
-async def employee_report_exists(employee_id: str) -> Dict[str, Any]:
-    """
-    Lightweight check the frontend can use to decide whether to show
-    **"View Report"** or **"Generate Report"** button.
-    """
-    cache_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.html")
-    exists = os.path.exists(cache_path)
-    return {
-        "employee": employee_id,
-        "report_exists": exists,
-        "cached_at": (
-            datetime.fromtimestamp(os.path.getmtime(cache_path)).isoformat()
-            if exists else None
-        ),
-        "fetch_url": f"/employee-report/{employee_id}" if exists else None,
-    }
+# ============================================================================
+# STARTUP CLEANUP — remove old per-type files from previous code versions
+# ============================================================================
+
+def _cleanup_old_per_type_files() -> None:
+    """Remove {employee_id}_{rtype}.json files where a combined file already exists."""
+    import glob
+    data_dir = Config.HTML_DATA_DIR
+    if not os.path.isdir(data_dir):
+        return
+    for rtype in ("employee", "boss", "team", "organization"):
+        for old_file in glob.glob(os.path.join(data_dir, f"*_{rtype}.json")):
+            base   = os.path.basename(old_file)
+            emp_id = base.replace(f"_{rtype}.json", "")
+            if os.path.exists(os.path.join(data_dir, f"{emp_id}.json")):
+                os.remove(old_file)
+                print(f"🧹 Cleaned up old file: {old_file}")
+
+_cleanup_old_per_type_files()
 
 
 # ============================================================================
