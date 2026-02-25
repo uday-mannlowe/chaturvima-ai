@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChaturVima Growth Report – {{ header.employee_name }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @page {
+            size: A4;
+            margin: 20mm;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+
+        /* ── Header ── */
+        .report-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            position: relative;
+        }
+
+        .logo-space {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            width: 200px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-space img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .report-header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .report-header .subtitle {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+
+        .employee-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .info-box {
+            background: rgba(255,255,255,0.15);
+            padding: 12px;
+            border-radius: 6px;
+            backdrop-filter: blur(10px);
+        }
+
+        .info-box label {
+            font-size: 11px;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-box .value {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        /* ── Content ── */
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+            page-break-inside: avoid;
+        }
+
+        .section-title {
+            font-size: 24px;
+            color: #667eea;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+            font-weight: 600;
+        }
+
+        .subsection-title {
+            font-size: 18px;
+            color: #764ba2;
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+        }
+
+        .section-content {
+            font-size: 14px;
+            text-align: justify;
+            margin-bottom: 15px;
+            line-height: 1.8;
+        }
+
+        /* ── Stage Badges ── */
+        .stage-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+
+        .substage-badge {
+            display: inline-block;
+            background: #f0f0f0;
+            color: #764ba2;
+            padding: 6px 16px;
+            border-radius: 15px;
+            font-weight: 500;
+            margin: 5px 0;
+            font-size: 13px;
+            border: 2px solid #764ba2;
+        }
+
+        /* ── Score Table ── */
+        .score-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .score-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .score-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .score-table tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+
+        .score-table tr:hover {
+            background: #f0f0f0;
+        }
+
+        .score-value {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        /* ── SWOT ── */
+        .swot-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .swot-box {
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .swot-box.strengths {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+        }
+
+        .swot-box.weaknesses {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        }
+
+        .swot-box.opportunities {
+            background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
+        }
+
+        .swot-box.threats {
+            background: linear-gradient(135deg, #fccb90 0%, #d57eeb 100%);
+        }
+
+        .swot-box h3 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .swot-box ul {
+            list-style-position: inside;
+            padding-left: 10px;
+        }
+
+        .swot-box li {
+            margin-bottom: 8px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        /* ── Action Plan ── */
+        .action-phase {
+            background: #f9f9f9;
+            padding: 20px;
+            border-left: 4px solid #667eea;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .action-phase h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .action-item {
+            margin: 15px 0;
+            padding-left: 20px;
+        }
+
+        .action-item strong {
+            color: #764ba2;
+        }
+
+        .action-steps {
+            margin-left: 20px;
+            margin-top: 8px;
+        }
+
+        .action-steps li {
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        /* ── Indicators List ── */
+        .indicators-list {
+            background: #f0f4ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .indicators-list li {
+            margin-bottom: 10px;
+            padding-left: 10px;
+            position: relative;
+            line-height: 1.6;
+        }
+
+        .indicators-list li:before {
+            content: "▸";
+            color: #667eea;
+            position: absolute;
+            left: -10px;
+            font-weight: bold;
+        }
+
+        /* ── Drivers / Stressors ── */
+        .drivers-stressors ul {
+            margin-left: 20px;
+        }
+
+        .drivers-stressors li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        /* ── Report divider (for 2D/3D/4D extra reports) ── */
+        .report-divider {
+            margin: 50px 0 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .report-divider::before {
+            content: '';
+            display: block;
+            border-top: 3px solid #667eea;
+            margin-bottom: 20px;
+        }
+
+        .report-divider-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #764ba2;
+            background: white;
+            display: inline-block;
+            padding: 8px 24px;
+            border: 2px solid #764ba2;
+            border-radius: 30px;
+        }
+
+        /* ── Footer ── */
+        .report-footer {
+            background: #f5f5f5;
+            padding: 30px 40px;
+            text-align: center;
+            border-top: 3px solid #667eea;
+        }
+
+        .footer-note {
+            font-size: 12px;
+            color: #666;
+            font-style: italic;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* ── Print ── */
+        @media print {
+            body { background: white; }
+            .container { box-shadow: none; max-width: 100%; }
+            .section, .swot-grid { page-break-inside: avoid; }
+            .report-divider { page-break-before: always; }
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            .employee-info { grid-template-columns: 1fr; }
+            .swot-grid { grid-template-columns: 1fr; }
+            .content { padding: 20px; }
+            .report-header { padding: 20px; }
+            .logo-space { position: static; margin: 20px auto 0; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- ════════════════════════════════════════
+         HEADER
+         ════════════════════════════════════════ -->
+    <div class="report-header">
+        <div class="logo-space">
+            <img src="/static/chatur%20logo.png" alt="ChaturVima Logo">
+        </div>
+        <h1>Employee Personal Insights</h1>
+        <div class="subtitle">ChaturVima {{ header.dimension_label }} Diagnostic Report</div>
+
+        <div class="employee-info">
+            <div class="info-box">
+                <label>Employee</label>
+                <div class="value">{{ header.employee_name }}</div>
+            </div>
+            <div class="info-box">
+                <label>Designation</label>
+                <div class="value">{{ header.designation }}</div>
+            </div>
+            <div class="info-box">
+                <label>Report Type</label>
+                <div class="value">Growth Report</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════
+         CONTENT
+         ════════════════════════════════════════ -->
+    <div class="content">
+
+        {# ── Iterate over every report in the JSON (employee, boss, team, org) ── #}
+        {% for report in reports %}
+
+            {# ── Divider between reports (not before the first one) ── #}
+            {% if not loop.first %}
+            <div class="report-divider">
+                <span class="report-divider-title">{{ report.title }}</span>
+            </div>
+            {% endif %}
+
+            {# ── Assessment Summary block (only for the first / employee report) ── #}
+            {% if loop.first %}
+            <div class="section">
+                <h2 class="section-title">Assessment Summary</h2>
+                <p class="section-content">
+                    <strong>Questionnaires Considered:</strong> {{ header.questionnaire_text }}
+                </p>
+                <p class="section-content">
+                    <strong>Dominant Stage:</strong>
+                    <span class="stage-badge">{{ header.dominant_stage }}</span>
+                </p>
+                <p class="section-content">
+                    <strong>Dominant Sub-Stage:</strong>
+                    <span class="substage-badge">{{ header.dominant_sub_stage }}</span>
+                </p>
+            </div>
+
+            {# ── Stage Score Table ── #}
+            {% if header.stage_scores %}
+            <div class="section">
+                <h2 class="section-title">Stage Score Summary</h2>
+                <table class="score-table">
+                    <thead>
+                        <tr>
+                            <th>Behavioral Stage</th>
+                            <th>Score</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in header.stage_scores %}
+                        <tr>
+                            <td><strong>{{ row.stage }}</strong></td>
+                            <td><span class="score-value">{{ row.score }}</span></td>
+                            <td>{{ row.percentage }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            {% endif %}
+
+            {# ── All sections from this report ── #}
+            {% set sec_counter = namespace(n=1) %}
+            {% for section in report.sections %}
+
+                {# ── SWOT section: render in the styled grid ── #}
+                {% if section.id == 'swot' or 'swot' in section.title | lower %}
+                <div class="section">
+                    <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
+
+                    {#
+                       The LLM returns SWOT as paragraphs. We split them into 4 boxes.
+                       If the LLM returns exactly 4 paragraphs, each goes into one box.
+                       Otherwise we fall back to rendering each paragraph as plain text.
+                    #}
+                    {% if section.paragraphs | length == 4 %}
+                    <div class="swot-grid">
+                        <div class="swot-box strengths">
+                            <h3>💪 Strengths</h3>
+                            <p style="font-size:13px;line-height:1.6;">{{ section.paragraphs[0] }}</p>
+                        </div>
+                        <div class="swot-box weaknesses">
+                            <h3>⚠️ Weaknesses</h3>
+                            <p style="font-size:13px;line-height:1.6;">{{ section.paragraphs[1] }}</p>
+                        </div>
+                        <div class="swot-box opportunities">
+                            <h3>🚀 Opportunities</h3>
+                            <p style="font-size:13px;line-height:1.6;">{{ section.paragraphs[2] }}</p>
+                        </div>
+                        <div class="swot-box threats">
+                            <h3>⚡ Threats</h3>
+                            <p style="font-size:13px;line-height:1.6;">{{ section.paragraphs[3] }}</p>
+                        </div>
+                    </div>
+                    {% else %}
+                    {% for para in section.paragraphs %}
+                    <p class="section-content">{{ para }}</p>
+                    {% endfor %}
+                    {% endif %}
+                </div>
+
+                {# ── Action Plan section: render in styled phase boxes ── #}
+                {% elif section.id == 'action_plan' or 'action' in section.title | lower %}
+                <div class="section">
+                    <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
+                    {% for para in section.paragraphs %}
+                    <div class="action-phase">
+                        <p class="section-content">{{ para }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {# ── Drivers section: render with indicators list style ── #}
+                {% elif section.id == 'drivers' or 'driver' in section.title | lower or 'stressor' in section.title | lower %}
+                <div class="section">
+                    <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
+                    <div class="drivers-stressors">
+                        {% for para in section.paragraphs %}
+                        <p class="section-content">{{ para }}</p>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                {# ── Behavioural indicators: render with indicator list box ── #}
+                {% elif 'indicator' in section.title | lower %}
+                <div class="section">
+                    <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
+                    <div class="indicators-list">
+                        <ul>
+                            {% for para in section.paragraphs %}
+                            <li>{{ para }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                {# ── All other sections: plain paragraphs ── #}
+                {% else %}
+                <div class="section">
+                    <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
+                    {% for para in section.paragraphs %}
+                    <p class="section-content">{{ para }}</p>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% set sec_counter.n = sec_counter.n + 1 %}
+            {% endfor %}
+
+        {% endfor %}{# end reports loop #}
+
+    </div>{# end .content #}
+
+    <!-- ════════════════════════════════════════
+         FOOTER
+         ════════════════════════════════════════ -->
+    <div class="report-footer">
+        <p class="footer-note">
+            This report is confidential and intended for the developmental use of
+            {{ header.employee_name }} and authorized organizational development professionals
+            within the context of the ChaturVima framework.
+        </p>
+    </div>
+
+</div>{# end .container #}
+</body>
+</html>

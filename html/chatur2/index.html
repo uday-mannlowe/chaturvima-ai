@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChaturVima Growth Report</title>
+    <title>ChaturVima Growth Report – HR-EMP-00031</title>
     <style>
         * {
             margin: 0;
@@ -30,7 +30,7 @@
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
         }
 
-        /* Header */
+        /* ── Header ── */
         .report-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -94,7 +94,7 @@
             margin-top: 4px;
         }
 
-        /* Content */
+        /* ── Content ── */
         .content {
             padding: 40px;
         }
@@ -124,9 +124,10 @@
             font-size: 14px;
             text-align: justify;
             margin-bottom: 15px;
+            line-height: 1.8;
         }
 
-        /* Stage Badge */
+        /* ── Stage Badges ── */
         .stage-badge {
             display: inline-block;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -150,7 +151,7 @@
             border: 2px solid #764ba2;
         }
 
-        /* Score Table */
+        /* ── Score Table ── */
         .score-table {
             width: 100%;
             border-collapse: collapse;
@@ -185,7 +186,7 @@
             font-size: 16px;
         }
 
-        /* SWOT Analysis */
+        /* ── SWOT ── */
         .swot-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -229,9 +230,10 @@
         .swot-box li {
             margin-bottom: 8px;
             font-size: 13px;
+            line-height: 1.6;
         }
 
-        /* Action Plan */
+        /* ── Action Plan ── */
         .action-phase {
             background: #f9f9f9;
             padding: 20px;
@@ -265,7 +267,7 @@
             font-size: 13px;
         }
 
-        /* Indicators List */
+        /* ── Indicators List ── */
         .indicators-list {
             background: #f0f4ff;
             padding: 20px;
@@ -277,6 +279,7 @@
             margin-bottom: 10px;
             padding-left: 10px;
             position: relative;
+            line-height: 1.6;
         }
 
         .indicators-list li:before {
@@ -287,31 +290,47 @@
             font-weight: bold;
         }
 
-        /* Highlight Box */
-        .highlight-box {
-            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 5px solid #ff6b6b;
+        /* ── Drivers / Stressors ── */
+        .drivers-stressors ul {
+            margin-left: 20px;
         }
 
-        /* Footer */
+        .drivers-stressors li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        /* ── Report divider (for 2D/3D/4D extra reports) ── */
+        .report-divider {
+            margin: 50px 0 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .report-divider::before {
+            content: '';
+            display: block;
+            border-top: 3px solid #667eea;
+            margin-bottom: 20px;
+        }
+
+        .report-divider-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #764ba2;
+            background: white;
+            display: inline-block;
+            padding: 8px 24px;
+            border: 2px solid #764ba2;
+            border-radius: 30px;
+        }
+
+        /* ── Footer ── */
         .report-footer {
             background: #f5f5f5;
             padding: 30px 40px;
             text-align: center;
             border-top: 3px solid #667eea;
-        }
-
-        .confidence-level {
-            display: inline-block;
-            background: #4caf50;
-            color: white;
-            padding: 10px 25px;
-            border-radius: 20px;
-            font-weight: 600;
-            margin-bottom: 15px;
         }
 
         .footer-note {
@@ -322,346 +341,334 @@
             margin: 0 auto;
         }
 
-        /* Print Styles */
+        /* ── Print ── */
         @media print {
-            body {
-                background: white;
-            }
-            
-            .container {
-                box-shadow: none;
-                max-width: 100%;
-            }
-
-            .section {
-                page-break-inside: avoid;
-            }
-
-            .swot-grid {
-                page-break-inside: avoid;
-            }
+            body { background: white; }
+            .container { box-shadow: none; max-width: 100%; }
+            .section, .swot-grid { page-break-inside: avoid; }
+            .report-divider { page-break-before: always; }
         }
 
-        /* Responsive */
+        /* ── Responsive ── */
         @media (max-width: 768px) {
-            .employee-info {
-                grid-template-columns: 1fr;
-            }
-
-            .swot-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .content {
-                padding: 20px;
-            }
-
-            .report-header {
-                padding: 20px;
-            }
-
-            .logo-space {
-                position: static;
-                margin: 20px auto 0;
-            }
+            .employee-info { grid-template-columns: 1fr; }
+            .swot-grid { grid-template-columns: 1fr; }
+            .content { padding: 20px; }
+            .report-header { padding: 20px; }
+            .logo-space { position: static; margin: 20px auto 0; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <div class="report-header">
-            <div class="logo-space">
-                <img src="./chatur logo.png" alt="ChaturVima Logo">
+<div class="container">
+
+    <!-- ════════════════════════════════════════
+         HEADER
+         ════════════════════════════════════════ -->
+    <div class="report-header">
+        <div class="logo-space">
+            <img src="./" alt="ChaturVima Logo">
+        </div>
+        <h1>Employee Personal Insights</h1>
+        <div class="subtitle">ChaturVima 2D - Employee-Boss Relationship Diagnostic Report</div>
+
+        <div class="employee-info">
+            <div class="info-box">
+                <label>Employee</label>
+                <div class="value">HR-EMP-00031</div>
             </div>
-            <h1>Employee Personal Insights</h1>
-            <div class="subtitle">ChaturVima Growth Report</div>
-            
-            <div class="employee-info">
-                <div class="info-box">
-                    <label>Employee</label>
-                    <div class="value">Manwa</div>
-                </div>
-                <div class="info-box">
-                    <label>Designation</label>
-                    <div class="value">Software Engineer</div>
-                </div>
-                <div class="info-box">
-                    <label>Report Date</label>
-                    <div class="value">January 14, 2026</div>
-                </div>
+            <div class="info-box">
+                <label>Designation</label>
+                <div class="value">Employee</div>
+            </div>
+            <div class="info-box">
+                <label>Report Type</label>
+                <div class="value">Growth Report</div>
             </div>
         </div>
+    </div>
 
-        <!-- Content -->
-        <div class="content">
-            <!-- Section 1: Purpose -->
+    <!-- ════════════════════════════════════════
+         CONTENT
+         ════════════════════════════════════════ -->
+    <div class="content">
+
+        
+        
+
+            
+            
+
+            
+            
             <div class="section">
-                <h2 class="section-title">1. Purpose of the Assessment</h2>
+                <h2 class="section-title">Assessment Summary</h2>
                 <p class="section-content">
-                    This assessment has been conducted to provide you, Manwa, with a deep and structured understanding of your current professional behavioral patterns. The goal is not to judge or label, but to offer a clear mirror reflecting how you operate within your role. By identifying your dominant emotional and behavioral stage, this report aims to unlock self-awareness, highlight your inherent strengths, and illuminate potential blind spots. Ultimately, this serves as a personalized roadmap for your sustainable growth, helping you navigate your current work environment more effectively and prepare for future challenges and opportunities. It is a tool for empowerment, designed to give you the insights needed to take charge of your professional development.
+                    <strong>Questionnaires Considered:</strong> Boss, Self
+                </p>
+                <p class="section-content">
+                    <strong>Dominant Stage:</strong>
+                    <span class="stage-badge">Honeymoon</span>
+                </p>
+                <p class="section-content">
+                    <strong>Dominant Sub-Stage:</strong>
+                    <span class="substage-badge">Initial Reality Check - Honeymoon</span>
                 </p>
             </div>
 
-            <!-- Section 2: Dimension Overview -->
+            
+            
             <div class="section">
-                <h2 class="section-title">2. Dimension Overview & Scope</h2>
-                <p class="section-content">
-                    This is a <strong>1D (Individual) Diagnostic Report</strong>. It focuses exclusively on you as an individual contributor—your internal drivers, behavioral tendencies, emotional stage, and personal operating style. It analyzes how you approach your work, manage tasks, respond to challenges, and contribute from your unique position.
-                </p>
-                
-                <h3 class="subsection-title">What this report covers:</h3>
-                <ul class="section-content">
-                    <li>Your primary emotional and behavioral stage based on observed patterns</li>
-                    <li>Your psychological profile and internal motivators</li>
-                    <li>A personal SWOT analysis to frame your strengths and development areas</li>
-                    <li>A tailored action plan for personal improvement</li>
-                </ul>
-
-                <h3 class="subsection-title">What this report does NOT cover:</h3>
-                <ul class="section-content">
-                    <li>Your skills or technical competencies</li>
-                    <li>Your relationships with specific team members (covered in 2D/Relationship reports)</li>
-                    <li>Team dynamics or organizational culture (covered in 3D/Team and 4D/Organization reports)</li>
-                    <li>Any form of mental health diagnosis or personality labeling</li>
-                </ul>
-            </div>
-
-            <!-- Section 3: Inputs & Assessment -->
-            <div class="section">
-                <h2 class="section-title">3. Inputs & Assessment Instruments</h2>
-                <p class="section-content">
-                    This diagnostic report is generated using the proprietary <strong>ChaturVima behavioral framework</strong>. The analysis is based on a structured assessment of behavioral indicators aligned with the framework's defined stages. The primary data source for this report is the quantified scoring derived from your assessed behavioral patterns, which maps your responses and observable tendencies onto the ChaturVima stage model. The recommendations and SWOT analysis are directly pulled from the framework's authoritative recommendation engine, ensuring the guidance is evidence-based and aligned with your identified stage of "Emerging Challenges."
-                </p>
-            </div>
-
-            <!-- Section 4: Employee Profile -->
-            <div class="section">
-                <h2 class="section-title">4. Employee Profile Summary</h2>
-                <p class="section-content">
-                    You, Manwa, are a Software Engineer. This role typically requires a blend of deep technical expertise, systematic problem-solving, and the ability to deliver reliable, functional code. The context of software engineering involves navigating defined requirements, evolving technologies, and the constant balance between building stable systems and adapting to new bugs or feature requests. This report interprets your behavioral patterns within this specific professional context.
-                </p>
-            </div>
-
-            <!-- Section 5: Emotional Stage -->
-            <div class="section">
-                <h2 class="section-title">5. Emotional Stage Interpretation</h2>
-                
-                <h3 class="subsection-title">5.1. Definition of Dominant Stage and Predominant Substage</h3>
-                <p class="section-content">
-                    According to the ChaturVima framework, your dominant stage is the <span class="stage-badge">Steady-State Stage</span>
-                </p>
-                <p class="section-content">
-                    <strong>Steady-State Stage Definition:</strong> At this stage, individuals operate consistently and reliably. Goals are met as planned, and commitments or promises are fulfilled. Their behavior reflects stability, efficiency, and a balanced approach to work, maintaining steady performance without major fluctuations.
-                </p>
-                <p class="section-content">
-                    Within the Steady-State stage, your predominant substage is <span class="substage-badge">Emerging Challenges</span>
-                </p>
-                <p class="section-content">
-                    <strong>Emerging Challenges Substage Definition:</strong> Subtle inefficiencies or external shifts begin to appear. These early warning signs highlight the need for proactive adjustments to maintain performance. It is a phase where stability is present, but the environment is signaling that change is on the horizon.
-                </p>
-                <p class="section-content">
-                    Your secondary substage influence is <strong>Operational Predictability</strong>, which means you have a strong foundation of routine and reliable outcomes to draw upon.
-                </p>
-
-                <h3 class="subsection-title">5.2. Interpretation</h3>
-                <p class="section-content">
-                    Your profile indicates that you are fundamentally a stable and reliable performer (Steady-State). You have established effective workflows and likely have a strong grasp of your core responsibilities, leading to consistent output. However, you are currently operating within the "Emerging Challenges" substage. This suggests that while your foundation is solid, you are beginning to encounter early signs of change, pressure, or inefficiency. These could manifest as new types of bugs, shifting project requirements, the introduction of new tools, or a sense that the existing ways of working might need tweaking to stay effective. You are not in crisis, but the system (both internal and external) is presenting signals that some proactive attention is needed to prevent future disruptions and maintain your high level of steady performance.
-                </p>
-
-                <h3 class="subsection-title">5.3. Behavioral Indicators</h3>
-                <div class="indicators-list">
-                    <ul>
-                        <li><strong>Noticing Subtle Inefficiencies:</strong> You might see that certain repetitive tasks could be automated, or that a particular piece of code is becoming difficult to maintain.</li>
-                        <li><strong>Awareness of External Shifts:</strong> You are likely cognizant of new technologies, frameworks, or business priorities that could impact your work in the near future.</li>
-                        <li><strong>Experiencing Minor, Recurring Hurdles:</strong> Small delays, "quick fixes" that keep recurring, or minor miscommunications that happen more often than they should.</li>
-                        <li><strong>Balancing Stability with the Need for Change:</strong> You feel the pull between relying on your proven, predictable methods and the growing sense that some adaptation will be necessary.</li>
-                    </ul>
-                </div>
-
-                <h3 class="subsection-title">5.4. Stage Level Score Summary and Interpretation</h3>
+                <h2 class="section-title">Stage Score Summary</h2>
                 <table class="score-table">
                     <thead>
                         <tr>
                             <th>Behavioral Stage</th>
-                            <th>Own-Stage Score</th>
-                            <th>Interpretation</th>
+                            <th>Score</th>
+                            <th>Percentage</th>
                         </tr>
                     </thead>
                     <tbody>
+                        
+                        <tr>
+                            <td><strong>Honeymoon</strong></td>
+                            <td><span class="score-value">36.96</span></td>
+                            <td>66.0%</td>
+                        </tr>
+                        
+                        <tr>
+                            <td><strong>Self-Introspection</strong></td>
+                            <td><span class="score-value">7.92</span></td>
+                            <td>66.0%</td>
+                        </tr>
+                        
+                        <tr>
+                            <td><strong>Soul-Searching</strong></td>
+                            <td><span class="score-value">1.32</span></td>
+                            <td>66.0%</td>
+                        </tr>
+                        
                         <tr>
                             <td><strong>Steady-State</strong></td>
-                            <td><span class="score-value">38.4</span></td>
-                            <td>This is your dominant operating zone. You score highest in behaviors associated with consistency, reliability, and fulfilling commitments. This is your home base.</td>
+                            <td><span class="score-value">0.66</span></td>
+                            <td>66.0%</td>
                         </tr>
-                        <tr>
-                            <td>Self-Introspection</td>
-                            <td><span class="score-value">31.2</span></td>
-                            <td>You have a significant secondary tendency to analyze situations and your role within them. This analytical skill supports your problem-solving.</td>
-                        </tr>
-                        <tr>
-                            <td>Honeymoon</td>
-                            <td><span class="score-value">22.8</span></td>
-                            <td>There is a moderate level of optimism and confidence in your approach, which is a positive asset.</td>
-                        </tr>
-                        <tr>
-                            <td>Soul-Searching</td>
-                            <td><span class="score-value">21.6</span></td>
-                            <td>You have a lower tendency toward deep frustration or questioning of fundamentals, which aligns with your stable core.</td>
-                        </tr>
+                        
                     </tbody>
                 </table>
-                <p class="section-content">
-                    <strong>Overall Interpretation:</strong> The scores confirm a strong anchor in the Steady-State stage. The significantly high score in your own stage (38.4) versus others solidifies that reliability and consistent execution are your key strengths. The profile suggests you are a grounded professional who is now sensing the initial ripples of change that require your steady attention.
-                </p>
             </div>
+            
+            
 
-            <!-- Section 6: Psychological Profile -->
-            <div class="section">
-                <h2 class="section-title">6. Psychological Profile & Tendencies</h2>
-                <p class="section-content">
-                    Your psychological profile is that of a <strong>Stable Achiever facing a Complexity Threshold</strong>. Your primary tendency is to seek order, predictability, and the satisfaction of delivering on what was promised. You likely derive a sense of accomplishment from checking off tasks, building robust systems, and being someone others can depend on. You are not prone to dramatic swings in motivation or approach.
-                </p>
-                <p class="section-content">
-                    Currently, a secondary tendency is emerging: <strong>Proactive Vigilance</strong>. You are psychologically beginning to scan the horizon, mentally noting friction points, and weighing the cost of current processes against future demands. There might be an internal dialogue between the comfort of the "tried and true" and the logical acknowledgment that "this could be done better." Your Self-Introspection score supports this, indicating you naturally lean into analyzing causes and effects, which is a perfect skill set for this substage.
-                </p>
-            </div>
+            
+            
+            
 
-            <!-- Section 7: Internal Drivers & Stressors -->
-            <div class="section">
-                <h2 class="section-title">7. Internal Drivers & Stressors</h2>
                 
-                <h3 class="subsection-title">Internal Drivers (What Motivates You):</h3>
-                <ul class="section-content">
-                    <li><strong>Mastery and Reliability:</strong> The drive to build things that work well and last.</li>
-                    <li><strong>Efficiency:</strong> A desire for clean, logical, and effective processes.</li>
-                    <li><strong>Predictable Success:</strong> Motivation comes from planning, executing, and seeing the expected outcome materialize.</li>
-                    <li><strong>Being a Go-To Expert:</strong> The satisfaction that comes from being trusted to handle your domain competently.</li>
-                </ul>
-
-                <h3 class="subsection-title">Internal Stressors (Sources of Tension):</h3>
-                <ul class="section-content">
-                    <li><strong>The Disruption of Routine:</strong> Changes that feel arbitrary or that threaten your established, efficient ways of working.</li>
-                    <li><strong>Ambiguity in Prioritization:</strong> When it's unclear which of several "emerging challenges" deserves your focus first, leading to potential inefficiency.</li>
-                    <li><strong>The Fear of Instability:</strong> Concern that changes might compromise the reliability and quality you have worked hard to build.</li>
-                    <li><strong>Uncertain Impact:</strong> Stress from not knowing how significant a new challenge might become if not addressed.</li>
-                </ul>
-            </div>
-
-            <!-- Section 8: SWOT Analysis -->
-            <div class="section">
-                <h2 class="section-title">8. Individual SWOT Analysis</h2>
-                <p class="section-content">This analysis frames your current personal professional context.</p>
                 
-                <div class="swot-grid">
-                    <div class="swot-box strengths">
-                        <h3>💪 Strengths</h3>
-                        <ul>
-                            <li>Stable Operational Foundation: You have a reliable way of working that supports consistent execution, even when minor issues arise.</li>
-                            <li>Strong Goal Alignment: You understand how your work connects to business objectives, which helps you stay focused on what matters.</li>
-                            <li>Earned Stakeholder Trust: Your reliability has likely built a reservoir of trust, which means you have support when you need to propose or navigate changes.</li>
-                        </ul>
-                    </div>
+                <div class="section">
+                    <h2 class="section-title">1. Purpose of the Assessment</h2>
+                    
+                    <p class="section-content">The purpose of this assessment is to provide a comprehensive understanding of the employee&#39;s current experience and development. This report aims to help the employee understand their strengths, weaknesses, opportunities, and threats, and provide a roadmap for personal growth and improvement. The assessment is based on the ChaturVima behavioral stages framework, which provides a structured approach to understanding individual development and growth.</p>
+                    
+                    <p class="section-content">The assessment was conducted using a combination of questionnaires and context inputs, which provided a rich source of data for analysis. The data was then analyzed using the ChaturVima framework, which helped to identify the employee&#39;s dominant stage and sub-stage, as well as their strengths, weaknesses, opportunities, and threats. The results of the assessment are presented in this report, which provides a detailed analysis of the employee&#39;s current experience and development.</p>
+                    
+                    <p class="section-content">The report is designed to be a valuable resource for the employee, providing them with a deeper understanding of their strengths and weaknesses, and helping them to identify areas for personal growth and development. The report also provides recommendations for improvement, which are based on the employee&#39;s specific needs and goals. By using this report, the employee can take a proactive approach to their development, and work towards achieving their full potential.</p>
+                    
+                </div>
+                
 
-                    <div class="swot-box weaknesses">
-                        <h3>⚠️ Weaknesses</h3>
-                        <ul>
-                            <li>Resistance to Change: A preference for stability may unconsciously slow down your response to necessary adaptations.</li>
-                            <li>Over-Dependency on Current Workflows: Heavy reliance on existing methods can sometimes blind you to simpler or more innovative improvements.</li>
-                            <li>Prioritization Gaps: When faced with multiple new challenges, you might struggle to systematically identify which one to tackle first for maximum impact.</li>
-                        </ul>
-                    </div>
+                
+            
 
-                    <div class="swot-box opportunities">
-                        <h3>🚀 Opportunities</h3>
-                        <ul>
-                            <li>Become More Agile: You have the chance to modernize your personal processes and planning systems, turning your stability into adaptable strength.</li>
-                            <li>Leverage Challenges for Growth: These emerging issues are a platform to innovate, upskill (e.g., learn a new tool), and demonstrate proactive problem-solving.</li>
-                            <li>Build Long-Term Resilience: By learning to navigate these early challenges effectively, you will build personal resilience for complex future projects.</li>
-                        </ul>
-                    </div>
+                
+                
+                <div class="section">
+                    <h2 class="section-title">2. Dimension Overview &amp; Scope</h2>
+                    
+                    <p class="section-content">The individual dimension covers the employee&#39;s personal characteristics, behaviors, and experiences, and provides a comprehensive understanding of their development and growth. The scope of the assessment includes the employee&#39;s role, department, and tenure, as well as their strengths, weaknesses, opportunities, and threats. The assessment also takes into account the employee&#39;s context, including their work environment, colleagues, and manager.</p>
+                    
+                    <p class="section-content">The assessment is based on the ChaturVima behavioral stages framework, which provides a structured approach to understanding individual development and growth. The framework includes four stages: Honeymoon, Self-Introspection, Soul-Searching, and Steady-State. Each stage represents a different level of development and growth, and provides a unique set of challenges and opportunities. The assessment helps to identify the employee&#39;s dominant stage and sub-stage, and provides recommendations for improvement based on their specific needs and goals.</p>
+                    
+                    <p class="section-content">The limitations of the assessment include the fact that it is based on a limited set of data, and may not capture the full complexity of the employee&#39;s experience and development. Additionally, the assessment is based on a specific framework and methodology, which may not be applicable to all employees or contexts. However, the assessment provides a valuable starting point for understanding the employee&#39;s development and growth, and can be used in conjunction with other tools and approaches to provide a more comprehensive understanding of the employee&#39;s needs and goals.</p>
+                    
+                </div>
+                
 
-                    <div class="swot-box threats">
-                        <h3>⚡ Threats</h3>
-                        <ul>
-                            <li>Rapid Market/Technology Changes: If emerging challenges are ignored, rapid external shifts could disrupt your stable performance.</li>
-                            <li>Competitive Disadvantage: Peers or competitors who adapt faster may gain an advantage in efficiency or capability.</li>
-                            <li>Erosion of Trust: If communication breaks down during a period of change, it can reduce the trust and morale you've built.</li>
-                        </ul>
+                
+            
+
+                
+                
+                <div class="section">
+                    <h2 class="section-title">3. Inputs &amp; Assessment Instruments</h2>
+                    
+                    <p class="section-content">The assessment was conducted using a combination of questionnaires and context inputs. The questionnaires were designed to capture the employee&#39;s thoughts, feelings, and behaviors, and provided a rich source of data for analysis. The context inputs included information about the employee&#39;s role, department, and tenure, as well as their work environment, colleagues, and manager.</p>
+                    
+                    <p class="section-content">The questionnaires used in the assessment included the Boss and Self questionnaires, which provided a comprehensive understanding of the employee&#39;s strengths, weaknesses, opportunities, and threats. The questionnaires were designed to capture the employee&#39;s self-perception, as well as their perception of their work environment and colleagues. The context inputs provided additional information about the employee&#39;s context, and helped to identify potential factors that may be influencing their development and growth.</p>
+                    
+                    <p class="section-content">The assessment instruments used in the assessment included the ChaturVima behavioral stages framework, which provided a structured approach to understanding individual development and growth. The framework includes four stages: Honeymoon, Self-Introspection, Soul-Searching, and Steady-State. Each stage represents a different level of development and growth, and provides a unique set of challenges and opportunities. The assessment instruments helped to identify the employee&#39;s dominant stage and sub-stage, and provided recommendations for improvement based on their specific needs and goals.</p>
+                    
+                </div>
+                
+
+                
+            
+
+                
+                
+                <div class="section">
+                    <h2 class="section-title">4. Employee Profile Summary</h2>
+                    
+                    <p class="section-content">The employee is currently in the Honeymoon stage, with a sub-stage of Initial Reality Check. This stage is characterized by high energy, enthusiasm, and optimism, as well as a tendency to overlook potential challenges and complexities. The employee is confident in their abilities and is eager to make a positive impact in their role.</p>
+                    
+                    <p class="section-content">The employee&#39;s strengths include their high energy and enthusiasm, as well as their ability to build strong relationships with their colleagues. They are also optimistic and confident, which helps them to approach challenges with a positive attitude. However, the employee&#39;s weaknesses include their tendency to overlook potential challenges and complexities, as well as their limited experience and knowledge in certain areas.</p>
+                    
+                    <p class="section-content">The employee&#39;s context includes their role, department, and tenure, as well as their work environment, colleagues, and manager. They are currently working in a dynamic and fast-paced environment, which requires them to be adaptable and flexible. The employee&#39;s manager is supportive and provides regular feedback, which helps the employee to develop and grow in their role. The employee&#39;s colleagues are also supportive and collaborative, which helps to create a positive and productive work environment.</p>
+                    
+                </div>
+                
+
+                
+            
+
+                
+                
+                <div class="section">
+                    <h2 class="section-title">5. Emotional Stage Interpretation</h2>
+                    
+                    <p class="section-content">The Honeymoon stage is characterized by high energy, enthusiasm, and optimism, as well as a tendency to overlook potential challenges and complexities. The employee is confident in their abilities and is eager to make a positive impact in their role. The Initial Reality Check sub-stage is marked by early challenges and a growing awareness of the complexity of the work environment. The employee is beginning to realize that things are not as easy as they thought, and that they need to adapt and adjust to the changing circumstances.</p>
+                    
+                    <p class="section-content">The employee&#39;s current stage and sub-stage are influenced by their personality, experiences, and context. Their high energy and enthusiasm are driven by their optimistic and confident personality, as well as their desire to make a positive impact in their role. However, their tendency to overlook potential challenges and complexities is also influenced by their limited experience and knowledge in certain areas. The employee&#39;s context, including their work environment, colleagues, and manager, also plays a significant role in shaping their stage and sub-stage.</p>
+                    
+                    <p class="section-content">The behavioral indicators of the Honeymoon stage include a tendency to be overly optimistic and confident, as well as a tendency to overlook potential challenges and complexities. The employee may also be prone to making impulsive decisions, and may struggle with self-doubt and uncertainty. However, the employee is also likely to be highly motivated and engaged, and may be more willing to take risks and try new things. The Initial Reality Check sub-stage is marked by a growing awareness of the complexity of the work environment, and the employee may begin to feel overwhelmed or frustrated by the challenges they are facing.</p>
+                    
+                    <p class="section-content">The stage level score summary and interpretation provide a comprehensive understanding of the employee&#39;s current stage and sub-stage. The scores indicate that the employee is currently in the Honeymoon stage, with a sub-stage of Initial Reality Check. The scores also indicate that the employee is confident and optimistic, but may be overlooking potential challenges and complexities. The interpretation of the scores provides recommendations for improvement, including the need to develop a more realistic understanding of the work environment, and to build stronger relationships with colleagues and manager.</p>
+                    
+                </div>
+                
+
+                
+            
+
+                
+                
+                <div class="section">
+                    <h2 class="section-title">6. Psychological Profile &amp; Tendencies</h2>
+                    
+                    <p class="section-content">The employee&#39;s psychological profile is characterized by high energy, enthusiasm, and optimism. They are confident and motivated, and are eager to make a positive impact in their role. However, they may also be prone to overlooking potential challenges and complexities, and may struggle with self-doubt and uncertainty. The employee&#39;s tendencies include a tendency to be overly optimistic and confident, as well as a tendency to make impulsive decisions.</p>
+                    
+                    <p class="section-content">The employee&#39;s psychological profile is influenced by their personality, experiences, and context. Their optimistic and confident personality drives their high energy and enthusiasm, as well as their desire to make a positive impact in their role. However, their limited experience and knowledge in certain areas may also contribute to their tendency to overlook potential challenges and complexities. The employee&#39;s context, including their work environment, colleagues, and manager, also plays a significant role in shaping their psychological profile and tendencies.</p>
+                    
+                    <p class="section-content">The employee&#39;s psychological profile and tendencies have a significant impact on their behavior and performance. Their high energy and enthusiasm drive their motivation and engagement, and help them to approach challenges with a positive attitude. However, their tendency to overlook potential challenges and complexities may also lead to mistakes and errors. The employee&#39;s psychological profile and tendencies also influence their relationships with colleagues and manager, and may impact their ability to build strong and effective working relationships.</p>
+                    
+                </div>
+                
+
+                
+            
+
+                
+                
+                <div class="section">
+                    <h2 class="section-title">7. Internal Drivers &amp; Stressors</h2>
+                    <div class="drivers-stressors">
+                        
+                        <p class="section-content">The employee&#39;s internal drivers include their desire to make a positive impact in their role, as well as their need for autonomy and independence. They are motivated by their high energy and enthusiasm, and are driven to succeed in their role. However, the employee&#39;s internal stressors include their tendency to overlook potential challenges and complexities, as well as their limited experience and knowledge in certain areas. They may also struggle with self-doubt and uncertainty, which can impact their motivation and engagement.</p>
+                        
+                        <p class="section-content">The employee&#39;s internal drivers and stressors are influenced by their personality, experiences, and context. Their optimistic and confident personality drives their desire to make a positive impact in their role, as well as their need for autonomy and independence. However, their limited experience and knowledge in certain areas may also contribute to their internal stressors, including their tendency to overlook potential challenges and complexities. The employee&#39;s context, including their work environment, colleagues, and manager, also plays a significant role in shaping their internal drivers and stressors.</p>
+                        
+                        <p class="section-content">The employee&#39;s internal drivers and stressors have a significant impact on their behavior and performance. Their desire to make a positive impact in their role drives their motivation and engagement, and helps them to approach challenges with a positive attitude. However, their internal stressors, including their tendency to overlook potential challenges and complexities, may also lead to mistakes and errors. The employee&#39;s internal drivers and stressors also influence their relationships with colleagues and manager, and may impact their ability to build strong and effective working relationships.</p>
+                        
                     </div>
                 </div>
-            </div>
 
-            <!-- Section 9: Action Navigator -->
-            <div class="section">
-                <h2 class="section-title">9. Action Navigator – Personal Improvement Plan</h2>
-                <p class="section-content">
-                    This is a phase-wise, practical plan to navigate your "Emerging Challenges" substage proactively. The tone is <strong>proactively alerting (non-alarming)</strong>, encouraging readiness and strategic action.
-                </p>
+                
+                
 
-                <div class="action-phase">
-                    <h4>Phase 1: Foundation & Focus (Next 7 Days)</h4>
-                    <div class="action-item">
-                        <strong>Action 1: Conduct a Personal Risk & Impact Review</strong>
-                        <ul class="action-steps">
-                            <li><strong>Step 1:</strong> Dedicate 60 minutes to list every "nagging task," "inefficient process," or "new thing to learn" that has crossed your mind recently. Aim for 5-10 items.</li>
-                            <li><strong>Step 2:</strong> Rate each one on a simple scale: High Impact (affects core deliverables or well-being), Medium, or Low Impact.</li>
-                            <li><strong>Step 3:</strong> From the High Impact list, choose the ONE that, if solved, would make the biggest positive difference to your weekly work. Write down a simple problem statement for it.</li>
-                        </ul>
-                    </div>
+                
+            
+
+                
+                
+                <div class="section">
+                    <h2 class="section-title">8. Individual SWOT Analysis</h2>
+
+                    
+                    
+                    
+                    <p class="section-content">The employee&#39;s strengths include their high energy and enthusiasm, as well as their ability to build strong relationships with their colleagues. They are also optimistic and confident, which helps them to approach challenges with a positive attitude. However, the employee&#39;s weaknesses include their tendency to overlook potential challenges and complexities, as well as their limited experience and knowledge in certain areas. They may also struggle with self-doubt and uncertainty, which can impact their motivation and engagement.</p>
+                    
+                    <p class="section-content">The employee&#39;s opportunities include their ability to develop new skills and knowledge, as well as their potential to take on new challenges and responsibilities. They may also have the opportunity to build stronger relationships with their colleagues and manager, which can help them to achieve their goals and objectives. However, the employee&#39;s threats include their tendency to overlook potential challenges and complexities, as well as their limited experience and knowledge in certain areas. They may also face challenges in their work environment, including changes in their role or responsibilities, which can impact their motivation and engagement.</p>
+                    
+                    <p class="section-content">The employee&#39;s SWOT analysis provides a comprehensive understanding of their strengths, weaknesses, opportunities, and threats. The analysis highlights the employee&#39;s potential for growth and development, as well as their need to address their weaknesses and threats. The employee&#39;s strengths and opportunities provide a foundation for their success, while their weaknesses and threats provide a challenge to be overcome. By understanding their SWOT analysis, the employee can develop a plan to achieve their goals and objectives, and to overcome the challenges they may face.</p>
+                    
+                    
                 </div>
 
-                <div class="action-phase">
-                    <h4>Phase 2: Pilot & Learn (Days 8-21)</h4>
-                    <div class="action-item">
-                        <strong>Action 2: Run a Solution Pilot</strong>
-                        <ul class="action-steps">
-                            <li><strong>Step 1:</strong> For your chosen challenge, brainstorm 2-3 potential solutions. Don't seek the perfect fix; look for a "good enough" improvement you can test.</li>
-                            <li><strong>Step 2:</strong> Select the solution that offers the best balance of impact vs. effort. Plan a small, low-risk pilot—perhaps applying it to a single module, a one-week sprint, or a specific type of task.</li>
-                            <li><strong>Step 3:</strong> Define one metric to track (e.g., "Time spent on X," "Number of recurrences of bug Y," "My subjective stress level about this on a 1-5 scale"). Track it at the start and end of your pilot week.</li>
-                        </ul>
+                
+                
+
+                
+            
+
+                
+                
+                <div class="section">
+                    <h2 class="section-title">9. Action Navigator – Personal Improvement Plan</h2>
+                    
+                    <div class="action-phase">
+                        <p class="section-content">The employee&#39;s action plan includes several key steps to help them achieve their goals and objectives. The first step is to develop a more realistic understanding of the work environment, and to build stronger relationships with their colleagues and manager. This can be achieved by seeking feedback and guidance from their manager, as well as by being more open and communicative with their colleagues. The employee should also focus on developing new skills and knowledge, particularly in areas where they are limited or lacking.</p>
                     </div>
+                    
+                    <div class="action-phase">
+                        <p class="section-content">The second step is to address the employee&#39;s weaknesses and threats, including their tendency to overlook potential challenges and complexities. This can be achieved by being more proactive and vigilant in their work, and by seeking out opportunities to learn and grow. The employee should also focus on building their resilience and adaptability, particularly in the face of change or uncertainty. This can be achieved by developing a growth mindset, and by being more open to feedback and guidance from their manager and colleagues.</p>
+                    </div>
+                    
+                    <div class="action-phase">
+                        <p class="section-content">The third step is to capitalize on the employee&#39;s opportunities, including their ability to develop new skills and knowledge, and their potential to take on new challenges and responsibilities. This can be achieved by seeking out new challenges and opportunities, and by being more proactive and assertive in their work. The employee should also focus on building stronger relationships with their colleagues and manager, and on developing a more positive and supportive work environment. By following these steps, the employee can achieve their goals and objectives, and can overcome the challenges they may face.</p>
+                    </div>
+                    
                 </div>
 
-                <div class="action-phase">
-                    <h4>Phase 3: Integrate & Communicate (Ongoing Habit)</h4>
-                    <div class="action-item">
-                        <strong>Action 3: Strengthen Your Communication Loop</strong>
-                        <ul class="action-steps">
-                            <li><strong>Step 1:</strong> When you start your pilot, briefly inform your manager or a teammate: "I'm testing a new approach to [X challenge] this week to see if it improves [Y metric]. I'll share what I find."</li>
-                            <li><strong>Step 2:</strong> At the end of the pilot, take 5 minutes to decide: Adopt, Adapt, or Abandon the solution. Briefly document the outcome.</li>
-                            <li><strong>Step 3:</strong> Make this 3-phase cycle a quarterly habit. Set a calendar reminder to "Review Emerging Challenges."</li>
-                        </ul>
-                    </div>
+                
+                
+
+                
+            
+
+                
+                
+                <div class="section">
+                    <h2 class="section-title">10. Value Contribution to Higher Dimensions</h2>
+                    
+                    <p class="section-content">The employee&#39;s growth and development have a significant impact on the team and organization. As the employee develops new skills and knowledge, they are able to contribute more effectively to their role and responsibilities. This, in turn, helps to drive the success of the team and organization, and contributes to the achievement of their goals and objectives. The employee&#39;s growth and development also help to build a more positive and supportive work environment, which can have a positive impact on the team and organization as a whole.</p>
+                    
+                    <p class="section-content">The employee&#39;s contribution to the team and organization is not limited to their individual role and responsibilities. They also have the potential to make a positive impact on the organization&#39;s culture and values, and to help drive the organization&#39;s mission and vision. By developing a more positive and supportive work environment, the employee can help to build a more collaborative and effective team, which can drive the success of the organization. The employee&#39;s growth and development can also help to attract and retain top talent, and can contribute to the organization&#39;s reputation and brand.</p>
+                    
+                    <p class="section-content">The employee&#39;s growth and development are critical to the success of the team and organization. By investing in the employee&#39;s development, the organization can help to drive their success, and can achieve their goals and objectives. The employee&#39;s growth and development can also help to build a more sustainable and resilient organization, which can adapt and thrive in the face of change and uncertainty. By recognizing the value of the employee&#39;s growth and development, the organization can make a positive impact on the team and organization, and can drive their success and achievement.</p>
+                    
                 </div>
-            </div>
+                
 
-            <!-- Section 10: Value Contribution -->
-            <div class="section">
-                <h2 class="section-title">10. Value Contribution to Higher Dimensions</h2>
-                <p class="section-content">
-                    Your personal growth in navigating the "Emerging Challenges" substage has a direct and positive ripple effect on your team and the wider organization.
-                </p>
+                
+            
 
-                <h3 class="subsection-title">Contribution to Team (2D Dimension):</h3>
-                <p class="section-content">
-                    By proactively solving your own workflow challenges, you reduce bottlenecks and friction points for your teammates. Your improved prioritization and clear communication become a model for others, raising the team's overall operational clarity. You transition from being just a reliable coder to a reliable problem-solver, a more valuable team asset.
-                </p>
+        
 
-                <h3 class="subsection-title">Contribution to Organization (3D & 4D Dimensions):</h3>
-                <p class="section-content">
-                    Organizations thrive on employees who maintain steady performance while adapting. By developing this muscle, you directly contribute to organizational agility and resilience. You help prevent small inefficiencies from scaling into systemic problems, saving time and resources. Your journey from stability through adaptive change is a microcosm of the innovation and continuous improvement that organizations need to survive and thrive. Your personal steadiness, combined with a newly honed proactive agility, makes you a cornerstone of a modern, high-performing workplace.
-                </p>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="report-footer">
-            <div class="confidence-level">Report Confidence Level: HIGH</div>
-            <p class="footer-note">
-                This report is based on the ChaturVima behavioral framework and is intended for developmental purposes. It reflects patterns, not fixed traits, and is designed to support your ongoing professional journey.
-            </p>
-        </div>
     </div>
+
+    <!-- ════════════════════════════════════════
+         FOOTER
+         ════════════════════════════════════════ -->
+    <div class="report-footer">
+        <p class="footer-note">
+            This report is confidential and intended for the developmental use of
+            HR-EMP-00031 and authorized organizational development professionals
+            within the context of the ChaturVima framework.
+        </p>
+    </div>
+
+</div>
 </body>
 </html>
