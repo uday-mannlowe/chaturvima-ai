@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  chaturvima:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: chaturvima-api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      # Groq API
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      # Concurrency settings
+      - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-5}
+      - MAX_QUEUE_SIZE=${MAX_QUEUE_SIZE:-100}
+      - GROQ_RATE_LIMIT_PER_MINUTE=${GROQ_RATE_LIMIT_PER_MINUTE:-30}
+      - GROQ_TIMEOUT_SECONDS=${GROQ_TIMEOUT_SECONDS:-120}
+      # Frappe authentication
+      - FRAPPE_API_KEY=${FRAPPE_API_KEY}
+      - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
+    volumes:
+      # Persist vector DB and data
+      - ./vector_db:/app/vector_db
+      - ./data:/app/data
+      - ./html_data:/app/html_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

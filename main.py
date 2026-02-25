@@ -1,4 +1,4 @@
-"""
+﻿"""
 Improved ChaturVima Report Generator API with Multi-Report Support
 """
 import asyncio
@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+import httpx
 from fastapi import FastAPI, Body, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -23,16 +24,22 @@ except Exception:
     HTML = None
 
 from generate_groq import (
-    generate_text_report, 
+    generate_text_report,
     generate_multi_reports,
     generate_structured_report,
     generate_multi_reports_structured,
     generate_structured_report_by_dimension,
+    # ✅ NEW: fast parallel JSON generation (one dedicated model per report type)
+    generate_multi_reports_json,
+    generate_report_as_json,
+    MODEL_BY_REPORT_TYPE_DEDICATED,
     resolve_input_data,
     normalize_dimension,
+    map_frappe_to_nd,
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     REPORT_TYPE_MAP,
-    REPORT_TITLE_MAP
+    REPORT_TITLE_MAP,
+    detect_dimension,
 )
 
 # ============================================================================
@@ -58,6 +65,22 @@ class Config:
     REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "300"))
     ENABLE_METRICS = os.getenv("ENABLE_METRICS", "true").lower() == "true"
 
+    # Frappe employee report settings
+    FRAPPE_BASE_URL = os.getenv(
+        "FRAPPE_BASE_URL",
+        "https://cvdev.m.frappe.cloud/api/method/"
+        "chaturvima_api.api.dashboard.get_employee_weighted_assessment_summary"
+    )
+    HTML_DATA_DIR = os.path.join(os.path.dirname(__file__), "html_data")
+
+    # Frappe auth – Option A: API key + secret (preferred)
+    FRAPPE_API_KEY    = os.getenv("FRAPPE_API_KEY", "")
+    FRAPPE_API_SECRET = os.getenv("FRAPPE_API_SECRET", "")
+
+    # Frappe auth – Option B: username + password (fallback)
+    FRAPPE_USERNAME = os.getenv("FRAPPE_USERNAME", "")
+    FRAPPE_PASSWORD = os.getenv("FRAPPE_PASSWORD", "")
+
 
 # ============================================================================
 # TASK QUEUE & JOB MANAGEMENT
@@ -80,10 +103,11 @@ class ReportJob:
     created_at: datetime = field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    result: Optional[Union[str, Dict[str, Any]]] = None  # ✅ Can be single report or dict of reports
+    result: Optional[Union[str, Dict[str, Any]]] = None  # Can be single report or dict of reports
     error: Optional[str] = None
-    multi_report: bool = False  # ✅ NEW: Track if this is a multi-report job
-    structured: bool = False  # ✅ NEW: Track if this job returns structured output
+    multi_report: bool = False       # Generate all reports for the dimension
+    structured: bool = False         # Section-wise structured output
+    employee_report: bool = False    # Frappe employee report flow
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -94,7 +118,8 @@ class ReportJob:
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "error": self.error,
             "multi_report": self.multi_report,
-            "structured": self.structured
+            "structured": self.structured,
+            "employee_report": self.employee_report,
         }
 
 
@@ -107,13 +132,25 @@ class ReportQueue:
         self.job_counter = 0
         self._lock = asyncio.Lock()
     
-    async def add_job(self, payload: Dict[str, Any], multi_report: bool = False, structured: bool = False) -> str:
+    async def add_job(
+        self,
+        payload: Dict[str, Any],
+        multi_report: bool = False,
+        structured: bool = False,
+        employee_report: bool = False,
+    ) -> str:
         """Add a new job to the queue"""
         async with self._lock:
             self.job_counter += 1
             job_id = f"job_{int(time.time())}_{self.job_counter}"
             
-            job = ReportJob(job_id=job_id, payload=payload, multi_report=multi_report, structured=structured)
+            job = ReportJob(
+                job_id=job_id,
+                payload=payload,
+                multi_report=multi_report,
+                structured=structured,
+                employee_report=employee_report,
+            )
             self.jobs[job_id] = job
             
             try:
@@ -222,37 +259,189 @@ class WorkerPool:
                 try:
                     # Rate limiting
                     await self.rate_limiter.acquire()
-                    
-                    # Resolve data
-                    data = resolve_input_data(job.payload)
-                    
-                    # ✅ NEW: Check if multi-report generation
-                    if job.multi_report:
-                        # Generate multiple reports
-                        print(f"📊 Generating multiple reports for dimension {data['dimension']} (structured={job.structured})")
+
+                    # ── BRANCH 1: Frappe employee report flow ──────────────────
+                    if job.employee_report:
+                        employee_id = job.payload["employee"]
+                        print(f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id}")
+
+                        async with httpx.AsyncClient(timeout=30) as client:
+                            frappe_url = f"{Config.FRAPPE_BASE_URL}?employee={employee_id}"
+                            resp = await client.get(frappe_url, headers=_frappe_headers())
+                            resp.raise_for_status()
+                            frappe_data = resp.json()
+
+                        if "message" not in frappe_data:
+                            raise ValueError(
+                                f"Unexpected Frappe response structure: {list(frappe_data.keys())}"
+                            )
+
+                        # Map Frappe JSON → ND input (dimension auto-detected)
+                        nd_data = map_frappe_to_nd(employee_id, frappe_data)
+                        dimension = nd_data["dimension"]
+                        print(f"📐 Worker {worker_id}: dimension detected = {dimension}")
+
+                        # ── NEW FAST PATH ────────────────────────────────────────────────
+                        # generate_multi_reports_json fires ONE dedicated model
+                        # per report type ALL IN PARALLEL:
+                        #   1D → MODEL_1D
+                        #   2D → MODEL_1D + MODEL_2D  (simultaneously)
+                        #   3D → MODEL_1D + MODEL_2D + MODEL_3D  (simultaneously)
+                        #   4D → all 4 models at once
+                        # Each model produces a complete structured JSON report
+                        # in ONE call instead of 10-16 section calls.
+                        # Result shape: {"dimension": "2D", "reports": {"employee": {...}, "boss": {...}}}
+                        # ─────────────────────────────────────────────────────────────
+                        multi_json_result = await asyncio.wait_for(
+                            asyncio.to_thread(generate_multi_reports_json, nd_data),
+                            timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+                        )
+                        # Unwrap to the same shape the rest of the worker expects
+                        reports_payload = multi_json_result.get("reports", {})
+                        print(
+                            f"📦 Worker {worker_id}: received {len(reports_payload)} JSON report(s) — "
+                            + ", ".join(
+                                f"{rt} ({r.get('word_count', 0)} words, model={r.get('model_used', '?')})"
+                                for rt, r in reports_payload.items()
+                            )
+                        )
+
+                        # ── Build structured JSON payload ─────────────────────
+                        msg = frappe_data.get("message", frappe_data)
+                        employee_name = (
+                            msg.get("employee_name")
+                            or msg.get("employee_full_name")
+                            or msg.get("employee")
+                            or employee_id
+                        )
+                        designation = (
+                            msg.get("designation")
+                            or msg.get("role")
+                            or msg.get("employee_role")
+                            or "Employee"
+                        )
+                        questionnaires = msg.get("questionnaires_considered", [])
+                        dimension_label = {
+                            "1D": "1D - Individual Assessment",
+                            "2D": "2D - Employee-Boss Relationship",
+                            "3D": "3D - Team Assessment",
+                            "4D": "4D - Organisational Assessment",
+                        }.get(dimension, dimension)
+
+                        stage_scores = []
+                        for st in msg.get("stages", []):
+                            try:
+                                score = float(st.get("score", 0))
+                            except (TypeError, ValueError):
+                                score = 0.0
+                            try:
+                                pct = float(st.get("percentage", 0))
+                            except (TypeError, ValueError):
+                                pct = 0.0
+                            stage_scores.append({
+                                "stage": str(st.get("stage", "-")),
+                                "score": f"{score:.2f}",
+                                "percentage": f"{pct:.1f}",
+                            })
+
+                        # Normalise reports payload into a clean list of dicts
+                        report_sections_list = []
+                        if isinstance(reports_payload, dict):
+                            for rtype, robj in reports_payload.items():
+                                if isinstance(robj, dict) and "sections" in robj:
+                                    clean_sections = []
+                                    for sec in robj.get("sections", []):
+                                        paras = sec.get("paragraphs") or _text_to_paragraphs(sec.get("text", ""))
+                                        clean_sections.append({
+                                            "id": sec.get("id", ""),
+                                            "title": sec.get("title", ""),
+                                            "paragraphs": paras,
+                                        })
+                                    report_sections_list.append({
+                                        "title": robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
+                                        "report_type": rtype,
+                                        "sections": clean_sections,
+                                    })
+
+                        json_payload = {
+                            "status": "ok",
+                            "header": {
+                                "employee_id": employee_id,
+                                "employee_name": employee_name,
+                                "designation": designation,
+                                "report_type": f"{dimension_label} Growth Report",
+                                "dimension_label": dimension_label,
+                                "dominant_stage": str(msg.get("dominant_stage", "-")),
+                                "dominant_sub_stage": str(msg.get("dominant_sub_stage", "-")),
+                                "questionnaire_text": ", ".join(str(q) for q in questionnaires) if questionnaires else "-",
+                                "generated_date": datetime.now().strftime("%d %B %Y"),
+                                "stage_scores": stage_scores,
+                            },
+                            "reports": report_sections_list,
+                        }
+
+                        # ── Save JSON only (no HTML generation) ──────────────
+                        # HTML rendering is done by the frontend using the JSON.
+                        os.makedirs(Config.HTML_DATA_DIR, exist_ok=True)
+
+                        # Determine which report types were generated
+                        if isinstance(reports_payload, dict):
+                            generated_types = list(reports_payload.keys())
+                        else:
+                            generated_types = [DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension, "employee")]
+
+                        # ── Save ONE combined JSON file only ──────────────────
+                        # Shape: { status, header, reports: [ {report_type, title, sections}, ... ] }
+                        # For 1D → reports has 1 item
+                        # For 2D → reports has 2 items  (employee + boss)
+                        # For 3D → reports has 3 items  (employee + boss + team)
+                        # For 4D → reports has 4 items
+                        # Frontend fetches this ONE file and renders all tabs from it.
+                        combined_path = os.path.join(
+                            Config.HTML_DATA_DIR, f"{employee_id}.json"
+                        )
+                        with open(combined_path, "w", encoding="utf-8") as f:
+                            json.dump(json_payload, f, ensure_ascii=False, indent=2)
+                        print(f"💾 Worker {worker_id}: saved {combined_path}")
+                        print(
+                            f"📊 Reports inside: "
+                            + ", ".join(
+                                f"{r['report_type']} ({len(r.get('sections', []))} sections)"
+                                for r in json_payload.get("reports", [])
+                            )
+                        )
+
+                        job.result = json_payload  # return full JSON payload
+
+                    # ── BRANCH 2: Standard multi-report flow ──────────────────
+                    elif job.multi_report:
+                        data = resolve_input_data(job.payload)
+                        print(f"📊 Worker {worker_id}: multi-report dim={data['dimension']} structured={job.structured}")
                         if job.structured:
                             reports = await asyncio.wait_for(
                                 asyncio.to_thread(generate_multi_reports_structured, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 5  # More time for section-wise generation
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
                             )
                         else:
                             reports = await asyncio.wait_for(
                                 asyncio.to_thread(generate_multi_reports, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
                             )
                         job.result = reports
+
+                    # ── BRANCH 3: Standard single-report flow ─────────────────
                     else:
-                        # Generate single report (legacy or structured)
-                        print(f"📄 Generating single report for dimension {data['dimension']} (structured={job.structured})")
+                        data = resolve_input_data(job.payload)
+                        print(f"📄 Worker {worker_id}: single report dim={data['dimension']} structured={job.structured}")
                         if job.structured:
                             report = await asyncio.wait_for(
                                 asyncio.to_thread(generate_structured_report_by_dimension, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
                             )
                         else:
                             report = await asyncio.wait_for(
                                 asyncio.to_thread(generate_text_report, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS
+                                timeout=Config.GROQ_TIMEOUT_SECONDS,
                             )
                         job.result = report
                     
@@ -382,6 +571,16 @@ async def startup_event():
     print(f"Workers: {Config.MAX_CONCURRENT_GENERATIONS}")
     print(f"Queue Size: {Config.MAX_QUEUE_SIZE}")
     print(f"Rate Limit: {Config.GROQ_RATE_LIMIT_PER_MINUTE}/min")
+
+    # Frappe auth check
+    if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+        print(f"🔑 Frappe auth: API key+secret (✓ configured)")
+    elif Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
+        print(f"🔑 Frappe auth: username+password (✓ configured)")
+    else:
+        print("⚠️  Frappe auth: NO CREDENTIALS SET – employee report endpoints will return 403")
+        print("   Set FRAPPE_API_KEY + FRAPPE_API_SECRET in .env to fix this.")
+
     print("="*60 + "\n")
     
     await worker_pool.start()
@@ -844,8 +1043,484 @@ async def get_dimension_info() -> Dict[str, Any]:
     return {
         "supported_dimensions": list(REPORT_TYPE_MAP.keys()),
         "dimension_report_mapping": REPORT_TYPE_MAP,
-        "report_titles": REPORT_TITLE_MAP
+        "report_titles": REPORT_TITLE_MAP,
+        "model_per_report_type": MODEL_BY_REPORT_TYPE_DEDICATED,
     }
+
+
+# ============================================================================
+# ✅ NEW: FAST JSON ENDPOINT — calls generate_multi_reports_json directly
+# Frontend hits this instead of the old submit → poll → result flow.
+# ============================================================================
+
+@app.post("/generate/json", tags=["Fast JSON"])
+async def generate_json_reports(
+    payload: Dict[str, Any] = Body(
+        ...,
+        examples={
+            "2D_frappe": {
+                "summary": "2D report from Frappe employee ID",
+                "value": {"employee": "HR-EMP-00031"},
+            },
+            "2D_direct": {
+                "summary": "2D report from direct input data",
+                "value": {
+                    "dimension": "2D",
+                    "data": {"behavioral_stage": {"stage": "Honeymoon"}},
+                },
+            },
+        },
+    )
+) -> Dict[str, Any]:
+    """
+    **Fastest endpoint — recommended for frontend use.**
+
+    Fires one dedicated LLM per report type, all in parallel, each returning
+    complete structured JSON in a single call.
+
+    | Dimension | Models fired simultaneously       | Typical time |
+    |-----------|-----------------------------------|--------------|
+    | 1D        | MODEL_1D                          | ~10-20s      |
+    | 2D        | MODEL_1D + MODEL_2D               | ~15-25s      |
+    | 3D        | MODEL_1D + MODEL_2D + MODEL_3D    | ~15-30s      |
+    | 4D        | MODEL_1D + MODEL_2D + MODEL_3D + MODEL_4D | ~20-35s |
+
+    ### Response shape
+    ```json
+    {
+      "dimension": "2D",
+      "reports": {
+        "employee": {
+          "title": "Individual Self-Assessment Report",
+          "report_type": "employee",
+          "model_used": "llama-3.1-8b-instant",
+          "sections": [
+            { "id": "purpose", "title": "Purpose ...", "paragraphs": ["...", "..."] },
+            ...
+          ],
+          "word_count": 3200
+        },
+        "boss": { ... }
+      }
+    }
+    ```
+    """
+    import time as _time
+    start = _time.time()
+
+    try:
+        # ── Frappe flow (employee ID given) ──────────────────────────────────
+        if "employee" in payload and "dimension" not in payload:
+            employee_id = str(payload["employee"]).strip()
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(
+                    f"{Config.FRAPPE_BASE_URL}?employee={employee_id}",
+                    headers=_frappe_headers(),
+                )
+                resp.raise_for_status()
+                frappe_data = resp.json()
+            nd_data = map_frappe_to_nd(employee_id, frappe_data)
+        else:
+            # ── Direct data flow ────────────────────────────────────────────
+            nd_data = resolve_input_data(payload)
+
+        # Fire parallel JSON generation
+        result = await asyncio.wait_for(
+            asyncio.to_thread(generate_multi_reports_json, nd_data),
+            timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+        )
+
+        elapsed = round(_time.time() - start, 2)
+        result["elapsed_seconds"] = elapsed
+        result["model_map"] = MODEL_BY_REPORT_TYPE_DEDICATED
+        print(f"✅ /generate/json completed in {elapsed}s")
+        return result
+
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Report generation timed out.")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================================
+# EMPLOYEE REPORT – FRAPPE AUTH HELPER
+# ============================================================================
+
+def _frappe_headers() -> dict:
+    """
+    Build HTTP headers for Frappe Cloud API calls.
+
+    Priority:
+      1. API key + secret  (FRAPPE_API_KEY + FRAPPE_API_SECRET in .env)
+         Header format:  Authorization: token <api_key>:<api_secret>
+      2. Username + password basic auth (FRAPPE_USERNAME + FRAPPE_PASSWORD)
+         Header format:  Authorization: Basic <base64(user:pass)>
+      3. No auth (will 403 on protected endpoints – useful only for local dev)
+    """
+    import base64
+    if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+        token = f"{Config.FRAPPE_API_KEY}:{Config.FRAPPE_API_SECRET}"
+        return {
+            "Authorization": f"token {token}",
+            "Content-Type": "application/json",
+        }
+    if Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
+        creds = base64.b64encode(
+            f"{Config.FRAPPE_USERNAME}:{Config.FRAPPE_PASSWORD}".encode()
+        ).decode()
+        return {
+            "Authorization": f"Basic {creds}",
+            "Content-Type": "application/json",
+        }
+    # No credentials – log a clear warning so it’s obvious in the console
+    print(
+        "⚠️  FRAPPE_AUTH: no credentials set in .env. "
+        "Set FRAPPE_API_KEY + FRAPPE_API_SECRET (or FRAPPE_USERNAME + FRAPPE_PASSWORD). "
+        "Requests to protected endpoints will return 403."
+    )
+    return {"Content-Type": "application/json"}
+
+
+# ============================================================================
+# EMPLOYEE REPORT – HTML RENDERER
+# ============================================================================
+
+def _render_employee_report_html(
+    employee_id: str,
+    dimension: str,
+    report_payload: Union[str, Dict[str, Any]],
+    nd_data: dict,
+    frappe_data: dict,
+    report_type: str = "employee",
+) -> str:
+    """
+    Render a single report type using the correct per-type template.
+    Templates:
+      employee → html/employee_report.html
+      boss     → html/boss_report.html
+      others   → html/index.html (fallback)
+    """
+
+    msg = frappe_data.get("message", frappe_data)
+    dominant_stage = str(msg.get("dominant_stage", "-"))
+    dominant_sub_stage = str(msg.get("dominant_sub_stage", "-"))
+    questionnaires = msg.get("questionnaires_considered", [])
+    generated_date = datetime.now().strftime("%d %B %Y")
+
+    employee_name = (
+        msg.get("employee_name")
+        or msg.get("employee_full_name")
+        or msg.get("employee")
+        or employee_id
+    )
+    designation = (
+        msg.get("designation")
+        or msg.get("role")
+        or msg.get("employee_role")
+        or "Employee"
+    )
+
+    dimension_label = {
+        "1D": "1D - Individual Assessment",
+        "2D": "2D - Employee-Boss Relationship",
+        "3D": "3D - Team Assessment",
+        "4D": "4D - Organisational Assessment",
+    }.get(dimension, str(dimension))
+
+    report_type = f"{dimension_label} Growth Report"
+    report_subtitle = f"ChaturVima {dimension_label} Diagnostic Report"
+    questionnaire_text = ", ".join(str(q) for q in questionnaires) if questionnaires else "-"
+    # Filter to only this report type's sections (not all reports combined)
+    all_reports = _normalize_reports(report_payload, nd_data)
+    if isinstance(report_payload, dict) and not isinstance(list(report_payload.values())[0] if report_payload else None, str):
+        # Multi-report dict: find matching report type
+        matching = [r for r in all_reports if r.get("report_type") == report_type]
+        report_sections_for_type = matching if matching else all_reports
+    else:
+        report_sections_for_type = all_reports
+
+    # Flatten sections from all matching reports into a single list for this template
+    report_sections = []
+    for rpt in report_sections_for_type:
+        for sec in rpt.get("sections", []):
+            report_sections.append(sec)
+
+    stage_rows: List[Dict[str, str]] = []
+    for st in msg.get("stages", []):
+        try:
+            score = float(st.get("score", 0))
+        except (TypeError, ValueError):
+            score = 0.0
+        try:
+            percentage = float(st.get("percentage", 0))
+        except (TypeError, ValueError):
+            percentage = 0.0
+        stage_rows.append({
+            "stage": str(st.get("stage", "-")),
+            "score": f"{score:.2f}",
+            "percentage": f"{percentage:.1f}",
+        })
+
+    # Build per-type subtitle
+    type_subtitle_map = {
+        "employee": f"ChaturVima {dimension_label} – Individual Assessment Report",
+        "boss": f"ChaturVima {dimension_label} – Employee–Manager Relationship Report",
+        "team": f"ChaturVima {dimension_label} – Team Assessment Report",
+        "organization": f"ChaturVima {dimension_label} – Organisational Assessment Report",
+    }
+    per_type_subtitle = type_subtitle_map.get(report_type, report_subtitle)
+
+    context = {
+        "page_title": f"ChaturVima Growth Report - {employee_name} ({report_type.title()})",
+        "report_heading": "ChaturVima Diagnostic Report",
+        "report_subtitle": per_type_subtitle,
+        "employee_name": employee_name,
+        "designation": designation,
+        "report_type": f"{dimension_label} Growth Report",
+        "employee_id": employee_id,
+        "dimension_label": dimension_label,
+        "generated_date": generated_date,
+        "dominant_stage": dominant_stage,
+        "dominant_sub_stage": dominant_sub_stage,
+        "questionnaire_text": questionnaire_text,
+        "stage_rows": stage_rows,
+        "report_sections": report_sections,
+    }
+
+    TEMPLATE_MAP = {
+        "employee": "employee_report.html",
+        "boss": "boss_report.html",
+    }
+    template_name = TEMPLATE_MAP.get(report_type, "index.html")
+
+    try:
+        env = Environment(
+            loader=FileSystemLoader(Config.TEMPLATE_DIR),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
+        template = env.get_template(template_name)
+        return template.render(**context)
+    except Exception as exc:
+        print(f"⚠️ Employee template rendering failed ({template_name}): {exc}")
+        return _render_report_html(report_payload, nd_data)
+
+# ============================================================================
+# EMPLOYEE REPORT - API ENDPOINTS
+# ============================================================================
+
+@app.get(
+    "/debug-frappe/{employee_id}",
+    tags=["Employee Report"],
+    summary="🔍 Debug – preview Frappe data & dimension detection (no LLM call)",
+)
+async def debug_frappe(employee_id: str) -> Dict[str, Any]:
+    """
+    **Use this first when testing.**
+
+    Hits the Frappe API and shows you:
+    - Raw `questionnaires_considered` list
+    - Which dimension would be auto-detected from that list
+    - Dominant stage and sub-stage
+
+    Does **NOT** call the LLM or generate a report.
+    """
+    frappe_url = f"{Config.FRAPPE_BASE_URL}?employee={employee_id}"
+    auth_headers = _frappe_headers()
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(frappe_url, headers=auth_headers)
+            resp.raise_for_status()
+            frappe_data = resp.json()
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                502,
+                f"Frappe returned {exc.response.status_code}. "
+                f"If 403: check FRAPPE_API_KEY + FRAPPE_API_SECRET in .env. "
+                f"Response: {exc.response.text[:300]}"
+            )
+        except Exception as exc:
+            raise HTTPException(502, f"Cannot reach Frappe API: {exc}")
+
+    if "message" not in frappe_data:
+        raise HTTPException(502, f"Unexpected Frappe structure: {list(frappe_data.keys())}")
+
+    msg = frappe_data["message"]
+    questionnaires: List[str] = msg.get("questionnaires_considered", [])
+    from generate_groq import detect_dimension
+    dimension = detect_dimension(questionnaires)
+
+    return {
+        "employee": employee_id,
+        "questionnaires_considered": questionnaires,
+        "questionnaire_count": len(questionnaires),
+        "dimension_detected": dimension,
+        "dimension_rule": "1 questionnaire=1D, 2=2D, 3=3D, 4=4D",
+        "dominant_stage": msg.get("dominant_stage", "—"),
+        "dominant_sub_stage": msg.get("dominant_sub_stage", "—"),
+        "frappe_raw": frappe_data,
+    }
+
+
+@app.post(
+    "/generate-employee-report",
+    tags=["Employee Report"],
+    summary="⚡ Submit employee report job (async, uses worker queue)",
+)
+async def generate_employee_report(
+    payload: Dict[str, Any] = Body(
+        ...,
+        examples={
+            "basic": {
+                "summary": "Generate report (uses cache if exists)",
+                "value": {"employee": "HR-EMP-00031"},
+            },
+            "force": {
+                "summary": "Force regeneration (ignore cache)",
+                "value": {"employee": "HR-EMP-00031", "force_regenerate": True},
+            },
+        },
+    )
+) -> Dict[str, Any]:
+    """
+    **Main endpoint – called by the frontend when the user clicks "Generate Report".**
+
+    Internally submits a job to the **existing worker queue** so it respects
+    all concurrency limits and rate limiting already in place.
+
+    ### Request body
+    ```json
+    { "employee": "HR-EMP-00031" }                      // serves cache if present
+    { "employee": "HR-EMP-00031", "force_regenerate": true }  // always regenerates
+    ```
+
+    ### Response
+    Returns a `job_id`. Poll `GET /status/{job_id}` to check progress,
+    then call `GET /employee-report/{employee_id}` to get the cached HTML.
+
+    ### Dimension auto-detection (no `dimension` field needed)
+    ```
+    questionnaires_considered length → dimension
+    1 item   → 1D
+    2 items  → 2D
+    3 items  → 3D
+    4 items  → 4D
+    ```
+    """
+    employee_id = str(payload.get("employee", "")).strip()
+    if not employee_id:
+        raise HTTPException(400, "'employee' field is required.")
+
+    force_regenerate = bool(payload.get("force_regenerate", False))
+
+    # Serve from cache immediately – no LLM call, no queue
+    if not force_regenerate:
+        os.makedirs(Config.HTML_DATA_DIR, exist_ok=True)
+        combined_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.json")
+        if os.path.exists(combined_path):
+            print(f"📄 Cache hit – returning immediately for {employee_id}")
+            return {
+                "job_id": None,
+                "status": "cached",
+                "employee": employee_id,
+                "message": "Cached report available.",
+                "report_url": f"/report/{employee_id}",
+            }
+
+    # Submit to worker queue
+    job_id = await report_queue.add_job(
+        payload={"employee": employee_id},
+        employee_report=True,
+    )
+
+    return {
+        "job_id": job_id,
+        "status": "submitted",
+        "employee": employee_id,
+        "message": (
+            f"Report generation queued. "
+            f"Poll GET /status/{job_id} until status=completed, "
+            f"then fetch GET /report/{employee_id} to get all reports."
+        ),
+        "poll_url": f"/status/{job_id}",
+        "report_url": f"/report/{employee_id}",
+    }
+
+
+# ============================================================================
+# SINGLE REPORT ENDPOINT — returns ALL reports for an employee in one call
+# This is the ONLY endpoint the frontend needs.
+#
+# Flow:
+#   1. Frontend calls GET /report/{employee_id}
+#   2. If cached → returns JSON immediately
+#   3. If not cached → returns 404 with instructions to generate first
+#
+# JSON shape returned:
+# {
+#   "status": "ok",
+#   "header": { employee_id, employee_name, dimension_label, stage_scores, ... },
+#   "reports": [
+#     { "report_type": "employee", "title": "...", "sections": [...] },  ← 1D
+#     { "report_type": "boss",     "title": "...", "sections": [...] },  ← 2D
+#     { "report_type": "team",     "title": "...", "sections": [...] },  ← 3D
+#     { "report_type": "organization", ...}                              ← 4D
+#   ]
+# }
+# reports[] will have 1, 2, 3, or 4 items depending on dimension.
+# ============================================================================
+
+@app.get(
+    "/report/{employee_id}",
+    tags=["Employee Report"],
+    summary="📦 Get all reports for an employee (single endpoint for frontend)",
+)
+async def get_employee_all_reports(employee_id: str) -> Dict[str, Any]:
+    """
+    **The only endpoint the frontend needs.**
+
+    Returns all generated reports for this employee in a single JSON response.
+    The `reports` array contains 1–4 items depending on the employee's dimension:
+    - 1D → `[employee]`
+    - 2D → `[employee, boss]`
+    - 3D → `[employee, boss, team]`
+    - 4D → `[employee, boss, team, organization]`
+
+    Call `POST /generate-employee-report` first if no report exists yet.
+    """
+    combined_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.json")
+    if not os.path.exists(combined_path):
+        raise HTTPException(
+            404,
+            detail={
+                "error": f"No report found for employee '{employee_id}'.",
+                "action": "Call POST /generate-employee-report to generate the report first.",
+                "generate_url": "/generate-employee-report",
+                "body": {"employee": employee_id},
+            }
+        )
+    with open(combined_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ============================================================================
+# STARTUP CLEANUP — remove old per-type files from previous code versions
+# ============================================================================
+
+def _cleanup_old_per_type_files() -> None:
+    """Remove {employee_id}_{rtype}.json files where a combined file already exists."""
+    import glob
+    data_dir = Config.HTML_DATA_DIR
+    if not os.path.isdir(data_dir):
+        return
+    for rtype in ("employee", "boss", "team", "organization"):
+        for old_file in glob.glob(os.path.join(data_dir, f"*_{rtype}.json")):
+            base   = os.path.basename(old_file)
+            emp_id = base.replace(f"_{rtype}.json", "")
+            if os.path.exists(os.path.join(data_dir, f"{emp_id}.json")):
+                os.remove(old_file)
+                print(f"🧹 Cleaned up old file: {old_file}")
+
+_cleanup_old_per_type_files()
 
 
 # ============================================================================
