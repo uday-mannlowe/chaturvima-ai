@@ -19,6 +19,14 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libpangoft2-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi8 \
+    shared-mime-info \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (layer caching optimization)
@@ -27,6 +35,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
+
+# Validate WeasyPrint import at build time
+RUN python -c "import weasyprint; print('weasyprint', weasyprint.__version__)"
 
 # Copy application source code
 COPY . .
