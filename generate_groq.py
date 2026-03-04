@@ -542,19 +542,31 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
     - Discuss current impact on performance
     - Project future implications
 
-13. Recommendations for the Boss
+13. Dyadic SWOT Analysis
+    - Strengths: Relational strengths that can be leveraged
+    - Weaknesses: Relational blind spots and vulnerabilities
+    - Opportunities: Growth levers for stronger alignment
+    - Threats: Risks that can degrade trust, performance, or collaboration
+    - - Provide a detailed SWOT analysis.
+Structure the response clearly under four headings: Strengths, Weaknesses, Opportunities, and Threats.
+Under each heading ie Strengths, Weaknesses, Opportunities, and Threats. , list the points in numbered format (1, 2, 3, etc.).
+Keep each point concise but descriptive (2–3 lines each).
+
+     
+
+14. Recommendations for the Boss
     - Provide boss-focused interventions
     - Suggest management adjustments
 
-14. Recommendations for Joint Action
+15. Recommendations for Joint Action
     - Suggest collaborative improvements
     - Outline relationship-building steps
 
-15. Next Steps & Development Path
+16. Next Steps & Development Path
     - Outline immediate actions
     - Suggest long-term relationship development
 
-16. Closing Notes
+17. Closing Notes
     - Summarize relationship assessment
     - Provide constructive outlook
 
@@ -587,9 +599,15 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
 10. Conflict & Tension Points
 11. Root Cause Assessment
 12. Implications & Impact
-13. Recommendations for Team Development
-14. Next Steps & Development Path
-15. Closing Notes
+13. Collective SWOT (Individual within Department).
+    - Provide a detailed SWOT analysis.
+Structure the response clearly under four headings: Strengths, Weaknesses, Opportunities, and Threats.
+Under each heading ie Strengths, Weaknesses, Opportunities, and Threats. , list the points in numbered format (1, 2, 3, etc.).
+Keep each point concise but descriptive (2–3 lines each).
+
+14. Recommendations for Team Development
+15. Next Steps & Development Path
+16. Closing Notes
 
 Write in full, detailed paragraphs with concrete examples from the data.
 Do NOT use bullet points. Use flowing narrative structure.
@@ -610,18 +628,23 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
 1. Purpose of the Assessment
 2. Dimension Overview & Scope
 3. Inputs & Assessment Instruments
-4. Organizational Profile Summary
-5. Organizational Stage Diagnosis
-6. Culture & Values Analysis
-7. Leadership & Governance Patterns
-8. Communication & Information Flow
-9. Performance & Strategic Alignment
-10. Systemic Issues & Challenges
-11. Root Cause Assessment
-12. Implications & Impact
-13. Strategic Recommendations
-14. Implementation Roadmap
-15. Closing Notes
+4. Emotional Stage Interpretation( Stage and Sub stage)Specific Format
+    1.Definition of Dominant Stage and Pre Dominant Sub stage
+    2.Interpretation
+    3.Behavioural Indicators
+5.Organisational Climate & Alignment Analysis
+6.Policy–Practice Gap Assessment
+7.Leadership Consistency & Strategic Disconnect Indices
+8.Full 4D Alignment Profile
+9.Individual’s Position in the Organisational Emotional Map
+10.Cumulative SWOT Overlay (Employee, Boss, Dept, Company)
+    -Provide a detailed SWOT analysis.
+    Structure the response clearly under four headings: Strengths, Weaknesses, Opportunities, and Threats.
+    Under each heading ie Strengths, Weaknesses, Opportunities, and Threats. , list the points in numbered format (1, 2, 3, etc.).
+    Keep each point concise but descriptive (2–3 lines each).
+11.Psychological & Cultural Fit Map
+12.Action Navigator – Organisation-Level Interventions
+13.Strategic Value & Leadership Insights
 
 Write in full, detailed paragraphs with concrete examples from the data.
 Do NOT use bullet points. Use flowing narrative structure.
@@ -910,6 +933,18 @@ SECTION_SPECS_BOSS: List[SectionSpec] = [
             "Discuss current impact on performance and project future implications."
         ),
         data_keys=("relationship_variables", "superior_subordinate_dynamics"),
+    ),
+    SectionSpec(
+        id="swot",
+        title="Dyadic SWOT Analysis",
+        min_words=280,
+        max_words=380,
+        guidance=(
+            "Provide a dyadic SWOT for the employee-boss relationship in narrative form: "
+            "strengths, weaknesses (blind spots), opportunities, and threats. "
+            "Ground each part in relationship evidence from the input."
+        ),
+        data_keys=("relationship_variables", "superior_subordinate_dynamics", "individual_swot"),
     ),
     SectionSpec(
         id="boss_recommendations",
@@ -2182,28 +2217,48 @@ _SUB_STAGE_DEFINITIONS: Dict[str, str] = {
 
 def detect_dimension(questionnaires: List[str]) -> str:
     """
-    Derive the ChaturVima dimension from the number of questionnaires considered.
+    Derive the ChaturVima dimension from questionnaire roles first, then count.
 
-    Rules:
-        1 questionnaire  (e.g. ["Self"])           → "1D"
-        2 questionnaires (e.g. ["Boss", "Self"])   → "2D"
-        3 questionnaires                           → "3D"
-        4 questionnaires                           → "4D"
-        Any other count                            → "1D" (safe fallback)
+    Why:
+      - With submission-specific calls, Frappe may return only one questionnaire
+        (e.g. ["Boss"]). Count-based detection would incorrectly map that to 1D.
+      - Role-based detection maps:
+          Self -> 1D
+          Boss/Manager -> 2D
+          Department/Team -> 3D
+          Company/Organization -> 4D
 
-    The Frappe API has no 'dimension' field; this function derives it from
-    questionnaires_considered so that main.py never needs to hard-code a dimension.
+    Fallback:
+      - If role cannot be inferred, use count-based mapping.
     """
-    count = len(questionnaires)
-    mapping = {1: "1D", 2: "2D", 3: "3D", 4: "4D"}
-    dimension = mapping.get(count)
-    if dimension is None:
+    normalized = [str(q).strip().lower() for q in questionnaires if str(q).strip()]
+    max_dim = 0
+
+    for q in normalized:
+        if any(tok in q for tok in ("company", "organisation", "organization", "org")):
+            max_dim = max(max_dim, 4)
+        elif any(tok in q for tok in ("department", "dept", "team")):
+            max_dim = max(max_dim, 3)
+        elif any(tok in q for tok in ("boss", "manager", "superior", "reporting")):
+            max_dim = max(max_dim, 2)
+        elif any(tok in q for tok in ("self", "employee")):
+            max_dim = max(max_dim, 1)
+
+    if max_dim > 0:
+        dimension = f"{max_dim}D"
+        print(f"📐 detect_dimension: role-based {questionnaires} → {dimension}")
+        return dimension
+
+    count = len(normalized)
+    by_count = {1: "1D", 2: "2D", 3: "3D", 4: "4D"}
+    dimension = by_count.get(count, "1D")
+    if count not in by_count:
         print(
-            f"⚠️  detect_dimension: unexpected count ({count}) for {questionnaires}. "
+            f"⚠️  detect_dimension: unknown roles and unexpected count ({count}) for {questionnaires}. "
             f"Defaulting to 1D."
         )
-        dimension = "1D"
-    print(f"📐 detect_dimension: {count} questionnaire(s) → {dimension}")
+    else:
+        print(f"📐 detect_dimension: count-based {count} questionnaire(s) → {dimension}")
     return dimension
 
 

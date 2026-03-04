@@ -7,10 +7,12 @@ import html as html_lib
 import re
 import json
 import time
+import hashlib
 from typing import Any, Dict, List, Union, Optional, Tuple, AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, Body, HTTPException, BackgroundTasks
@@ -65,6 +67,10 @@ class Config:
         "FRAPPE_BASE_URL",
         "https://cvdev.m.frappe.cloud/api/method/"
         "chaturvima_api.api.dashboard.get_employee_weighted_assessment_summary"
+    )
+    FRAPPE_RESOURCE_BASE_URL = os.getenv(
+        "FRAPPE_RESOURCE_BASE_URL",
+        "https://cvdev.m.frappe.cloud/api/resource",
     )
     HTML_DATA_DIR = os.path.join(os.path.dirname(__file__), "html_data")
 
@@ -224,12 +230,22 @@ class WorkerPool:
                     # ── BRANCH 1: Frappe employee report ──────────────────────
                     if job.employee_report:
                         employee_id = job.payload["employee"]
-                        cycle_name = str(job.payload.get("cycle_name", "")).strip() or None
-                        frappe_params = _frappe_query_params(employee_id, cycle_name)
-                        if cycle_name:
+                        requested_cycle_name = _normalize_optional_str(job.payload.get("cycle_name"))
+                        requested_submission_id = _normalize_optional_str(job.payload.get("submission_id"))
+                        frappe_params = _frappe_query_params(
+                            employee_id,
+                            cycle_name=requested_cycle_name,
+                            submission_id=requested_submission_id,
+                        )
+                        if requested_submission_id:
                             print(
                                 f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id} "
-                                f"(cycle_name={cycle_name})"
+                                f"(submission_id={requested_submission_id})"
+                            )
+                        elif requested_cycle_name:
+                            print(
+                                f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id} "
+                                f"(cycle_name={requested_cycle_name})"
                             )
                         else:
                             print(f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id}")
@@ -253,17 +269,54 @@ class WorkerPool:
                         if "message" not in frappe_data:
                             raise ValueError(f"Unexpected Frappe response: {list(frappe_data.keys())}")
 
+                        msg = frappe_data.get("message", frappe_data)
                         nd_data = map_frappe_to_nd(employee_id, frappe_data)
                         dimension = nd_data["dimension"]
                         print(f"📐 Worker {worker_id}: dimension={dimension}")
+                        questionnaires = msg.get("questionnaires_considered", [])
+                        single_questionnaire = len(questionnaires) == 1
+                        primary_report_type = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension)
+
+                        swot_doc: Optional[Dict[str, Any]] = None
+                        dominant_sub_stage = _normalize_optional_str(msg.get("dominant_sub_stage"))
+                        if dimension == "1D" and dominant_sub_stage:
+                            swot_doc = await _fetch_frappe_swot_doc(dominant_sub_stage)
+                            if swot_doc:
+                                print(
+                                    f"🧩 Worker {worker_id}: SWOT source found "
+                                    f"for sub_stage='{dominant_sub_stage}'"
+                                )
+                            else:
+                                print(
+                                    f"⚠️ Worker {worker_id}: SWOT not found for "
+                                    f"sub_stage='{dominant_sub_stage}', using default stage mapping"
+                                )
 
                         multi_json_result = await asyncio.wait_for(
                             asyncio.to_thread(generate_multi_reports_json, nd_data),
                             timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
                         )
                         reports_payload = multi_json_result.get("reports", {})
+                        if (
+                            single_questionnaire
+                            and isinstance(reports_payload, dict)
+                            and primary_report_type
+                            and primary_report_type in reports_payload
+                        ):
+                            reports_payload = {primary_report_type: reports_payload[primary_report_type]}
+                            print(
+                                f"🧭 Worker {worker_id}: single questionnaire submission -> "
+                                f"keeping only '{primary_report_type}' report"
+                            )
+                        if dimension == "1D" and swot_doc:
+                            replaced = _apply_1d_swot_override_to_reports_payload(reports_payload, swot_doc)
+                            if replaced:
+                                print(
+                                    f"✅ Worker {worker_id}: 1D SWOT section injected directly from Frappe"
+                                )
 
-                        msg = frappe_data.get("message", frappe_data)
+                        submission_id = _extract_submission_id(msg, requested_submission_id)
+                        cycle_name = _extract_cycle_name(msg, requested_cycle_name)
                         employee_name = (
                             msg.get("employee_name")
                             or msg.get("employee_full_name")
@@ -276,7 +329,6 @@ class WorkerPool:
                             or msg.get("employee_role")
                             or "Employee"
                         )
-                        questionnaires = msg.get("questionnaires_considered", [])
                         dimension_label = {
                             "1D": "1D - Individual Assessment",
                             "2D": "2D - Employee-Boss Relationship",
@@ -307,11 +359,19 @@ class WorkerPool:
                                     clean_sections = []
                                     for sec in robj.get("sections", []):
                                         paras = sec.get("paragraphs") or _text_to_paragraphs(sec.get("text", ""))
-                                        clean_sections.append({
+                                        section_id = sec.get("id", "")
+                                        section_title = sec.get("title", "")
+                                        clean_section = {
                                             "id": sec.get("id", ""),
                                             "title": sec.get("title", ""),
                                             "paragraphs": paras,
-                                        })
+                                        }
+                                        existing_swot_lists = sec.get("swot_lists")
+                                        if isinstance(existing_swot_lists, dict):
+                                            clean_section["swot_lists"] = existing_swot_lists
+                                        elif _is_swot_section(section_id, section_title):
+                                            clean_section["swot_lists"] = _build_swot_lists_from_section_paragraphs(paras)
+                                        clean_sections.append(clean_section)
                                     report_sections_list.append({
                                         "title": robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
                                         "report_type": rtype,
@@ -322,6 +382,7 @@ class WorkerPool:
                             "status": "ok",
                             "header": {
                                 "employee_id": employee_id,
+                                "submission_id": submission_id or "",
                                 "cycle_name": cycle_name or "",
                                 "employee_name": employee_name,
                                 "designation": designation,
@@ -338,7 +399,11 @@ class WorkerPool:
 
                         # Save JSON (no HTML — HTML is rendered on demand per endpoint)
                         os.makedirs(Config.HTML_DATA_DIR, exist_ok=True)
-                        combined_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.json")
+                        combined_path = _build_employee_report_path(
+                            employee_id,
+                            submission_id=submission_id,
+                            cycle_name=cycle_name,
+                        )
                         with open(combined_path, "w", encoding="utf-8") as f:
                             json.dump(json_payload, f, ensure_ascii=False, indent=2)
                         print(f"💾 Worker {worker_id}: saved {combined_path}")
@@ -514,6 +579,56 @@ def _text_to_paragraphs(text: str) -> List[str]:
     return parts
 
 
+def _split_numbered_items(text: str) -> List[str]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+
+    compact = re.sub(r"\s+", " ", raw).strip()
+    matches = list(re.finditer(r"(^|\s)(\d{1,2}[.)])\s+", compact))
+    if matches:
+        items: List[str] = []
+        for idx, match in enumerate(matches):
+            start = match.end()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(compact)
+            chunk = compact[start:end].strip(" ;,-")
+            if chunk:
+                items.append(chunk)
+        if items:
+            return items
+
+    line_items = [ln.strip(" -•\t") for ln in re.split(r"(?:\r?\n)+|•", raw) if ln.strip(" -•\t")]
+    if len(line_items) > 1:
+        return line_items
+
+    return [compact]
+
+
+def _is_swot_section(section_id: Any, section_title: Any) -> bool:
+    sec_id = str(section_id or "").strip().lower()
+    sec_title = str(section_title or "").strip().lower()
+    return sec_id == "swot" or "swot" in sec_title
+
+
+def _build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str, List[str]]:
+    def para_at(index: int) -> str:
+        if 0 <= index < len(paragraphs):
+            return str(paragraphs[index] or "")
+        return ""
+
+    strengths_para = para_at(0)
+    weaknesses_para = para_at(1)
+    opportunities_para = para_at(2)
+    threats_para = para_at(3)
+
+    return {
+        "strengths": _split_numbered_items(strengths_para) if strengths_para.strip() else [],
+        "weaknesses": _split_numbered_items(weaknesses_para) if weaknesses_para.strip() else [],
+        "opportunities": _split_numbered_items(opportunities_para) if opportunities_para.strip() else [],
+        "threats": _split_numbered_items(threats_para) if threats_para.strip() else [],
+    }
+
+
 def _frappe_headers() -> dict:
     import base64
     if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
@@ -530,12 +645,371 @@ def _frappe_headers() -> dict:
     return {"Content-Type": "application/json"}
 
 
-def _frappe_query_params(employee_id: str, cycle_name: Optional[str] = None) -> Dict[str, str]:
+def _normalize_optional_str(value: Any) -> Optional[str]:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _optional_payload_str(payload: Dict[str, Any], key: str) -> Optional[str]:
+    """
+    Return an optional string field from JSON payload.
+    If provided, it must be a string.
+    """
+    if key not in payload or payload.get(key) is None:
+        return None
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"'{key}' must be a string.")
+    text = value.strip()
+    return text or None
+
+
+def _questionnaire_text_to_list(value: Any) -> List[str]:
+    text = _normalize_optional_str(value)
+    if not text:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _extract_dimension_code(value: Any) -> Optional[str]:
+    text = _normalize_optional_str(value)
+    if not text:
+        return None
+    m = re.search(r"\b([1-4]D)\b", text.upper())
+    return m.group(1).upper() if m else None
+
+
+def _extract_submission_id(message: Dict[str, Any], fallback: Optional[str] = None) -> Optional[str]:
+    for key in (
+        "submission_id",
+        "assessment_submission_id",
+        "employee_submission_id",
+        "submission",
+        "assessment_id",
+    ):
+        candidate = _normalize_optional_str(message.get(key))
+        if candidate:
+            return candidate
+    return _normalize_optional_str(fallback)
+
+
+def _extract_cycle_name(message: Dict[str, Any], fallback: Optional[str] = None) -> Optional[str]:
+    for key in ("cycle_name", "assessment_cycle", "assessment_cycle_name"):
+        candidate = _normalize_optional_str(message.get(key))
+        if candidate:
+            return candidate
+    return _normalize_optional_str(fallback)
+
+
+def _frappe_query_params(
+    employee_id: str,
+    cycle_name: Optional[str] = None,
+    submission_id: Optional[str] = None,
+) -> Dict[str, str]:
     params = {"employee": employee_id}
-    normalized_cycle = (cycle_name or "").strip()
+    normalized_cycle = _normalize_optional_str(cycle_name)
+    normalized_submission = _normalize_optional_str(submission_id)
     if normalized_cycle:
         params["cycle_name"] = normalized_cycle
+    if normalized_submission:
+        params["submission_id"] = normalized_submission
     return params
+
+
+def _frappe_swot_doc_url(docname: str) -> str:
+    encoded = quote(docname, safe="")
+    return f"{Config.FRAPPE_RESOURCE_BASE_URL}/SWOT%20Analysis/{encoded}"
+
+
+def _collect_child_row_texts(rows: Any) -> List[str]:
+    if not isinstance(rows, list):
+        return []
+    values: List[str] = []
+    for row in rows:
+        if isinstance(row, dict):
+            text = _normalize_optional_str(
+                row.get("description")
+                or row.get("desription")  # Frappe child-table typo in Threat rows
+                or row.get("recommendations_description")
+                or row.get("value")
+                or row.get("title")
+            )
+        else:
+            text = _normalize_optional_str(row)
+        if text:
+            values.append(text)
+    return values
+
+
+def _extract_swot_lists(swot_doc: Dict[str, Any]) -> Dict[str, List[str]]:
+    return {
+        "strengths": _collect_child_row_texts(swot_doc.get("strength") or swot_doc.get("strengths")),
+        "weaknesses": _collect_child_row_texts(swot_doc.get("weakness") or swot_doc.get("weaknesses")),
+        "opportunities": _collect_child_row_texts(swot_doc.get("opportunity") or swot_doc.get("opportunities")),
+        "threats": _collect_child_row_texts(swot_doc.get("threat") or swot_doc.get("threats")),
+    }
+
+
+def _build_swot_items(texts: List[str], category_label: str) -> List[Dict[str, str]]:
+    return [
+        {
+            "area": f"{category_label} {idx}",
+            "description": text,
+            "context": "Fetched from SWOT Analysis doctype.",
+            "impact": "",
+        }
+        for idx, text in enumerate(texts, start=1)
+    ]
+
+
+def _map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
+    swot_lists = _extract_swot_lists(swot_doc)
+    strengths = swot_lists["strengths"]
+    weaknesses = swot_lists["weaknesses"]
+    opportunities = swot_lists["opportunities"]
+    threats = swot_lists["threats"]
+
+    rec_rows = swot_doc.get("reccomendation") or swot_doc.get("recommendation") or swot_doc.get("recommendations")
+    principles: List[str] = []
+    recommended_actions: List[Dict[str, str]] = []
+
+    strategic_intro = _normalize_optional_str(swot_doc.get("strategic_recommendations"))
+    if strategic_intro:
+        principles.append(strategic_intro)
+
+    if isinstance(rec_rows, list):
+        for idx, row in enumerate(rec_rows, start=1):
+            if not isinstance(row, dict):
+                continue
+            title = _normalize_optional_str(row.get("recommendations_title") or row.get("title"))
+            description = _normalize_optional_str(
+                row.get("recommendations_description")
+                or row.get("description")
+                or row.get("desription")
+            )
+            if title:
+                principles.append(title)
+            if title or description:
+                recommended_actions.append(
+                    {
+                        "focus_area": title or f"Action {idx}",
+                        "recommendation": description or title or f"Action {idx}",
+                        "priority": "Medium",
+                        "time_horizon": "Short Term",
+                    }
+                )
+
+    framework_name = _normalize_optional_str(swot_doc.get("sub_stage")) or "SWOT Strategic Recommendations"
+    recommendation_framework = {
+        "framework_name": framework_name,
+        "principles": principles,
+        "recommended_actions": recommended_actions,
+    }
+
+    return {
+        "individual_swot": {
+            "strengths": _build_swot_items(strengths, "Strength"),
+            "weaknesses": _build_swot_items(weaknesses, "Weakness"),
+            "opportunities": _build_swot_items(opportunities, "Opportunity"),
+            "threats": _build_swot_items(threats, "Threat"),
+        },
+        "recommendation_framework": recommendation_framework,
+    }
+
+
+def _format_swot_paragraph(texts: List[str], fallback: str) -> str:
+    if not texts:
+        return fallback
+    return " ".join(f"{idx}. {txt}" for idx, txt in enumerate(texts, start=1))
+
+
+def _build_swot_paragraphs_from_doc(swot_doc: Dict[str, Any]) -> List[str]:
+    swot_lists = _extract_swot_lists(swot_doc)
+    strengths = swot_lists["strengths"]
+    weaknesses = swot_lists["weaknesses"]
+    opportunities = swot_lists["opportunities"]
+    threats = swot_lists["threats"]
+    return [
+        _format_swot_paragraph(strengths, "Strengths not available."),
+        _format_swot_paragraph(weaknesses, "Weaknesses not available."),
+        _format_swot_paragraph(opportunities, "Opportunities not available."),
+        _format_swot_paragraph(threats, "Threats not available."),
+    ]
+
+
+def _apply_1d_swot_override_to_reports_payload(
+    reports_payload: Any,
+    swot_doc: Optional[Dict[str, Any]],
+) -> bool:
+    if not isinstance(reports_payload, dict) or not isinstance(swot_doc, dict):
+        return False
+
+    employee_report = reports_payload.get("employee")
+    if not isinstance(employee_report, dict):
+        return False
+
+    sections = employee_report.get("sections")
+    if not isinstance(sections, list):
+        return False
+
+    swot_lists = _extract_swot_lists(swot_doc)
+    paragraphs = _build_swot_paragraphs_from_doc(swot_doc)
+    swot_section = None
+    for sec in sections:
+        if not isinstance(sec, dict):
+            continue
+        sec_id = str(sec.get("id", "")).strip().lower()
+        sec_title = str(sec.get("title", "")).strip().lower()
+        if sec_id == "swot" or "swot" in sec_title:
+            swot_section = sec
+            break
+
+    if swot_section is None:
+        swot_section = {
+            "id": "swot",
+            "title": "Individual SWOT Analysis",
+            "paragraphs": paragraphs,
+        }
+        sections.append(swot_section)
+    else:
+        swot_section["id"] = "swot"
+        swot_section["title"] = swot_section.get("title") or "Individual SWOT Analysis"
+        swot_section["paragraphs"] = paragraphs
+
+    swot_section["swot_lists"] = swot_lists
+    swot_section["source"] = "frappe_swot"
+    swot_section["sub_stage"] = _normalize_optional_str(swot_doc.get("sub_stage") or swot_doc.get("name")) or ""
+    return True
+
+
+async def _fetch_frappe_swot_doc(sub_stage: Optional[str]) -> Optional[Dict[str, Any]]:
+    normalized_sub_stage = _normalize_optional_str(sub_stage)
+    if not normalized_sub_stage:
+        return None
+
+    headers = _frappe_headers()
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Fast path: docname matches dominant_sub_stage exactly.
+        direct_url = _frappe_swot_doc_url(normalized_sub_stage)
+        try:
+            direct_resp = await client.get(direct_url, headers=headers)
+            if direct_resp.status_code == 200:
+                direct_payload = direct_resp.json()
+                direct_data = direct_payload.get("data", direct_payload)
+                if isinstance(direct_data, dict):
+                    return direct_data
+            elif direct_resp.status_code not in (404,):
+                direct_resp.raise_for_status()
+        except Exception as exc:
+            print(f"⚠️ SWOT direct lookup failed for '{normalized_sub_stage}': {exc}")
+
+        # Fallback path: resolve docname by filter, then fetch full doc.
+        list_url = f"{Config.FRAPPE_RESOURCE_BASE_URL}/SWOT%20Analysis"
+        filter_candidates = (
+            [["sub_stage", "=", normalized_sub_stage]],
+            [["name", "=", normalized_sub_stage]],
+        )
+        for filters in filter_candidates:
+            try:
+                list_resp = await client.get(
+                    list_url,
+                    headers=headers,
+                    params={
+                        "filters": json.dumps(filters),
+                        "fields": json.dumps(["name"]),
+                        "limit_page_length": "1",
+                    },
+                )
+                list_resp.raise_for_status()
+                rows = list_resp.json().get("data", [])
+                if not isinstance(rows, list) or not rows:
+                    continue
+                row0 = rows[0] if isinstance(rows[0], dict) else {}
+                doc_name = _normalize_optional_str(row0.get("name"))
+                if not doc_name:
+                    continue
+                doc_resp = await client.get(_frappe_swot_doc_url(doc_name), headers=headers)
+                doc_resp.raise_for_status()
+                payload = doc_resp.json()
+                doc = payload.get("data", payload)
+                if isinstance(doc, dict):
+                    return doc
+            except Exception as exc:
+                print(f"⚠️ SWOT filter lookup failed for '{normalized_sub_stage}' with {filters}: {exc}")
+                continue
+
+    return None
+
+
+def _sanitize_filename_token(value: str, fallback: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", (value or "").strip())
+    token = token.strip("._-")
+    return token or fallback
+
+
+def _build_employee_report_path(
+    employee_id: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> str:
+    employee_token = _sanitize_filename_token(employee_id, "employee")
+    normalized_submission = _normalize_optional_str(submission_id)
+    normalized_cycle = _normalize_optional_str(cycle_name)
+    if normalized_submission:
+        key_token = _sanitize_filename_token(normalized_submission, "submission")
+        key_hash = hashlib.sha1(normalized_submission.encode("utf-8")).hexdigest()[:10]
+        filename = f"{employee_token}__submission_{key_token}_{key_hash}.json"
+    elif normalized_cycle:
+        key_token = _sanitize_filename_token(normalized_cycle, "cycle")
+        key_hash = hashlib.sha1(normalized_cycle.encode("utf-8")).hexdigest()[:10]
+        filename = f"{employee_token}__cycle_{key_token}_{key_hash}.json"
+    else:
+        filename = f"{employee_token}.json"
+    return os.path.join(Config.HTML_DATA_DIR, filename)
+
+
+def _append_identity_query(
+    url: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> str:
+    normalized_submission = _normalize_optional_str(submission_id)
+    normalized_cycle = _normalize_optional_str(cycle_name)
+    query_parts = []
+    if normalized_submission:
+        query_parts.append(f"submission_id={quote(normalized_submission, safe='')}")
+    if normalized_cycle:
+        query_parts.append(f"cycle_name={quote(normalized_cycle, safe='')}")
+    if not query_parts:
+        return url
+    return f"{url}?{'&'.join(query_parts)}"
+
+
+def _build_report_urls(
+    employee_id: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> Dict[str, str]:
+    urls = {
+        "1d": f"/html-report/{employee_id}/1d",
+        "2d": f"/html-report/{employee_id}/2d",
+        "3d": f"/html-report/{employee_id}/3d",
+        "4d": f"/html-report/{employee_id}/4d",
+    }
+    return {
+        key: _append_identity_query(url, submission_id=submission_id, cycle_name=cycle_name)
+        for key, url in urls.items()
+    }
+
+
+def _build_download_pdf_url(
+    employee_id: str,
+    dimension_key: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> str:
+    base_url = f"/html-report/{employee_id}/{dimension_key}/pdf"
+    return _append_identity_query(base_url, submission_id=submission_id, cycle_name=cycle_name)
 
 
 def _normalize_single_report(report: Any, report_type: str, data: dict) -> Dict[str, Any]:
@@ -649,33 +1123,181 @@ def _render_html_report(json_payload: Dict[str, Any]) -> str:
         raise RuntimeError(f"Template rendering failed: {exc}") from exc
 
 
-def _load_employee_json(employee_id: str) -> Dict[str, Any]:
-    """Load the stored JSON for an employee, or raise 404."""
-    path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.json")
-    if not os.path.exists(path):
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "error": f"No report found for '{employee_id}'.",
-                "action": "Call POST /generate-employee-report first.",
-                "body": {"employee": employee_id},
-            },
+def _load_employee_json(
+    employee_id: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Load the stored JSON for an employee (and optional submission/cycle), or raise 404."""
+    requested_submission = _normalize_optional_str(submission_id)
+    requested_cycle = _normalize_optional_str(cycle_name)
+    direct_path = _build_employee_report_path(
+        employee_id,
+        submission_id=requested_submission,
+        cycle_name=requested_cycle,
+    )
+    latest_alias_path = _build_employee_report_path(employee_id)
+
+    candidate_paths: List[str] = []
+    if requested_submission or requested_cycle:
+        candidate_paths.append(direct_path)
+    candidate_paths.append(latest_alias_path)
+
+    seen = set()
+    for path in candidate_paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        if not os.path.exists(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        header = payload.get("header", {})
+        payload_submission = _normalize_optional_str(header.get("submission_id"))
+        payload_cycle = _normalize_optional_str(header.get("cycle_name"))
+        if requested_submission and payload_submission != requested_submission:
+            continue
+        if requested_cycle and payload_cycle != requested_cycle:
+            continue
+        return payload
+
+    # Fallback search for matching cycle/submission in all stored files for this employee.
+    import glob
+    employee_token = _sanitize_filename_token(employee_id, "employee")
+    pattern = os.path.join(Config.HTML_DATA_DIR, f"{employee_token}__*.json")
+    matches = [p for p in glob.glob(pattern) if os.path.isfile(p)]
+    if requested_submission or requested_cycle:
+        for path in sorted(matches, key=os.path.getmtime, reverse=True):
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            header = payload.get("header", {})
+            payload_submission = _normalize_optional_str(header.get("submission_id"))
+            payload_cycle = _normalize_optional_str(header.get("cycle_name"))
+            if requested_submission and payload_submission != requested_submission:
+                continue
+            if requested_cycle and payload_cycle != requested_cycle:
+                continue
+            return payload
+    elif matches:
+        latest_path = max(matches, key=os.path.getmtime)
+        with open(latest_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    detail = {
+        "error": f"No report found for '{employee_id}'.",
+        "action": "Call POST /generate-employee-report first.",
+        "body": {"employee": employee_id},
+    }
+    if requested_submission:
+        detail["error"] = (
+            f"No report found for '{employee_id}' with submission_id '{requested_submission}'."
         )
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        detail["body"]["submission_id"] = requested_submission
+    if requested_cycle:
+        detail["error"] = (
+            f"No report found for '{employee_id}' with cycle_name '{requested_cycle}'."
+            if not requested_submission
+            else detail["error"]
+        )
+        detail["body"]["cycle_name"] = requested_cycle
+    raise HTTPException(status_code=404, detail=detail)
 
 
-def _filter_reports_for_dimension(json_payload: Dict[str, Any], report_types: List[str]) -> Dict[str, Any]:
+def _filter_reports_for_dimension(json_payload: Dict[str, Any], dimension_key: str) -> Dict[str, Any]:
     """
-    Return a copy of the payload with only the requested report_types included.
-    Used so /1d endpoint shows only the 'employee' report even if a 4D JSON exists.
+    Return a copy of the payload with only the requested report_type included,
+    and endpoint-specific header metadata for display.
     """
+    view = _DIMENSION_VIEW_CONFIG.get(dimension_key.lower())
+    if not view:
+        return json_payload
+
+    report_types = view["report_types"]
     filtered = {k: v for k, v in json_payload.items() if k != "reports"}
+
+    header = dict(json_payload.get("header", {}))
+    header["report_heading"] = view["heading"]
+    header["dimension_label"] = view["dimension_label"]
+    header["report_type"] = f"{view['dimension_label']} Growth Report"
+    filtered["header"] = header
+
     filtered["reports"] = [
         r for r in json_payload.get("reports", [])
         if r.get("report_type") in report_types
     ]
     return filtered
+
+
+def _ensure_dimension_report_available(
+    employee_id: str,
+    dimension_key: str,
+    payload: Dict[str, Any],
+    filtered_payload: Dict[str, Any],
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> None:
+    if filtered_payload.get("reports"):
+        return
+
+    header = payload.get("header", {})
+    detected_dim = _extract_dimension_code(
+        header.get("dimension_label") or header.get("report_type")
+    )
+    available_dims = []
+    for rep in payload.get("reports", []):
+        rep_type = str(rep.get("report_type", "")).strip().lower()
+        if rep_type == "employee":
+            available_dims.append("1d")
+        elif rep_type == "boss":
+            available_dims.append("2d")
+        elif rep_type == "team":
+            available_dims.append("3d")
+        elif rep_type == "organization":
+            available_dims.append("4d")
+    available_dims = sorted(set(available_dims))
+
+    detail: Dict[str, Any] = {
+        "error": f"No {dimension_key.upper()} report available for this selection.",
+        "requested_dimension": dimension_key.upper(),
+        "detected_dimension": f"{detected_dim}" if detected_dim else None,
+        "questionnaire_text": header.get("questionnaire_text"),
+        "available_dimensions": available_dims,
+    }
+    if detected_dim and detected_dim.lower() in _DIMENSION_VIEW_CONFIG:
+        suggested_dim = detected_dim.lower()
+        suggested_url = _append_identity_query(
+            f"/html-report/{employee_id}/{suggested_dim}",
+            submission_id=submission_id,
+            cycle_name=cycle_name,
+        )
+        detail["suggested_url"] = suggested_url
+
+    raise HTTPException(status_code=404, detail=detail)
+
+
+def _with_download_link(
+    json_payload: Dict[str, Any],
+    employee_id: str,
+    dimension_key: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    augmented = dict(json_payload)
+    header = dict(json_payload.get("header", {}))
+    normalized_submission = _normalize_optional_str(submission_id)
+    normalized_cycle = _normalize_optional_str(cycle_name)
+    if normalized_submission and not _normalize_optional_str(header.get("submission_id")):
+        header["submission_id"] = normalized_submission
+    if normalized_cycle and not _normalize_optional_str(header.get("cycle_name")):
+        header["cycle_name"] = normalized_cycle
+    header["download_pdf_url"] = _build_download_pdf_url(
+        employee_id,
+        dimension_key=dimension_key,
+        submission_id=normalized_submission or _normalize_optional_str(header.get("submission_id")),
+        cycle_name=normalized_cycle or _normalize_optional_str(header.get("cycle_name")),
+    )
+    augmented["header"] = header
+    return augmented
 
 
 # ============================================================================
@@ -689,11 +1311,27 @@ def _filter_reports_for_dimension(json_payload: Dict[str, Any], report_types: Li
 #   GET /html-report/{employee_id}/4d  →  shows organization report only
 # ============================================================================
 
-_DIMENSION_REPORT_TYPES = {
-    "1d": ["employee"],
-    "2d": ["boss"],
-    "3d": ["team"],
-    "4d": ["organization"],
+_DIMENSION_VIEW_CONFIG = {
+    "1d": {
+        "report_types": ["employee"],
+        "heading": "Employee Personal Insights",
+        "dimension_label": "1D - Individual Assessment",
+    },
+    "2d": {
+        "report_types": ["boss"],
+        "heading": "Employee-Boss Relationship Insights",
+        "dimension_label": "2D - Employee-Boss Relationship",
+    },
+    "3d": {
+        "report_types": ["team"],
+        "heading": "Employee-Boss-Department Context Insights",
+        "dimension_label": "3D - Employee-Boss-Department Context",
+    },
+    "4d": {
+        "report_types": ["organization"],
+        "heading": "Organisational Insights",
+        "dimension_label": "4D - Organisational Assessment",
+    },
 }
 
 
@@ -703,7 +1341,11 @@ _DIMENSION_REPORT_TYPES = {
     tags=["HTML Reports"],
     summary="📄 1D – Individual HTML Report",
 )
-async def html_report_1d(employee_id: str) -> HTMLResponse:
+async def html_report_1d(
+    employee_id: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> HTMLResponse:
     """
     Serve the **1D Individual** HTML report for the employee.
 
@@ -713,8 +1355,17 @@ async def html_report_1d(employee_id: str) -> HTMLResponse:
 
     Call `POST /generate-employee-report` first if no JSON exists yet.
     """
-    payload = _load_employee_json(employee_id)
-    filtered = _filter_reports_for_dimension(payload, _DIMENSION_REPORT_TYPES["1d"])
+    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+    payload = _with_download_link(payload, employee_id, "1d", submission_id, cycle_name)
+    filtered = _filter_reports_for_dimension(payload, "1d")
+    _ensure_dimension_report_available(
+        employee_id,
+        "1d",
+        payload,
+        filtered,
+        submission_id=submission_id,
+        cycle_name=cycle_name,
+    )
     return HTMLResponse(content=_render_html_report(filtered))
 
 
@@ -724,14 +1375,27 @@ async def html_report_1d(employee_id: str) -> HTMLResponse:
     tags=["HTML Reports"],
     summary="📄 2D – Manager HTML Report",
 )
-async def html_report_2d(employee_id: str) -> HTMLResponse:
+async def html_report_2d(
+    employee_id: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> HTMLResponse:
     """
     Serve the **2D Employee–Manager** HTML report.
 
     Includes only the `boss` report section.
     """
-    payload = _load_employee_json(employee_id)
-    filtered = _filter_reports_for_dimension(payload, _DIMENSION_REPORT_TYPES["2d"])
+    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+    payload = _with_download_link(payload, employee_id, "2d", submission_id, cycle_name)
+    filtered = _filter_reports_for_dimension(payload, "2d")
+    _ensure_dimension_report_available(
+        employee_id,
+        "2d",
+        payload,
+        filtered,
+        submission_id=submission_id,
+        cycle_name=cycle_name,
+    )
     return HTMLResponse(content=_render_html_report(filtered))
 
 
@@ -741,14 +1405,27 @@ async def html_report_2d(employee_id: str) -> HTMLResponse:
     tags=["HTML Reports"],
     summary="📄 3D – Team HTML Report",
 )
-async def html_report_3d(employee_id: str) -> HTMLResponse:
+async def html_report_3d(
+    employee_id: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> HTMLResponse:
     """
     Serve the **3D Team** HTML report.
 
     Includes only the `team` report section.
     """
-    payload = _load_employee_json(employee_id)
-    filtered = _filter_reports_for_dimension(payload, _DIMENSION_REPORT_TYPES["3d"])
+    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+    payload = _with_download_link(payload, employee_id, "3d", submission_id, cycle_name)
+    filtered = _filter_reports_for_dimension(payload, "3d")
+    _ensure_dimension_report_available(
+        employee_id,
+        "3d",
+        payload,
+        filtered,
+        submission_id=submission_id,
+        cycle_name=cycle_name,
+    )
     return HTMLResponse(content=_render_html_report(filtered))
 
 
@@ -758,15 +1435,81 @@ async def html_report_3d(employee_id: str) -> HTMLResponse:
     tags=["HTML Reports"],
     summary="📄 4D – Full Organisational HTML Report",
 )
-async def html_report_4d(employee_id: str) -> HTMLResponse:
+async def html_report_4d(
+    employee_id: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> HTMLResponse:
     """
     Serve the **4D Organisational** HTML report.
 
     Includes only the `organization` report section.
     """
-    payload = _load_employee_json(employee_id)
-    filtered = _filter_reports_for_dimension(payload, _DIMENSION_REPORT_TYPES["4d"])
+    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+    payload = _with_download_link(payload, employee_id, "4d", submission_id, cycle_name)
+    filtered = _filter_reports_for_dimension(payload, "4d")
+    _ensure_dimension_report_available(
+        employee_id,
+        "4d",
+        payload,
+        filtered,
+        submission_id=submission_id,
+        cycle_name=cycle_name,
+    )
     return HTMLResponse(content=_render_html_report(filtered))
+
+
+@app.get(
+    "/html-report/{employee_id}/{dimension}/pdf",
+    tags=["HTML Reports"],
+    summary="📥 Download Dimension Report as PDF",
+)
+async def html_report_pdf(
+    employee_id: str,
+    dimension: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> Response:
+    dim_key = dimension.lower()
+    if dim_key not in _DIMENSION_VIEW_CONFIG:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unsupported dimension '{dimension}'. Use one of: 1d, 2d, 3d, 4d.",
+        )
+
+    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+    payload = _with_download_link(payload, employee_id, dim_key, submission_id, cycle_name)
+    filtered = _filter_reports_for_dimension(payload, dim_key)
+    _ensure_dimension_report_available(
+        employee_id,
+        dim_key,
+        payload,
+        filtered,
+        submission_id=submission_id,
+        cycle_name=cycle_name,
+    )
+    html_doc = _render_html_report(filtered)
+    try:
+        pdf_bytes = _render_pdf_from_html(html_doc)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    header = filtered.get("header", {})
+    identity_key = (
+        _normalize_optional_str(submission_id)
+        or _normalize_optional_str(header.get("submission_id"))
+        or _normalize_optional_str(cycle_name)
+        or _normalize_optional_str(header.get("cycle_name"))
+        or "latest"
+    )
+    safe_employee = _sanitize_filename_token(employee_id, "employee")
+    safe_identity = _sanitize_filename_token(identity_key, "latest")
+    filename = f"{safe_employee}_{dim_key}_{safe_identity}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ============================================================================
@@ -965,8 +1708,13 @@ async def generate_json_reports(payload: Dict[str, Any] = Body(...)) -> Dict[str
     try:
         if "employee" in payload and "dimension" not in payload:
             employee_id = str(payload["employee"]).strip()
-            cycle_name = str(payload.get("cycle_name", "")).strip() or None
-            frappe_params = _frappe_query_params(employee_id, cycle_name)
+            cycle_name = _normalize_optional_str(payload.get("cycle_name"))
+            submission_id = _optional_payload_str(payload, "submission_id")
+            frappe_params = _frappe_query_params(
+                employee_id,
+                cycle_name=cycle_name,
+                submission_id=submission_id,
+            )
             async with httpx.AsyncClient(timeout=30) as client:
                 try:
                     resp = await client.get(
@@ -986,13 +1734,34 @@ async def generate_json_reports(payload: Dict[str, Any] = Body(...)) -> Dict[str
                         ),
                     ) from exc
             nd_data = map_frappe_to_nd(employee_id, frappe_data)
+            swot_doc: Optional[Dict[str, Any]] = None
+            msg = frappe_data.get("message", frappe_data)
+            questionnaires = msg.get("questionnaires_considered", [])
+            single_questionnaire = len(questionnaires) == 1
+            if nd_data.get("dimension") == "1D":
+                dominant_sub_stage = _normalize_optional_str(msg.get("dominant_sub_stage"))
+                if dominant_sub_stage:
+                    swot_doc = await _fetch_frappe_swot_doc(dominant_sub_stage)
         else:
             nd_data = resolve_input_data(payload)
+            swot_doc = None
+            single_questionnaire = False
 
         result = await asyncio.wait_for(
             asyncio.to_thread(generate_multi_reports_json, nd_data),
             timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
         )
+        if single_questionnaire:
+            primary_report_type = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(nd_data.get("dimension"))
+            reports_map = result.get("reports", {})
+            if (
+                primary_report_type
+                and isinstance(reports_map, dict)
+                and primary_report_type in reports_map
+            ):
+                result["reports"] = {primary_report_type: reports_map[primary_report_type]}
+        if nd_data.get("dimension") == "1D" and swot_doc:
+            _apply_1d_swot_override_to_reports_payload(result.get("reports", {}), swot_doc)
         elapsed = round(_time.time() - start, 2)
         result["elapsed_seconds"] = elapsed
         result["model_map"] = MODEL_BY_REPORT_TYPE_DEDICATED
@@ -1010,9 +1779,19 @@ async def generate_json_reports(payload: Dict[str, Any] = Body(...)) -> Dict[str
 # ============================================================================
 
 @app.get("/debug-frappe/{employee_id}", tags=["Employee Report"])
-async def debug_frappe(employee_id: str, cycle_name: Optional[str] = None) -> Dict[str, Any]:
+async def debug_frappe(
+    employee_id: str,
+    cycle_name: Optional[str] = None,
+    submission_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Debug endpoint — preview Frappe data and dimension detection (no LLM)."""
-    frappe_params = _frappe_query_params(employee_id, cycle_name)
+    normalized_cycle = _normalize_optional_str(cycle_name)
+    normalized_submission = _normalize_optional_str(submission_id)
+    frappe_params = _frappe_query_params(
+        employee_id,
+        cycle_name=normalized_cycle,
+        submission_id=normalized_submission,
+    )
     async with httpx.AsyncClient(timeout=30) as client:
         try:
             resp = await client.get(
@@ -1036,9 +1815,12 @@ async def debug_frappe(employee_id: str, cycle_name: Optional[str] = None) -> Di
     msg = frappe_data["message"]
     questionnaires: List[str] = msg.get("questionnaires_considered", [])
     dimension = detect_dimension(questionnaires)
+    detected_submission = _extract_submission_id(msg, normalized_submission)
+    detected_cycle = _extract_cycle_name(msg, normalized_cycle)
     return {
         "employee": employee_id,
-        "cycle_name": cycle_name,
+        "submission_id": detected_submission,
+        "cycle_name": detected_cycle,
         "questionnaires_considered": questionnaires,
         "questionnaire_count": len(questionnaires),
         "dimension_detected": dimension,
@@ -1058,6 +1840,10 @@ async def generate_employee_report(
                 "summary": "Generate with cycle name",
                 "value": {"employee": "HR-EMP-00031", "cycle_name": "Assessment Cycle - 0442"},
             },
+            "with_submission": {
+                "summary": "Generate with submission id",
+                "value": {"employee": "HR-EMP-00031", "submission_id": "SUB-000442"},
+            },
             "force": {"summary": "Force regenerate", "value": {"employee": "HR-EMP-00031", "force_regenerate": True}},
         },
     )
@@ -1069,37 +1855,83 @@ async def generate_employee_report(
     employee_id = str(payload.get("employee", "")).strip()
     if not employee_id:
         raise HTTPException(400, "'employee' field is required.")
-    cycle_name = str(payload.get("cycle_name", "")).strip() or None
+    submission_id = _optional_payload_str(payload, "submission_id")
+    cycle_name = _normalize_optional_str(payload.get("cycle_name"))
 
     force_regenerate = bool(payload.get("force_regenerate", False))
 
     if not force_regenerate:
         os.makedirs(Config.HTML_DATA_DIR, exist_ok=True)
-        combined_path = os.path.join(Config.HTML_DATA_DIR, f"{employee_id}.json")
-        if os.path.exists(combined_path):
-            with open(combined_path, "r", encoding="utf-8") as f:
-                cached = json.load(f)
-            cached_cycle_name = str(cached.get("header", {}).get("cycle_name", "")).strip() or None
-            if cycle_name and cached_cycle_name != cycle_name:
-                cached = None
-            if cached is not None:
-                # Detect dimension from cached JSON
-                dim_label = cached.get("header", {}).get("dimension_label", "1D")
+        try:
+            cached = _load_employee_json(
+                employee_id,
+                submission_id=submission_id,
+                cycle_name=cycle_name,
+            )
+            cached_header = cached.get("header", {})
+            cached_submission_id = _normalize_optional_str(cached_header.get("submission_id"))
+            cached_cycle_name = _normalize_optional_str(cached_header.get("cycle_name"))
+
+            # Guard against legacy cache built with old count-only dimension detection.
+            cached_questionnaires = _questionnaire_text_to_list(cached_header.get("questionnaire_text"))
+            expected_dim = detect_dimension(cached_questionnaires) if cached_questionnaires else None
+            cached_dim = (
+                _extract_dimension_code(cached_header.get("dimension_label"))
+                or _extract_dimension_code(cached_header.get("report_type"))
+            )
+            dimension_mismatch = bool(expected_dim and cached_dim and expected_dim != cached_dim)
+            single_questionnaire = len(cached_questionnaires) == 1
+            expected_primary_report = (
+                DEFAULT_REPORT_TYPE_BY_DIMENSION.get(expected_dim)
+                if expected_dim
+                else None
+            )
+            cached_report_types = [
+                str(r.get("report_type", "")).strip().lower()
+                for r in cached.get("reports", [])
+                if isinstance(r, dict)
+            ]
+            report_scope_mismatch = bool(
+                submission_id
+                and single_questionnaire
+                and expected_primary_report
+                and (
+                    len(cached_report_types) != 1
+                    or cached_report_types[0] != expected_primary_report
+                )
+            )
+
+            if dimension_mismatch and submission_id:
+                print(
+                    f"⚠️ Cached report dimension mismatch for submission_id={submission_id}: "
+                    f"cached={cached_dim}, expected={expected_dim}. Regenerating."
+                )
+            elif report_scope_mismatch:
+                print(
+                    f"⚠️ Cached report scope mismatch for submission_id={submission_id}: "
+                    f"reports={cached_report_types}, expected=['{expected_primary_report}']. Regenerating."
+                )
+            else:
                 return {
                     "job_id": None,
                     "status": "cached",
                     "employee": employee_id,
+                    "submission_id": cached_submission_id,
                     "cycle_name": cached_cycle_name,
                     "message": "Cached report available.",
-                    "report_urls": {
-                        "1d": f"/html-report/{employee_id}/1d",
-                        "2d": f"/html-report/{employee_id}/2d",
-                        "3d": f"/html-report/{employee_id}/3d",
-                        "4d": f"/html-report/{employee_id}/4d",
-                    },
+                    "report_urls": _build_report_urls(
+                        employee_id,
+                        submission_id=cached_submission_id or submission_id,
+                        cycle_name=cached_cycle_name or cycle_name,
+                    ),
                 }
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
 
     job_payload = {"employee": employee_id}
+    if submission_id:
+        job_payload["submission_id"] = submission_id
     if cycle_name:
         job_payload["cycle_name"] = cycle_name
     job_id = await report_queue.add_job(
@@ -1110,22 +1942,26 @@ async def generate_employee_report(
         "job_id": job_id,
         "status": "submitted",
         "employee": employee_id,
+        "submission_id": submission_id,
         "cycle_name": cycle_name,
         "message": f"Poll GET /status/{job_id} until completed, then fetch HTML.",
         "poll_url": f"/status/{job_id}",
-        "report_urls": {
-            "1d": f"/html-report/{employee_id}/1d",
-            "2d": f"/html-report/{employee_id}/2d",
-            "3d": f"/html-report/{employee_id}/3d",
-            "4d": f"/html-report/{employee_id}/4d",
-        },
+        "report_urls": _build_report_urls(
+            employee_id,
+            submission_id=submission_id,
+            cycle_name=cycle_name,
+        ),
     }
 
 
 @app.get("/report/{employee_id}", tags=["Employee Report"])
-async def get_employee_all_reports(employee_id: str) -> Dict[str, Any]:
+async def get_employee_all_reports(
+    employee_id: str,
+    submission_id: Optional[str] = None,
+    cycle_name: Optional[str] = None,
+) -> Dict[str, Any]:
     """Return the stored JSON for an employee (all reports combined)."""
-    return _load_employee_json(employee_id)
+    return _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
 
 
 # ============================================================================
