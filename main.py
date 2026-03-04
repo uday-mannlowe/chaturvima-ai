@@ -15,7 +15,7 @@ from enum import Enum
 from urllib.parse import quote
 
 import httpx
-from fastapi import FastAPI, Body, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -664,6 +664,16 @@ def _optional_payload_str(payload: Dict[str, Any], key: str) -> Optional[str]:
     return text or None
 
 
+def _required_query_submission_id(value: str) -> str:
+    normalized = _normalize_optional_str(value)
+    if not normalized:
+        raise HTTPException(
+            status_code=400,
+            detail="'submission_id' query parameter is required and cannot be empty.",
+        )
+    return normalized
+
+
 def _questionnaire_text_to_list(value: Any) -> List[str]:
     text = _normalize_optional_str(value)
     if not text:
@@ -990,25 +1000,22 @@ def _build_report_urls(
     submission_id: Optional[str] = None,
     cycle_name: Optional[str] = None,
 ) -> Dict[str, str]:
-    urls = {
-        "1d": f"/html-report/{employee_id}/1d",
-        "2d": f"/html-report/{employee_id}/2d",
-        "3d": f"/html-report/{employee_id}/3d",
-        "4d": f"/html-report/{employee_id}/4d",
-    }
+    report_url = _append_identity_query(
+        f"/html-report/{employee_id}",
+        submission_id=submission_id,
+        cycle_name=cycle_name,
+    )
     return {
-        key: _append_identity_query(url, submission_id=submission_id, cycle_name=cycle_name)
-        for key, url in urls.items()
+        "report": report_url
     }
 
 
-def _build_download_pdf_url(
+def _build_auto_download_pdf_url(
     employee_id: str,
-    dimension_key: str,
     submission_id: Optional[str] = None,
     cycle_name: Optional[str] = None,
 ) -> str:
-    base_url = f"/html-report/{employee_id}/{dimension_key}/pdf"
+    base_url = f"/html-report/{employee_id}/pdf"
     return _append_identity_query(base_url, submission_id=submission_id, cycle_name=cycle_name)
 
 
@@ -1262,15 +1269,12 @@ def _ensure_dimension_report_available(
         "detected_dimension": f"{detected_dim}" if detected_dim else None,
         "questionnaire_text": header.get("questionnaire_text"),
         "available_dimensions": available_dims,
-    }
-    if detected_dim and detected_dim.lower() in _DIMENSION_VIEW_CONFIG:
-        suggested_dim = detected_dim.lower()
-        suggested_url = _append_identity_query(
-            f"/html-report/{employee_id}/{suggested_dim}",
+        "suggested_auto_url": _append_identity_query(
+            f"/html-report/{employee_id}",
             submission_id=submission_id,
             cycle_name=cycle_name,
-        )
-        detail["suggested_url"] = suggested_url
+        ),
+    }
 
     raise HTTPException(status_code=404, detail=detail)
 
@@ -1278,7 +1282,6 @@ def _ensure_dimension_report_available(
 def _with_download_link(
     json_payload: Dict[str, Any],
     employee_id: str,
-    dimension_key: str,
     submission_id: Optional[str] = None,
     cycle_name: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1290,9 +1293,8 @@ def _with_download_link(
         header["submission_id"] = normalized_submission
     if normalized_cycle and not _normalize_optional_str(header.get("cycle_name")):
         header["cycle_name"] = normalized_cycle
-    header["download_pdf_url"] = _build_download_pdf_url(
+    header["download_pdf_url"] = _build_auto_download_pdf_url(
         employee_id,
-        dimension_key=dimension_key,
         submission_id=normalized_submission or _normalize_optional_str(header.get("submission_id")),
         cycle_name=normalized_cycle or _normalize_optional_str(header.get("cycle_name")),
     )
@@ -1305,10 +1307,7 @@ def _with_download_link(
 # Dimension endpoints read the stored JSON and render HTML on the fly.
 # One single template is used for all dimensions.
 #
-#   GET /html-report/{employee_id}/1d  →  shows employee report only
-#   GET /html-report/{employee_id}/2d  →  shows boss report only
-#   GET /html-report/{employee_id}/3d  →  shows team report only
-#   GET /html-report/{employee_id}/4d  →  shows organization report only
+#   GET /html-report/{employee_id}      → auto-detect and show matching report
 # ============================================================================
 
 _DIMENSION_VIEW_CONFIG = {
@@ -1335,157 +1334,115 @@ _DIMENSION_VIEW_CONFIG = {
 }
 
 
+_REPORT_TYPE_TO_DIMENSION = {
+    "employee": "1d",
+    "boss": "2d",
+    "team": "3d",
+    "organization": "4d",
+}
+
+_DIMENSION_PRIORITY = {"1d": 1, "2d": 2, "3d": 3, "4d": 4}
+
+
+def _infer_dimension_key_from_payload(json_payload: Dict[str, Any]) -> str:
+    header = json_payload.get("header", {})
+    header_dim = _extract_dimension_code(
+        header.get("dimension_label") or header.get("report_type")
+    )
+    if header_dim:
+        dim_key = header_dim.lower()
+        if dim_key in _DIMENSION_VIEW_CONFIG:
+            required_types = set(_DIMENSION_VIEW_CONFIG[dim_key]["report_types"])
+            if any(
+                str(rep.get("report_type", "")).strip().lower() in required_types
+                for rep in json_payload.get("reports", [])
+                if isinstance(rep, dict)
+            ):
+                return dim_key
+
+    available_dims: List[str] = []
+    for rep in json_payload.get("reports", []):
+        if not isinstance(rep, dict):
+            continue
+        rep_type = str(rep.get("report_type", "")).strip().lower()
+        mapped = _REPORT_TYPE_TO_DIMENSION.get(rep_type)
+        if mapped:
+            available_dims.append(mapped)
+
+    if available_dims:
+        return max(available_dims, key=lambda d: _DIMENSION_PRIORITY.get(d, 0))
+
+    return "1d"
+
+
 @app.get(
-    "/html-report/{employee_id}/1d",
+    "/html-report/{employee_id}",
     response_class=HTMLResponse,
     tags=["HTML Reports"],
-    summary="📄 1D – Individual HTML Report",
+    summary="📄 Auto Dimension HTML Report",
 )
-async def html_report_1d(
+async def html_report_auto(
     employee_id: str,
-    submission_id: Optional[str] = None,
+    submission_id: str = Query(..., description="Submission identifier"),
     cycle_name: Optional[str] = None,
 ) -> HTMLResponse:
     """
-    Serve the **1D Individual** HTML report for the employee.
-
-    Reads the stored JSON (`html_data/{employee_id}.json`) and renders it
-    using the single unified Jinja2 template. Only the `employee` report
-    section is included.
-
-    Call `POST /generate-employee-report` first if no JSON exists yet.
+    Serve a single HTML report endpoint.
+    The backend auto-detects dimension from stored payload and renders the
+    matching report (1D/2D/3D/4D).
     """
-    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
-    payload = _with_download_link(payload, employee_id, "1d", submission_id, cycle_name)
-    filtered = _filter_reports_for_dimension(payload, "1d")
-    _ensure_dimension_report_available(
+    normalized_submission = _required_query_submission_id(submission_id)
+    payload = _load_employee_json(
         employee_id,
-        "1d",
-        payload,
-        filtered,
-        submission_id=submission_id,
+        submission_id=normalized_submission,
         cycle_name=cycle_name,
     )
-    return HTMLResponse(content=_render_html_report(filtered))
-
-
-@app.get(
-    "/html-report/{employee_id}/2d",
-    response_class=HTMLResponse,
-    tags=["HTML Reports"],
-    summary="📄 2D – Manager HTML Report",
-)
-async def html_report_2d(
-    employee_id: str,
-    submission_id: Optional[str] = None,
-    cycle_name: Optional[str] = None,
-) -> HTMLResponse:
-    """
-    Serve the **2D Employee–Manager** HTML report.
-
-    Includes only the `boss` report section.
-    """
-    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
-    payload = _with_download_link(payload, employee_id, "2d", submission_id, cycle_name)
-    filtered = _filter_reports_for_dimension(payload, "2d")
-    _ensure_dimension_report_available(
-        employee_id,
-        "2d",
-        payload,
-        filtered,
-        submission_id=submission_id,
-        cycle_name=cycle_name,
-    )
-    return HTMLResponse(content=_render_html_report(filtered))
-
-
-@app.get(
-    "/html-report/{employee_id}/3d",
-    response_class=HTMLResponse,
-    tags=["HTML Reports"],
-    summary="📄 3D – Team HTML Report",
-)
-async def html_report_3d(
-    employee_id: str,
-    submission_id: Optional[str] = None,
-    cycle_name: Optional[str] = None,
-) -> HTMLResponse:
-    """
-    Serve the **3D Team** HTML report.
-
-    Includes only the `team` report section.
-    """
-    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
-    payload = _with_download_link(payload, employee_id, "3d", submission_id, cycle_name)
-    filtered = _filter_reports_for_dimension(payload, "3d")
-    _ensure_dimension_report_available(
-        employee_id,
-        "3d",
-        payload,
-        filtered,
-        submission_id=submission_id,
-        cycle_name=cycle_name,
-    )
-    return HTMLResponse(content=_render_html_report(filtered))
-
-
-@app.get(
-    "/html-report/{employee_id}/4d",
-    response_class=HTMLResponse,
-    tags=["HTML Reports"],
-    summary="📄 4D – Full Organisational HTML Report",
-)
-async def html_report_4d(
-    employee_id: str,
-    submission_id: Optional[str] = None,
-    cycle_name: Optional[str] = None,
-) -> HTMLResponse:
-    """
-    Serve the **4D Organisational** HTML report.
-
-    Includes only the `organization` report section.
-    """
-    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
-    payload = _with_download_link(payload, employee_id, "4d", submission_id, cycle_name)
-    filtered = _filter_reports_for_dimension(payload, "4d")
-    _ensure_dimension_report_available(
-        employee_id,
-        "4d",
-        payload,
-        filtered,
-        submission_id=submission_id,
-        cycle_name=cycle_name,
-    )
-    return HTMLResponse(content=_render_html_report(filtered))
-
-
-@app.get(
-    "/html-report/{employee_id}/{dimension}/pdf",
-    tags=["HTML Reports"],
-    summary="📥 Download Dimension Report as PDF",
-)
-async def html_report_pdf(
-    employee_id: str,
-    dimension: str,
-    submission_id: Optional[str] = None,
-    cycle_name: Optional[str] = None,
-) -> Response:
-    dim_key = dimension.lower()
-    if dim_key not in _DIMENSION_VIEW_CONFIG:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Unsupported dimension '{dimension}'. Use one of: 1d, 2d, 3d, 4d.",
-        )
-
-    payload = _load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
-    payload = _with_download_link(payload, employee_id, dim_key, submission_id, cycle_name)
+    dim_key = _infer_dimension_key_from_payload(payload)
+    payload = _with_download_link(payload, employee_id, normalized_submission, cycle_name)
     filtered = _filter_reports_for_dimension(payload, dim_key)
     _ensure_dimension_report_available(
         employee_id,
         dim_key,
         payload,
         filtered,
-        submission_id=submission_id,
+        submission_id=normalized_submission,
+        cycle_name=cycle_name,
+    )
+    header = dict(filtered.get("header", {}))
+    header["download_pdf_url"] = _build_auto_download_pdf_url(
+        employee_id,
+        submission_id=normalized_submission,
+        cycle_name=_normalize_optional_str(cycle_name) or _normalize_optional_str(header.get("cycle_name")),
+    )
+    filtered["header"] = header
+    return HTMLResponse(content=_render_html_report(filtered))
+
+
+@app.get(
+    "/html-report/{employee_id}/pdf",
+    tags=["HTML Reports"],
+    summary="📥 Auto Dimension PDF Download",
+)
+async def html_report_auto_pdf(
+    employee_id: str,
+    submission_id: str = Query(..., description="Submission identifier"),
+    cycle_name: Optional[str] = None,
+) -> Response:
+    normalized_submission = _required_query_submission_id(submission_id)
+    payload = _load_employee_json(
+        employee_id,
+        submission_id=normalized_submission,
+        cycle_name=cycle_name,
+    )
+    dim_key = _infer_dimension_key_from_payload(payload)
+    payload = _with_download_link(payload, employee_id, normalized_submission, cycle_name)
+    filtered = _filter_reports_for_dimension(payload, dim_key)
+    _ensure_dimension_report_available(
+        employee_id,
+        dim_key,
+        payload,
+        filtered,
+        submission_id=normalized_submission,
         cycle_name=cycle_name,
     )
     html_doc = _render_html_report(filtered)
@@ -1496,7 +1453,7 @@ async def html_report_pdf(
 
     header = filtered.get("header", {})
     identity_key = (
-        _normalize_optional_str(submission_id)
+        normalized_submission
         or _normalize_optional_str(header.get("submission_id"))
         or _normalize_optional_str(cycle_name)
         or _normalize_optional_str(header.get("cycle_name"))
@@ -1850,7 +1807,7 @@ async def generate_employee_report(
 ) -> Dict[str, Any]:
     """
     Submit employee report job. Stores result as JSON in html_data/.
-    Poll /status/{job_id}, then fetch HTML via /html-report/{employee_id}/1d (or 2d/3d/4d).
+    Poll /status/{job_id}, then fetch HTML via /html-report/{employee_id}.
     """
     employee_id = str(payload.get("employee", "")).strip()
     if not employee_id:
@@ -1912,6 +1869,11 @@ async def generate_employee_report(
                     f"reports={cached_report_types}, expected=['{expected_primary_report}']. Regenerating."
                 )
             else:
+                cached_urls = _build_report_urls(
+                    employee_id,
+                    submission_id=cached_submission_id or submission_id,
+                    cycle_name=cached_cycle_name or cycle_name,
+                )
                 return {
                     "job_id": None,
                     "status": "cached",
@@ -1919,11 +1881,8 @@ async def generate_employee_report(
                     "submission_id": cached_submission_id,
                     "cycle_name": cached_cycle_name,
                     "message": "Cached report available.",
-                    "report_urls": _build_report_urls(
-                        employee_id,
-                        submission_id=cached_submission_id or submission_id,
-                        cycle_name=cached_cycle_name or cycle_name,
-                    ),
+                    "report_url": cached_urls.get("report"),
+                    "report_urls": cached_urls,
                 }
         except HTTPException as exc:
             if exc.status_code != 404:
@@ -1938,6 +1897,11 @@ async def generate_employee_report(
         payload=job_payload,
         employee_report=True,
     )
+    report_urls = _build_report_urls(
+        employee_id,
+        submission_id=submission_id,
+        cycle_name=cycle_name,
+    )
     return {
         "job_id": job_id,
         "status": "submitted",
@@ -1946,11 +1910,8 @@ async def generate_employee_report(
         "cycle_name": cycle_name,
         "message": f"Poll GET /status/{job_id} until completed, then fetch HTML.",
         "poll_url": f"/status/{job_id}",
-        "report_urls": _build_report_urls(
-            employee_id,
-            submission_id=submission_id,
-            cycle_name=cycle_name,
-        ),
+        "report_url": report_urls.get("report"),
+        "report_urls": report_urls,
     }
 
 
