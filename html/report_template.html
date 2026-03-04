@@ -17,10 +17,35 @@
         }
 
         body {
+            --primary: #667eea;
+            --secondary: #764ba2;
+            --page-bg: #f5f5f5;
+            --surface-tint: #f0f4ff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             line-height: 1.6;
             color: #333;
-            background: #f5f5f5;
+            background: var(--page-bg);
+        }
+
+        body.dimension-2d {
+            --primary: #0b7285;
+            --secondary: #1c7ed6;
+            --page-bg: #f2f8fa;
+            --surface-tint: #e9f7fb;
+        }
+
+        body.dimension-3d {
+            --primary: #2b8a3e;
+            --secondary: #5c940d;
+            --page-bg: #f3f8f3;
+            --surface-tint: #eef9ef;
+        }
+
+        body.dimension-4d {
+            --primary: #8f5e00;
+            --secondary: #b26f00;
+            --page-bg: #faf6ee;
+            --surface-tint: #fff5e6;
         }
 
         .container {
@@ -32,7 +57,7 @@
 
         /* ── Header ── */
         .report-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             color: white;
             padding: 40px;
             position: relative;
@@ -40,10 +65,10 @@
 
         .logo-space {
             position: absolute;
-            top: 20px;
-            right: 40px;
-            width: 200px;
-            height: 60px;
+            top: 18px;
+            right: 28px;
+            width: 170px;
+            height: 52px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -59,12 +84,39 @@
             font-size: 32px;
             margin-bottom: 10px;
             font-weight: 700;
+            line-height: 1.2;
+            padding-right: 210px; /* reserve space so text never sits under logo */
         }
 
         .report-header .subtitle {
             font-size: 18px;
             opacity: 0.9;
             margin-bottom: 20px;
+            padding-right: 210px; /* keep subtitle fully visible beside logo */
+        }
+
+        .header-actions {
+            margin-bottom: 20px;
+            padding-right: 210px;
+        }
+
+        .download-btn {
+            display: inline-block;
+            text-decoration: none;
+            color: var(--secondary);
+            background: #ffffff;
+            border: 2px solid #ffffff;
+            border-radius: 22px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            transition: all 0.2s ease;
+        }
+
+        .download-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: #ffffff;
         }
 
         .employee-info {
@@ -101,21 +153,22 @@
 
         .section {
             margin-bottom: 40px;
-            page-break-inside: avoid;
+            page-break-inside: auto;
+            break-inside: auto;
         }
 
         .section-title {
             font-size: 24px;
-            color: #667eea;
+            color: var(--primary);
             margin-bottom: 15px;
             padding-bottom: 10px;
-            border-bottom: 3px solid #667eea;
+            border-bottom: 3px solid var(--primary);
             font-weight: 600;
         }
 
         .subsection-title {
             font-size: 18px;
-            color: #764ba2;
+            color: var(--secondary);
             margin: 20px 0 10px 0;
             font-weight: 600;
         }
@@ -130,7 +183,7 @@
         /* ── Stage Badges ── */
         .stage-badge {
             display: inline-block;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             color: white;
             padding: 8px 20px;
             border-radius: 20px;
@@ -142,13 +195,13 @@
         .substage-badge {
             display: inline-block;
             background: #f0f0f0;
-            color: #764ba2;
+            color: var(--secondary);
             padding: 6px 16px;
             border-radius: 15px;
             font-weight: 500;
             margin: 5px 0;
             font-size: 13px;
-            border: 2px solid #764ba2;
+            border: 2px solid var(--secondary);
         }
 
         /* ── Score Table ── */
@@ -160,7 +213,7 @@
         }
 
         .score-table th {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             color: white;
             padding: 12px;
             text-align: left;
@@ -182,7 +235,7 @@
 
         .score-value {
             font-weight: 700;
-            color: #667eea;
+            color: var(--primary);
             font-size: 16px;
         }
 
@@ -222,6 +275,7 @@
             font-weight: 700;
         }
 
+        .swot-box ol,
         .swot-box ul {
             list-style-position: inside;
             padding-left: 10px;
@@ -237,13 +291,13 @@
         .action-phase {
             background: #f9f9f9;
             padding: 20px;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid var(--primary);
             margin: 15px 0;
             border-radius: 4px;
         }
 
         .action-phase h4 {
-            color: #667eea;
+            color: var(--primary);
             margin-bottom: 10px;
             font-size: 16px;
         }
@@ -254,7 +308,7 @@
         }
 
         .action-item strong {
-            color: #764ba2;
+            color: var(--secondary);
         }
 
         .action-steps {
@@ -269,7 +323,7 @@
 
         /* ── Indicators List ── */
         .indicators-list {
-            background: #f0f4ff;
+            background: var(--surface-tint);
             padding: 20px;
             border-radius: 8px;
             margin: 15px 0;
@@ -284,7 +338,7 @@
 
         .indicators-list li:before {
             content: "▸";
-            color: #667eea;
+            color: var(--primary);
             position: absolute;
             left: -10px;
             font-weight: bold;
@@ -310,27 +364,27 @@
         .report-divider::before {
             content: '';
             display: block;
-            border-top: 3px solid #667eea;
+            border-top: 3px solid var(--primary);
             margin-bottom: 20px;
         }
 
         .report-divider-title {
             font-size: 22px;
             font-weight: 700;
-            color: #764ba2;
+            color: var(--secondary);
             background: white;
             display: inline-block;
             padding: 8px 24px;
-            border: 2px solid #764ba2;
+            border: 2px solid var(--secondary);
             border-radius: 30px;
         }
 
         /* ── Footer ── */
         .report-footer {
-            background: #f5f5f5;
+            background: var(--surface-tint);
             padding: 30px 40px;
             text-align: center;
-            border-top: 3px solid #667eea;
+            border-top: 3px solid var(--primary);
         }
 
         .footer-note {
@@ -345,8 +399,20 @@
         @media print {
             body { background: white; }
             .container { box-shadow: none; max-width: 100%; }
-            .section, .swot-grid { page-break-inside: avoid; }
-            .report-divider { page-break-before: always; }
+            .section { page-break-inside: avoid; break-inside: avoid-page; }
+            .section-title { page-break-after: avoid; break-after: avoid-page; page-break-inside: avoid; break-inside: avoid-page; }
+            .section-content { page-break-inside: avoid; break-inside: avoid-page; orphans: 3; widows: 3; }
+            .score-table { page-break-inside: avoid; break-inside: avoid-page; }
+            .indicators-list { page-break-inside: avoid; break-inside: avoid-page; }
+            .action-phase { page-break-inside: avoid; break-inside: avoid-page; }
+            .swot-grid { page-break-inside: avoid; break-inside: avoid-page; }
+            .report-divider {
+                page-break-before: auto;
+                break-before: auto;
+                page-break-after: avoid;
+                break-after: avoid-page;
+            }
+            .header-actions { display: none; }
         }
 
         /* ── Responsive ── */
@@ -356,10 +422,13 @@
             .content { padding: 20px; }
             .report-header { padding: 20px; }
             .logo-space { position: static; margin: 20px auto 0; }
+            .report-header h1,
+            .report-header .subtitle,
+            .header-actions { padding-right: 0; }
         }
     </style>
 </head>
-<body>
+<body class="dimension-{{ (header.dimension_label or '1D').split(' ')[0]|lower }}">
 <div class="container">
 
     <!-- ════════════════════════════════════════
@@ -369,8 +438,13 @@
         <div class="logo-space">
             <img src="/static/chatur%20logo.png" alt="ChaturVima Logo">
         </div>
-        <h1>Employee Personal Insights</h1>
+        <h1>{{ header.report_heading or "Employee Personal Insights" }}</h1>
         <div class="subtitle">ChaturVima {{ header.dimension_label }} Diagnostic Report</div>
+        {% if header.download_pdf_url %}
+        <div class="header-actions">
+            <a class="download-btn" href="{{ header.download_pdf_url }}">Download PDF</a>
+        </div>
+        {% endif %}
 
         <div class="employee-info">
             <div class="info-box">
@@ -381,10 +455,10 @@
                 <label>Designation</label>
                 <div class="value">{{ header.designation }}</div>
             </div>
-            <div class="info-box">
-                <label>Report Type</label>
-                <div class="value">Growth Report</div>
-            </div>
+            <!-- <div class="info-box">
+                <label>Submission ID</label>
+                <div class="value">{{ header.submission_id or "-" }}</div>
+            </div> -->
         </div>
     </div>
 
@@ -455,35 +529,65 @@
                 <div class="section">
                     <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
 
-                    {#
-                       The LLM returns SWOT as paragraphs. We split them into 4 boxes.
-                       If the LLM returns exactly 4 paragraphs, each goes into one box.
-                       Otherwise we fall back to rendering each paragraph as plain text.
-                    #}
-                    {% if section.paragraphs | length == 4 %}
+                    {# Always render SWOT as 4 colored boxes, even when JSON has <4 paragraphs. #}
+                    {% set strengths_text = section.paragraphs[0] if section.paragraphs | length > 0 else "Strengths not available." %}
+                    {% set weaknesses_text = section.paragraphs[1] if section.paragraphs | length > 1 else "Weaknesses not available." %}
+                    {% set opportunities_text = section.paragraphs[2] if section.paragraphs | length > 2 else "Opportunities not available." %}
+                    {% set threats_text = section.paragraphs[3] if section.paragraphs | length > 3 else "Threats not available." %}
+                    {% set strengths_list = section.swot_lists.strengths if section.swot_lists is defined and section.swot_lists.strengths is defined else [] %}
+                    {% set weaknesses_list = section.swot_lists.weaknesses if section.swot_lists is defined and section.swot_lists.weaknesses is defined else [] %}
+                    {% set opportunities_list = section.swot_lists.opportunities if section.swot_lists is defined and section.swot_lists.opportunities is defined else [] %}
+                    {% set threats_list = section.swot_lists.threats if section.swot_lists is defined and section.swot_lists.threats is defined else [] %}
                     <div class="swot-grid">
                         <div class="swot-box strengths">
                             <h3>💪 Strengths</h3>
-                            <p style="font-size:13px;line-height:1.6;">{{ section.paragraphs[0] }}</p>
+                            {% if strengths_list | length > 0 %}
+                            <ol>
+                                {% for item in strengths_list %}
+                                <li>{{ item }}</li>
+                                {% endfor %}
+                            </ol>
+                            {% else %}
+                            <p style="font-size:13px;line-height:1.6;">{{ strengths_text }}</p>
+                            {% endif %}
                         </div>
                         <div class="swot-box weaknesses">
                             <h3>⚠️ Weaknesses</h3>
-                            <p style="font-size:13px;line-height:1.6;">{{ section.paragraphs[1] }}</p>
+                            {% if weaknesses_list | length > 0 %}
+                            <ol>
+                                {% for item in weaknesses_list %}
+                                <li>{{ item }}</li>
+                                {% endfor %}
+                            </ol>
+                            {% else %}
+                            <p style="font-size:13px;line-height:1.6;">{{ weaknesses_text }}</p>
+                            {% endif %}
                         </div>
                         <div class="swot-box opportunities">
                             <h3>🚀 Opportunities</h3>
-                            <p style="font-size:13px;line-height:1.6;">{{ section.paragraphs[2] }}</p>
+                            {% if opportunities_list | length > 0 %}
+                            <ol>
+                                {% for item in opportunities_list %}
+                                <li>{{ item }}</li>
+                                {% endfor %}
+                            </ol>
+                            {% else %}
+                            <p style="font-size:13px;line-height:1.6;">{{ opportunities_text }}</p>
+                            {% endif %}
                         </div>
                         <div class="swot-box threats">
                             <h3>⚡ Threats</h3>
-                            <p style="font-size:13px;line-height:1.6;">{{ section.paragraphs[3] }}</p>
+                            {% if threats_list | length > 0 %}
+                            <ol>
+                                {% for item in threats_list %}
+                                <li>{{ item }}</li>
+                                {% endfor %}
+                            </ol>
+                            {% else %}
+                            <p style="font-size:13px;line-height:1.6;">{{ threats_text }}</p>
+                            {% endif %}
                         </div>
                     </div>
-                    {% else %}
-                    {% for para in section.paragraphs %}
-                    <p class="section-content">{{ para }}</p>
-                    {% endfor %}
-                    {% endif %}
                 </div>
 
                 {# ── Action Plan section: render in styled phase boxes ── #}
