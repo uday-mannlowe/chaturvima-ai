@@ -41,6 +41,7 @@ from generate_groq import (
     generate_multi_reports_structured,
     generate_structured_report_by_dimension,
     generate_multi_reports_json,
+    generate_primary_report_json,
     generate_report_as_json,
     MODEL_BY_REPORT_TYPE_DEDICATED,
     resolve_input_data,
@@ -326,22 +327,22 @@ class WorkerPool:
                                     f"sub_stage='{dominant_sub_stage}', using default stage mapping"
                                 )
 
-                        multi_json_result = await asyncio.wait_for(
-                            asyncio.to_thread(generate_multi_reports_json, nd_data),
-                            timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
-                        )
-                        reports_payload = multi_json_result.get("reports", {})
-                        if (
-                            single_questionnaire
-                            and isinstance(reports_payload, dict)
-                            and primary_report_type
-                            and primary_report_type in reports_payload
-                        ):
-                            reports_payload = {primary_report_type: reports_payload[primary_report_type]}
+                        if single_questionnaire and primary_report_type:
                             print(
                                 f"🧭 Worker {worker_id}: single questionnaire submission -> "
-                                f"keeping only '{primary_report_type}' report"
+                                f"generating only '{primary_report_type}' report"
                             )
+                            single_json_result = await asyncio.wait_for(
+                                asyncio.to_thread(generate_primary_report_json, nd_data),
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+                            )
+                            reports_payload = single_json_result.get("reports", {})
+                        else:
+                            multi_json_result = await asyncio.wait_for(
+                                asyncio.to_thread(generate_multi_reports_json, nd_data),
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+                            )
+                            reports_payload = multi_json_result.get("reports", {})
                         if dimension == "1D" and swot_doc:
                             replaced = _apply_1d_swot_override_to_reports_payload(reports_payload, swot_doc)
                             if replaced:

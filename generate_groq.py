@@ -1908,6 +1908,36 @@ Do NOT wrap in an outer object. Return ONLY the array. No markdown fences."""
     return result
 
 
+def generate_primary_report_json(data: dict) -> Dict[str, Any]:
+    """
+    Generate only the primary report for the detected dimension.
+
+    Dimension -> report type:
+      1D -> employee
+      2D -> boss
+      3D -> team
+      4D -> organization
+    """
+    data = validate_input_data(data)
+    dimension = data["dimension"]
+    report_type = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension)
+    if not report_type:
+        raise ValueError(
+            f"Unsupported dimension: {dimension}. "
+            f"Available: {list(DEFAULT_REPORT_TYPE_BY_DIMENSION.keys())}"
+        )
+
+    print(f"🎯 SINGLE REPORT GENERATION — {dimension} -> {report_type}")
+    with rag_lock:
+        rag_context = retrieve_rag_context(data)
+
+    report = generate_report_as_json(data, report_type, rag_context)
+    return {
+        "dimension": dimension,
+        "reports": {report_type: report},
+    }
+
+
 def generate_multi_reports_json(data: dict) -> Dict[str, Any]:
     """
     Main fast-path entry point.
