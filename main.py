@@ -13,14 +13,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from urllib.parse import quote
-
 import httpx
 from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from dotenv import load_dotenv
 import uvicorn
+
+
+# Load local .env values when present (especially useful in local and Docker runs).
+load_dotenv()
 
 try:
     from weasyprint import HTML
@@ -101,6 +105,13 @@ class Config:
     CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
     CORS_ALLOW_METHODS = ["*"]
     CORS_ALLOW_HEADERS = ["*"]
+
+    # Browsers reject credentialed CORS responses when allow-origin is wildcard.
+    # If credentials are enabled and '*' is configured, switch to regex matching.
+    if CORS_ALLOW_CREDENTIALS and "*" in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS = [origin for origin in CORS_ALLOWED_ORIGINS if origin != "*"]
+        if not CORS_ALLOWED_ORIGIN_REGEX:
+            CORS_ALLOWED_ORIGIN_REGEX = r"^https?://.*$"
 
     # Single Jinja2 template used for ALL dimensions
     REPORT_TEMPLATE_NAME = "report_template.html"
@@ -545,13 +556,21 @@ app = FastAPI(
     version="2.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=Config.CORS_ALLOWED_ORIGINS,
-    allow_origin_regex=Config.CORS_ALLOWED_ORIGIN_REGEX,
-    allow_credentials=Config.CORS_ALLOW_CREDENTIALS,
-    allow_methods=Config.CORS_ALLOW_METHODS,
-    allow_headers=Config.CORS_ALLOW_HEADERS,
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=Config.CORS_ALLOWED_ORIGINS,
+#     allow_origin_regex=Config.CORS_ALLOWED_ORIGIN_REGEX,
+#     allow_credentials=Config.CORS_ALLOW_CREDENTIALS,
+#     allow_methods=Config.CORS_ALLOW_METHODS,
+#     allow_headers=Config.CORS_ALLOW_HEADERS,
+# )
+
+app.add_middleware(     
+    CORSMiddleware,     
+    allow_origins=["*"],     
+    allow_credentials=True,     
+    allow_methods=["*"],     
+    allow_headers=["*"]
 )
 
 # Serve the logo image at /static/chatur-logo.png
