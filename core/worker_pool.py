@@ -1,0 +1,335 @@
+"""
+core/worker_pool.py
+Async worker pool that drains the ReportQueue and calls generation functions.
+"""
+import asyncio
+import json
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+from core.config import Config
+from core.rate_limiter import RateLimiter
+from models.schemas import JobStatus, ReportJob, ReportQueue
+from services.frappe_client import (
+    fetch_frappe_swot_doc,
+    frappe_headers,
+    frappe_query_params,
+)
+from services.report_renderer import (
+    build_swot_lists_from_section_paragraphs,
+    is_swot_section,
+    text_to_paragraphs,
+)
+from services.report_storage import build_employee_report_path, save_employee_json
+
+# LLM generation imports (from generate_groq.py / future llm package)
+from generate_groq import (
+    DEFAULT_REPORT_TYPE_BY_DIMENSION,
+    MODEL_BY_REPORT_TYPE_DEDICATED,
+    REPORT_TITLE_MAP,
+    generate_multi_reports,
+    generate_multi_reports_json,
+    generate_multi_reports_structured,
+    generate_primary_report_json,
+    generate_structured_report_by_dimension,
+    generate_text_report,
+    map_frappe_to_nd,
+    resolve_input_data,
+)
+
+
+def _normalize_optional_str(value: Any) -> Optional[str]:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _extract_submission_id(message: Dict[str, Any], fallback: Optional[str] = None) -> Optional[str]:
+    for key in ("submission_id", "assessment_submission_id", "employee_submission_id", "submission", "assessment_id"):
+        candidate = _normalize_optional_str(message.get(key))
+        if candidate:
+            return candidate
+    return _normalize_optional_str(fallback)
+
+
+def _extract_cycle_name(message: Dict[str, Any], fallback: Optional[str] = None) -> Optional[str]:
+    for key in ("cycle_name", "assessment_cycle", "assessment_cycle_name"):
+        candidate = _normalize_optional_str(message.get(key))
+        if candidate:
+            return candidate
+    return _normalize_optional_str(fallback)
+
+
+def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, Any]]) -> bool:
+    """Inject SWOT data from Frappe into the employee report sections in-place."""
+    from services.frappe_client import extract_swot_lists
+
+    if not isinstance(reports_payload, dict) or not isinstance(swot_doc, dict):
+        return False
+    employee_report = reports_payload.get("employee")
+    if not isinstance(employee_report, dict):
+        return False
+    sections = employee_report.get("sections")
+    if not isinstance(sections, list):
+        return False
+
+    swot_lists = extract_swot_lists(swot_doc)
+
+    # Build paragraph lines from the structured lists
+    def _fmt(texts: List[str], fallback: str) -> str:
+        return " ".join(f"{i}. {t}" for i, t in enumerate(texts, 1)) if texts else fallback
+
+    paragraphs = [
+        _fmt(swot_lists["strengths"],     "Strengths not available."),
+        _fmt(swot_lists["weaknesses"],    "Weaknesses not available."),
+        _fmt(swot_lists["opportunities"], "Opportunities not available."),
+        _fmt(swot_lists["threats"],       "Threats not available."),
+    ]
+
+    swot_section = next(
+        (s for s in sections if isinstance(s, dict) and
+         (str(s.get("id", "")).strip().lower() == "swot" or "swot" in str(s.get("title", "")).lower())),
+        None,
+    )
+    if swot_section is None:
+        swot_section = {"id": "swot", "title": "Individual SWOT Analysis", "paragraphs": paragraphs}
+        sections.append(swot_section)
+    else:
+        swot_section["id"] = "swot"
+        swot_section.setdefault("title", "Individual SWOT Analysis")
+        swot_section["paragraphs"] = paragraphs
+
+    swot_section["swot_lists"] = swot_lists
+    swot_section["source"] = "frappe_swot"
+    swot_section["sub_stage"] = _normalize_optional_str(swot_doc.get("sub_stage") or swot_doc.get("name")) or ""
+    return True
+
+
+class WorkerPool:
+    def __init__(self, queue: ReportQueue, rate_limiter: RateLimiter, num_workers: int = 5):
+        self.queue = queue
+        self.rate_limiter = rate_limiter
+        self.num_workers = num_workers
+        self.workers: List[asyncio.Task] = []
+        self.running = False
+
+    async def _worker(self, worker_id: int):
+        print(f"🔧 Worker {worker_id} started")
+        while self.running:
+            try:
+                job: ReportJob = await asyncio.wait_for(self.queue.get_job(), timeout=1.0)
+                print(f"👷 Worker {worker_id} processing job {job.job_id}")
+                job.status = JobStatus.PROCESSING
+                job.started_at = datetime.now()
+                try:
+                    await self.rate_limiter.acquire()
+
+                    # ── BRANCH 1: Frappe employee report ──────────────────────
+                    if job.employee_report:
+                        await self._process_employee_report(job, worker_id)
+
+                    # ── BRANCH 2: Standard multi-report ──────────────────────
+                    elif job.multi_report:
+                        data = resolve_input_data(job.payload)
+                        if job.structured:
+                            result = await asyncio.wait_for(
+                                asyncio.to_thread(generate_multi_reports_structured, data),
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
+                            )
+                        else:
+                            result = await asyncio.wait_for(
+                                asyncio.to_thread(generate_multi_reports, data),
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+                            )
+                        job.result = result
+
+                    # ── BRANCH 3: Standard single-report ─────────────────────
+                    else:
+                        data = resolve_input_data(job.payload)
+                        if job.structured:
+                            result = await asyncio.wait_for(
+                                asyncio.to_thread(generate_structured_report_by_dimension, data),
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+                            )
+                        else:
+                            result = await asyncio.wait_for(
+                                asyncio.to_thread(generate_text_report, data),
+                                timeout=Config.GROQ_TIMEOUT_SECONDS,
+                            )
+                        job.result = result
+
+                    job.status = JobStatus.COMPLETED
+                    job.completed_at = datetime.now()
+                    duration = (job.completed_at - job.started_at).total_seconds()
+                    print(f"✅ Worker {worker_id} completed job {job.job_id} in {duration:.2f}s")
+
+                except asyncio.TimeoutError:
+                    job.status = JobStatus.FAILED
+                    job.error = "Report generation timed out"
+                    job.completed_at = datetime.now()
+                    print(f"⏱️ Worker {worker_id} timeout on job {job.job_id}")
+
+                except Exception as exc:
+                    job.status = JobStatus.FAILED
+                    job.error = str(exc)
+                    job.completed_at = datetime.now()
+                    print(f"❌ Worker {worker_id} error on job {job.job_id}: {exc}")
+
+            except asyncio.TimeoutError:
+                continue
+            except Exception as exc:
+                print(f"⚠️ Worker {worker_id} unexpected error: {exc}")
+
+    async def _process_employee_report(self, job: ReportJob, worker_id: int):
+        employee_id = job.payload["employee"]
+        requested_cycle = _normalize_optional_str(job.payload.get("cycle_name"))
+        requested_submission = _normalize_optional_str(job.payload.get("submission_id"))
+
+        frappe_params = frappe_query_params(employee_id, cycle_name=requested_cycle, submission_id=requested_submission)
+        print(f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id}")
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                resp = await client.get(Config.FRAPPE_BASE_URL, params=frappe_params, headers=frappe_headers())
+                resp.raise_for_status()
+                frappe_data = resp.json()
+            except httpx.HTTPStatusError as exc:
+                body_snippet = (exc.response.text or "").strip().replace("\n", " ")[:300]
+                raise RuntimeError(
+                    f"Frappe {exc.response.status_code} for params={frappe_params}. Response: {body_snippet}"
+                ) from exc
+
+        if "message" not in frappe_data:
+            raise ValueError(f"Unexpected Frappe response: {list(frappe_data.keys())}")
+
+        msg = frappe_data.get("message", frappe_data)
+        nd_data = map_frappe_to_nd(employee_id, frappe_data)
+        dimension = nd_data["dimension"]
+        print(f"📐 Worker {worker_id}: dimension={dimension}")
+
+        questionnaires = msg.get("questionnaires_considered", [])
+        single_questionnaire = len(questionnaires) == 1
+        primary_report_type = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension)
+
+        swot_doc: Optional[Dict[str, Any]] = None
+        dominant_sub_stage = _normalize_optional_str(msg.get("dominant_sub_stage"))
+        if dimension == "1D" and dominant_sub_stage:
+            swot_doc = await fetch_frappe_swot_doc(dominant_sub_stage)
+            status = "found" if swot_doc else "not found"
+            print(f"🧩 Worker {worker_id}: SWOT doc {status} for sub_stage='{dominant_sub_stage}'")
+
+        if single_questionnaire and primary_report_type:
+            print(f"🧭 Worker {worker_id}: single questionnaire -> generating only '{primary_report_type}' report")
+            result = await asyncio.wait_for(
+                asyncio.to_thread(generate_primary_report_json, nd_data),
+                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+            )
+            reports_payload = result.get("reports", {})
+        else:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(generate_multi_reports_json, nd_data),
+                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+            )
+            reports_payload = result.get("reports", {})
+
+        if dimension == "1D" and swot_doc:
+            replaced = _apply_1d_swot_override(reports_payload, swot_doc)
+            if replaced:
+                print(f"✅ Worker {worker_id}: 1D SWOT section injected from Frappe")
+
+        submission_id = _extract_submission_id(msg, requested_submission)
+        cycle_name = _extract_cycle_name(msg, requested_cycle)
+        employee_name = (
+            msg.get("employee_name") or msg.get("employee_full_name")
+            or msg.get("employee") or employee_id
+        )
+        designation = msg.get("designation") or msg.get("role") or msg.get("employee_role") or "Employee"
+        dimension_label = {
+            "1D": "1D - Individual Assessment",
+            "2D": "2D - Employee-Boss Relationship",
+            "3D": "3D - Team Assessment",
+            "4D": "4D - Organisational Assessment",
+        }.get(dimension, dimension)
+
+        stage_scores = []
+        for st in msg.get("stages", []):
+            try:
+                score = float(st.get("score", 0))
+            except (TypeError, ValueError):
+                score = 0.0
+            try:
+                pct = float(st.get("percentage", 0))
+            except (TypeError, ValueError):
+                pct = 0.0
+            stage_scores.append({
+                "stage": str(st.get("stage", "-")),
+                "score": f"{score:.2f}",
+                "percentage": f"{pct:.1f}",
+            })
+
+        report_sections_list = []
+        if isinstance(reports_payload, dict):
+            for rtype, robj in reports_payload.items():
+                if isinstance(robj, dict) and "sections" in robj:
+                    clean_sections = []
+                    for sec in robj.get("sections", []):
+                        paras = sec.get("paragraphs") or text_to_paragraphs(sec.get("text", ""))
+                        section_id = sec.get("id", "")
+                        section_title = sec.get("title", "")
+                        clean_sec: Dict[str, Any] = {
+                            "id": section_id,
+                            "title": section_title,
+                            "paragraphs": paras,
+                        }
+                        existing_swot = sec.get("swot_lists")
+                        if isinstance(existing_swot, dict):
+                            clean_sec["swot_lists"] = existing_swot
+                        elif is_swot_section(section_id, section_title):
+                            clean_sec["swot_lists"] = build_swot_lists_from_section_paragraphs(paras)
+                        clean_sections.append(clean_sec)
+                    report_sections_list.append({
+                        "title": robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
+                        "report_type": rtype,
+                        "sections": clean_sections,
+                    })
+
+        from datetime import datetime as _dt
+        json_payload = {
+            "status": "ok",
+            "header": {
+                "employee_id": employee_id,
+                "submission_id": submission_id or "",
+                "cycle_name": cycle_name or "",
+                "employee_name": employee_name,
+                "designation": designation,
+                "report_type": f"{dimension_label} Growth Report",
+                "dimension_label": dimension_label,
+                "dominant_stage": str(msg.get("dominant_stage", "-")),
+                "dominant_sub_stage": str(msg.get("dominant_sub_stage", "-")),
+                "questionnaire_text": ", ".join(str(q) for q in questionnaires) if questionnaires else "-",
+                "generated_date": _dt.now().strftime("%d %B %Y"),
+                "stage_scores": stage_scores,
+            },
+            "reports": report_sections_list,
+        }
+
+        path = save_employee_json(json_payload, employee_id, submission_id=submission_id, cycle_name=cycle_name)
+        print(f"💾 Worker {worker_id}: saved {path}")
+        job.result = json_payload
+
+    async def start(self):
+        if self.running:
+            return
+        self.running = True
+        self.workers = [asyncio.create_task(self._worker(i)) for i in range(self.num_workers)]
+        print(f"✅ Started {self.num_workers} workers")
+
+    async def stop(self):
+        if not self.running:
+            return
+        print("🛑 Stopping worker pool...")
+        self.running = False
+        await asyncio.gather(*self.workers, return_exceptions=True)
+        print("✅ Worker pool stopped")

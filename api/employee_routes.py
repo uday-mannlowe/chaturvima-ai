@@ -1,0 +1,207 @@
+"""
+api/employee_routes.py
+Employee report generation and retrieval endpoints.
+"""
+import asyncio
+import re
+import time as _time
+from typing import Any, Dict, List, Optional
+
+import httpx
+from fastapi import APIRouter, Body, HTTPException, Request
+
+from core.config import Config
+from models.schemas import ReportQueue
+from services.frappe_client import (
+    fetch_frappe_swot_doc,
+    frappe_headers,
+    frappe_query_params,
+)
+from services.report_storage import build_report_urls, load_employee_json
+from generate_groq import (
+    DEFAULT_REPORT_TYPE_BY_DIMENSION,
+    MODEL_BY_REPORT_TYPE_DEDICATED,
+    detect_dimension,
+    generate_multi_reports_json,
+    map_frappe_to_nd,
+    resolve_input_data,
+)
+
+router = APIRouter(tags=["Employee Report"])
+
+
+def _normalize_optional_str(value: Any) -> Optional[str]:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _optional_payload_str(payload: Dict[str, Any], key: str) -> Optional[str]:
+    if key not in payload or payload.get(key) is None:
+        return None
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"'{key}' must be a string.")
+    return value.strip() or None
+
+
+def _extract_dimension_code(value: Any) -> Optional[str]:
+    text = _normalize_optional_str(value)
+    if not text:
+        return None
+    m = re.search(r"\b([1-4]D)\b", text.upper())
+    return m.group(1).upper() if m else None
+
+
+def _questionnaire_text_to_list(value: Any) -> List[str]:
+    text = _normalize_optional_str(value)
+    if not text:
+        return []
+    return [p.strip() for p in text.split(",") if p.strip()]
+
+
+def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, Any]]) -> bool:
+    """Re-use the same logic from worker_pool — keeps routes thin."""
+    from core.worker_pool import _apply_1d_swot_override as _apply
+    return _apply(reports_payload, swot_doc)
+
+
+def setup_routes(report_queue: ReportQueue) -> APIRouter:
+    """
+    Factory function — binds the shared report_queue to route handlers.
+    Call this from main.py: app.include_router(setup_routes(report_queue))
+    """
+
+    @router.get("/debug-frappe/{employee_id}", summary="🔍 Debug Frappe data (no LLM)")
+    async def debug_frappe(
+        employee_id: str,
+        cycle_name: Optional[str] = None,
+        submission_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        normalized_cycle = _normalize_optional_str(cycle_name)
+        normalized_submission = _normalize_optional_str(submission_id)
+        params = frappe_query_params(employee_id, cycle_name=normalized_cycle, submission_id=normalized_submission)
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            try:
+                resp = await client.get(Config.FRAPPE_BASE_URL, params=params, headers=frappe_headers())
+                resp.raise_for_status()
+                frappe_data = resp.json()
+            except httpx.HTTPStatusError as exc:
+                raise HTTPException(502, f"Frappe {exc.response.status_code}: {exc.response.text[:300]}")
+            except Exception as exc:
+                raise HTTPException(502, f"Cannot reach Frappe: {exc}")
+
+        if "message" not in frappe_data:
+            raise HTTPException(502, f"Unexpected Frappe structure: {list(frappe_data.keys())}")
+
+        msg = frappe_data["message"]
+        questionnaires: List[str] = msg.get("questionnaires_considered", [])
+        dimension = detect_dimension(questionnaires)
+        return {
+            "employee": employee_id,
+            "submission_id": normalized_submission,
+            "cycle_name": normalized_cycle,
+            "questionnaires_considered": questionnaires,
+            "questionnaire_count": len(questionnaires),
+            "dimension_detected": dimension,
+            "dominant_stage": msg.get("dominant_stage", "—"),
+            "dominant_sub_stage": msg.get("dominant_sub_stage", "—"),
+            "frappe_raw": frappe_data,
+        }
+
+    @router.post("/generate-employee-report", summary="🚀 Submit employee report job")
+    async def generate_employee_report(
+        request: Request,
+        payload: Dict[str, Any] = Body(
+            ...,
+            examples={
+                "basic":           {"summary": "Generate report",        "value": {"employee": "HR-EMP-00031"}},
+                "with_cycle":      {"summary": "With cycle name",         "value": {"employee": "HR-EMP-00031", "cycle_name": "Assessment Cycle - 0442"}},
+                "with_submission": {"summary": "With submission id",      "value": {"employee": "HR-EMP-00031", "submission_id": "SUB-000442"}},
+                "force":           {"summary": "Force regenerate",        "value": {"employee": "HR-EMP-00031", "force_regenerate": True}},
+            },
+        ),
+    ) -> Dict[str, Any]:
+        employee_id = str(payload.get("employee", "")).strip()
+        if not employee_id:
+            raise HTTPException(400, "'employee' field is required.")
+        submission_id = _optional_payload_str(payload, "submission_id")
+        cycle_name = _normalize_optional_str(payload.get("cycle_name"))
+        force_regenerate = bool(payload.get("force_regenerate", False))
+
+        if not force_regenerate:
+            try:
+                cached = load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+                cached_header = cached.get("header", {})
+                cached_submission_id = _normalize_optional_str(cached_header.get("submission_id"))
+                cached_cycle_name = _normalize_optional_str(cached_header.get("cycle_name"))
+
+                cached_questionnaires = _questionnaire_text_to_list(cached_header.get("questionnaire_text"))
+                expected_dim = detect_dimension(cached_questionnaires) if cached_questionnaires else None
+                cached_dim = (
+                    _extract_dimension_code(cached_header.get("dimension_label"))
+                    or _extract_dimension_code(cached_header.get("report_type"))
+                )
+                dimension_mismatch = bool(expected_dim and cached_dim and expected_dim != cached_dim)
+                single_questionnaire = len(cached_questionnaires) == 1
+                expected_primary = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(expected_dim) if expected_dim else None
+                cached_report_types = [
+                    str(r.get("report_type", "")).strip().lower()
+                    for r in cached.get("reports", []) if isinstance(r, dict)
+                ]
+                report_scope_mismatch = bool(
+                    submission_id and single_questionnaire and expected_primary
+                    and (len(cached_report_types) != 1 or cached_report_types[0] != expected_primary)
+                )
+
+                if not dimension_mismatch and not report_scope_mismatch:
+                    cached_urls = build_report_urls(
+                        employee_id,
+                        submission_id=cached_submission_id or submission_id,
+                        cycle_name=cached_cycle_name or cycle_name,
+                    )
+                    return {
+                        "job_id": None,
+                        "status": "cached",
+                        "employee": employee_id,
+                        "submission_id": cached_submission_id,
+                        "cycle_name": cached_cycle_name,
+                        "message": "Cached report available.",
+                        "report_url": cached_urls.get("report"),
+                        "report_urls": cached_urls,
+                    }
+            except HTTPException as exc:
+                if exc.status_code != 404:
+                    raise
+
+        job_payload: Dict[str, Any] = {"employee": employee_id}
+        if submission_id:
+            job_payload["submission_id"] = submission_id
+        if cycle_name:
+            job_payload["cycle_name"] = cycle_name
+        user_auth = request.headers.get("Authorization", "").strip()
+        if user_auth:
+            job_payload["_user_auth"] = user_auth
+
+        job_id = await report_queue.add_job(payload=job_payload, employee_report=True)
+        report_urls = build_report_urls(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+        return {
+            "job_id": job_id,
+            "status": "submitted",
+            "employee": employee_id,
+            "submission_id": submission_id,
+            "cycle_name": cycle_name,
+            "message": "Job submitted. Use report URLs once generation is complete.",
+            "report_url": report_urls.get("report"),
+            "report_urls": report_urls,
+        }
+
+    @router.get("/report/{employee_id}", summary="📦 Get stored report JSON")
+    async def get_employee_all_reports(
+        employee_id: str,
+        submission_id: Optional[str] = None,
+        cycle_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return load_employee_json(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+
+    return router
