@@ -14,9 +14,10 @@ from datetime import datetime
 from enum import Enum
 from urllib.parse import quote
 import httpx
-from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, Query
+from fastapi import FastAPI, Body, HTTPException, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from dotenv import load_dotenv
@@ -565,13 +566,37 @@ app = FastAPI(
 #     allow_headers=Config.CORS_ALLOW_HEADERS,
 # )
 
-app.add_middleware(     
-    CORSMiddleware,     
-    allow_origins=["*"],     
-    allow_credentials=True,     
-    allow_methods=["*"],     
-    allow_headers=["*"]
-)
+# ---------------------------------------------------------------------------
+# Dynamic CORS Middleware
+# ---------------------------------------------------------------------------
+# The browser spec forbids allow_origins=["*"] with allow_credentials=True.
+# Since our domain is not fixed (devs use localhost, staging uses different
+# subdomains), we reflect the incoming Origin back as the allowed origin.
+# This is equivalent to "allow all origins" but satisfies the browser spec
+# when withCredentials=true is required for cookie/session auth.
+# ---------------------------------------------------------------------------
+class DynamicCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        origin = request.headers.get("origin", "")
+
+        # Handle preflight OPTIONS request
+        if request.method == "OPTIONS" and origin:
+            response = Response(status_code=200)
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, X-Requested-With"
+            response.headers["Access-Control-Max-Age"] = "600"
+            return response
+
+        # Handle actual request
+        response = await call_next(request)
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+app.add_middleware(DynamicCORSMiddleware)
 
 # Serve the logo image at /static/chatur-logo.png
 app.mount(
