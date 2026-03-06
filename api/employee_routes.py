@@ -2,9 +2,7 @@
 api/employee_routes.py
 Employee report generation and retrieval endpoints.
 """
-import asyncio
 import re
-import time as _time
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -13,18 +11,13 @@ from fastapi import APIRouter, Body, HTTPException, Request
 from core.config import Config
 from models.schemas import ReportQueue
 from services.frappe_client import (
-    fetch_frappe_swot_doc,
     frappe_headers,
     frappe_query_params,
 )
 from services.report_storage import build_report_urls, load_employee_json
 from generate_groq import (
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
-    MODEL_BY_REPORT_TYPE_DEDICATED,
     detect_dimension,
-    generate_multi_reports_json,
-    map_frappe_to_nd,
-    resolve_input_data,
 )
 
 router = APIRouter(tags=["Employee Report"])
@@ -33,6 +26,23 @@ router = APIRouter(tags=["Employee Report"])
 def _normalize_optional_str(value: Any) -> Optional[str]:
     text = str(value).strip() if value is not None else ""
     return text or None
+
+
+def _error_detail(
+    code: str,
+    message: str,
+    *,
+    details: Optional[Dict[str, Any]] = None,
+    retryable: bool = False,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "code": code,
+        "message": message,
+        "retryable": retryable,
+    }
+    if details:
+        payload["details"] = details
+    return payload
 
 
 def _optional_payload_str(payload: Dict[str, Any], key: str) -> Optional[str]:
@@ -65,6 +75,130 @@ def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, A
     return _apply(reports_payload, swot_doc)
 
 
+async def _validate_assessment_exists(
+    request: Request,
+    employee_id: str,
+    cycle_name: Optional[str],
+    submission_id: Optional[str],
+) -> None:
+    params = frappe_query_params(
+        employee_id,
+        cycle_name=cycle_name,
+        submission_id=submission_id,
+    )
+    common_details = {
+        "employee": employee_id,
+        "cycle_name": cycle_name,
+        "submission_id": submission_id,
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(
+                Config.FRAPPE_BASE_URL,
+                params=params,
+                headers=frappe_headers(request),
+            )
+            resp.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=_error_detail(
+                    "FRAPPE_TIMEOUT",
+                    "Upstream assessment service timed out.",
+                    details=common_details,
+                    retryable=True,
+                ),
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            body_snippet = (exc.response.text or "").strip().replace("\n", " ")[:300]
+            if status == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail=_error_detail(
+                        "ASSESSMENT_NOT_FOUND",
+                        "No assessment found for the given employee, cycle name, and submission id.",
+                        details=common_details,
+                        retryable=False,
+                    ),
+                ) from exc
+            if status in (401, 403):
+                raise HTTPException(
+                    status_code=403,
+                    detail=_error_detail(
+                        "FRAPPE_AUTH_DENIED",
+                        "Authorization failed while fetching assessment data.",
+                        details={**common_details, "upstream_status": status},
+                        retryable=False,
+                    ),
+                ) from exc
+            raise HTTPException(
+                status_code=502,
+                detail=_error_detail(
+                    "FRAPPE_UPSTREAM_ERROR",
+                    "Upstream assessment service returned an error.",
+                    details={
+                        **common_details,
+                        "upstream_status": status,
+                        "upstream_response": body_snippet,
+                    },
+                    retryable=True,
+                ),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=_error_detail(
+                    "FRAPPE_UNREACHABLE",
+                    "Unable to reach upstream assessment service.",
+                    details=common_details,
+                    retryable=True,
+                ),
+            ) from exc
+
+    try:
+        frappe_data = resp.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=_error_detail(
+                "FRAPPE_INVALID_RESPONSE",
+                "Upstream assessment service returned invalid JSON.",
+                details=common_details,
+                retryable=True,
+            ),
+        ) from exc
+
+    msg = frappe_data.get("message", frappe_data)
+    if not isinstance(msg, dict):
+        raise HTTPException(
+            status_code=502,
+            detail=_error_detail(
+                "FRAPPE_INVALID_RESPONSE",
+                "Upstream assessment payload format is invalid.",
+                details=common_details,
+                retryable=True,
+            ),
+        )
+
+    questionnaires = [
+        str(q).strip()
+        for q in msg.get("questionnaires_considered", [])
+        if str(q).strip()
+    ]
+    if not questionnaires:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail(
+                "ASSESSMENT_NOT_FOUND",
+                "No assessment data found for the given employee, cycle name, and submission id.",
+                details=common_details,
+                retryable=False,
+            ),
+        )
+
+
 def setup_routes(report_queue: ReportQueue) -> APIRouter:
     """
     Factory function — binds the shared report_queue to route handlers.
@@ -73,6 +207,7 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
 
     @router.get("/debug-frappe/{employee_id}", summary="🔍 Debug Frappe data (no LLM)")
     async def debug_frappe(
+        request: Request,
         employee_id: str,
         cycle_name: Optional[str] = None,
         submission_id: Optional[str] = None,
@@ -83,7 +218,11 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
 
         async with httpx.AsyncClient(timeout=30) as client:
             try:
-                resp = await client.get(Config.FRAPPE_BASE_URL, params=params, headers=frappe_headers())
+                resp = await client.get(
+                    Config.FRAPPE_BASE_URL,
+                    params=params,
+                    headers=frappe_headers(request),
+                )
                 resp.raise_for_status()
                 frappe_data = resp.json()
             except httpx.HTTPStatusError as exc:
@@ -182,6 +321,14 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
         user_auth = request.headers.get("Authorization", "").strip()
         if user_auth:
             job_payload["_user_auth"] = user_auth
+
+        # Fail fast for invalid employee/cycle/submission combinations.
+        await _validate_assessment_exists(
+            request=request,
+            employee_id=employee_id,
+            cycle_name=cycle_name,
+            submission_id=submission_id,
+        )
 
         job_id = await report_queue.add_job(payload=job_payload, employee_report=True)
         report_urls = build_report_urls(employee_id, submission_id=submission_id, cycle_name=cycle_name)

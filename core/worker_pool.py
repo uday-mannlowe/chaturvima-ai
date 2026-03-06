@@ -188,11 +188,15 @@ class WorkerPool:
         requested_submission = _normalize_optional_str(job.payload.get("submission_id"))
 
         frappe_params = frappe_query_params(employee_id, cycle_name=requested_cycle, submission_id=requested_submission)
+        headers = frappe_headers()
+        user_auth = str(job.payload.get("_user_auth", "")).strip()
+        if user_auth.lower().startswith("token "):
+            headers = {"Authorization": user_auth, "Content-Type": "application/json"}
         print(f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id}")
 
         async with httpx.AsyncClient(timeout=30) as client:
             try:
-                resp = await client.get(Config.FRAPPE_BASE_URL, params=frappe_params, headers=frappe_headers())
+                resp = await client.get(Config.FRAPPE_BASE_URL, params=frappe_params, headers=headers)
                 resp.raise_for_status()
                 frappe_data = resp.json()
             except httpx.HTTPStatusError as exc:
