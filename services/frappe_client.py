@@ -152,11 +152,22 @@ def map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def fetch_frappe_swot_doc(sub_stage: Optional[str]) -> Optional[Dict[str, Any]]:
+async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -> Optional[Dict[str, Any]]:
+    """
+    Fetch SWOT doc from Frappe.
+    user_auth: the logged-in user's 'token api_key:api_secret' string.
+               If provided, it is used instead of the fallback .env admin key.
+    """
     if not sub_stage:
         return None
 
-    headers = frappe_headers()
+    # Use the calling user's token if available, otherwise fall back to .env admin key
+    if user_auth and user_auth.lower().startswith("token "):
+        headers = {"Authorization": user_auth, "Content-Type": "application/json"}
+        print(f"🔑 SWOT fetch: using user token for sub_stage='{sub_stage}'")
+    else:
+        headers = frappe_headers()  # fallback to .env admin key
+        print(f"⚠️  SWOT fetch: no user token provided, using fallback admin key for sub_stage='{sub_stage}'")
     async with httpx.AsyncClient(timeout=30) as client:
         # Fast path: direct doc lookup
         direct_url = frappe_swot_doc_url(sub_stage)

@@ -76,7 +76,7 @@ def build_auto_download_pdf_url(
     cycle_name: Optional[str] = None,
 ) -> str:
     return append_identity_query(
-        f"/html-report/{employee_id}/pdf",
+        f"/api/html-report/{employee_id}/pdf",
         submission_id=submission_id,
         cycle_name=cycle_name,
     )

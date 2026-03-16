@@ -2,10 +2,12 @@
 services/report_renderer.py
 HTML + PDF rendering helpers for all report dimensions.
 """
+import base64
 import html as html_lib
 import os
 import re
 from datetime import datetime
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Union
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -118,6 +120,18 @@ def normalize_reports(
 
 # ─── HTML / PDF rendering ──────────────────────────────────────────────────────
 
+@lru_cache(maxsize=1)
+def _load_logo_data_uri() -> Optional[str]:
+    logo_path = os.path.join(Config.TEMPLATE_DIR, "chatur logo.png")
+    if not os.path.exists(logo_path):
+        return None
+    try:
+        with open(logo_path, "rb") as handle:
+            encoded = base64.b64encode(handle.read()).decode("ascii")
+    except OSError:
+        return None
+    return f"data:image/png;base64,{encoded}"
+
 def render_html_report(json_payload: Dict[str, Any]) -> str:
     """
     Render stored JSON payload → HTML using the unified Jinja2 template.
@@ -129,8 +143,13 @@ def render_html_report(json_payload: Dict[str, Any]) -> str:
             autoescape=select_autoescape(["html", "xml"]),
         )
         template = env.get_template(Config.REPORT_TEMPLATE_NAME)
+        header = dict(json_payload.get("header", {}))
+        if not str(header.get("logo_data_uri") or "").strip():
+            logo_data_uri = _load_logo_data_uri()
+            if logo_data_uri:
+                header["logo_data_uri"] = logo_data_uri
         return template.render(
-            header=json_payload.get("header", {}),
+            header=header,
             reports=json_payload.get("reports", []),
         )
     except Exception as exc:

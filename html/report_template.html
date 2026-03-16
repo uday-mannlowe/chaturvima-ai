@@ -436,7 +436,7 @@
          ════════════════════════════════════════ -->
     <div class="report-header">
         <div class="logo-space">
-            <img src="/static/chatur%20logo.png" alt="ChaturVima Logo">
+            <img src="{{ header.logo_data_uri or '/static/chatur%20logo.png' }}" alt="ChaturVima Logo">
         </div>
         <h1>{{ header.report_heading or "Employee Personal Insights" }}</h1>
         <div class="subtitle">ChaturVima {{ header.dimension_label }} Diagnostic Report</div>

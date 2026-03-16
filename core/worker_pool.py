@@ -220,7 +220,8 @@ class WorkerPool:
         swot_doc: Optional[Dict[str, Any]] = None
         dominant_sub_stage = _normalize_optional_str(msg.get("dominant_sub_stage"))
         if dimension == "1D" and dominant_sub_stage:
-            swot_doc = await fetch_frappe_swot_doc(dominant_sub_stage)
+            # Pass the user's own token so SWOT fetch uses their identity, not the admin key
+            swot_doc = await fetch_frappe_swot_doc(dominant_sub_stage, user_auth=user_auth)
             status = "found" if swot_doc else "not found"
             print(f"🧩 Worker {worker_id}: SWOT doc {status} for sub_stage='{dominant_sub_stage}'")
 
