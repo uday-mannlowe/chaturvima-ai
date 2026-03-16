@@ -76,6 +76,104 @@ def build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str,
     return swot
 
 
+_SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threats")
+_SWOT_LABELS = {
+    "strengths": "Strengths",
+    "weaknesses": "Weaknesses",
+    "opportunities": "Opportunities",
+    "threats": "Threats",
+}
+_SWOT_SECTION_TITLES = {
+    "employee": "Individual SWOT Analysis",
+    "boss": "Dyadic SWOT Analysis",
+    "team": "Collective SWOT Analysis",
+    "organization": "Cumulative SWOT Overlay",
+}
+
+
+def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
+    normalized: Dict[str, List[str]] = {key: [] for key in _SWOT_KEYS}
+    if not isinstance(raw_swot, dict):
+        return normalized
+
+    for key in _SWOT_KEYS:
+        values = raw_swot.get(key, [])
+        if isinstance(values, str):
+            values = [values]
+        if not isinstance(values, list):
+            continue
+        cleaned: List[str] = []
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                cleaned.append(text)
+        normalized[key] = cleaned
+    return normalized
+
+
+def _fill_missing_swot_lists(swot_lists: Dict[str, List[str]]) -> None:
+    for key in _SWOT_KEYS:
+        if not swot_lists.get(key):
+            label = _SWOT_LABELS[key]
+            swot_lists[key] = [f"{label} not explicitly available in this report output."]
+
+
+def _swot_lists_to_paragraphs(swot_lists: Dict[str, List[str]]) -> List[str]:
+    paragraphs: List[str] = []
+    for key in _SWOT_KEYS:
+        items = swot_lists.get(key, [])
+        line = " ".join(f"{idx}. {item}" for idx, item in enumerate(items, 1))
+        paragraphs.append(line or f"{_SWOT_LABELS[key]} not available.")
+    return paragraphs
+
+
+def _ensure_swot_sections_for_render(reports: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    safe_reports: List[Dict[str, Any]] = []
+    for report in reports:
+        if not isinstance(report, dict):
+            continue
+
+        report_copy = dict(report)
+        report_type = str(report_copy.get("report_type") or "").strip().lower()
+        sections = list(report_copy.get("sections", []) or [])
+
+        swot_index: Optional[int] = None
+        for idx, section in enumerate(sections):
+            if not isinstance(section, dict):
+                continue
+            if is_swot_section(section.get("id", ""), section.get("title", "")):
+                swot_index = idx
+                break
+
+        if swot_index is None:
+            swot_lists = {key: [] for key in _SWOT_KEYS}
+            _fill_missing_swot_lists(swot_lists)
+            sections.append({
+                "id": "swot",
+                "title": _SWOT_SECTION_TITLES.get(report_type, "SWOT Analysis"),
+                "paragraphs": _swot_lists_to_paragraphs(swot_lists),
+                "swot_lists": swot_lists,
+            })
+        else:
+            swot_section = dict(sections[swot_index])
+            existing_swot = swot_section.get("swot_lists")
+            if isinstance(existing_swot, dict):
+                swot_lists = _normalize_swot_lists(existing_swot)
+            else:
+                swot_lists = build_swot_lists_from_section_paragraphs(swot_section.get("paragraphs") or [])
+                swot_lists = _normalize_swot_lists(swot_lists)
+            _fill_missing_swot_lists(swot_lists)
+            swot_section["id"] = "swot"
+            swot_section["title"] = swot_section.get("title") or _SWOT_SECTION_TITLES.get(report_type, "SWOT Analysis")
+            swot_section["swot_lists"] = swot_lists
+            swot_section["paragraphs"] = _swot_lists_to_paragraphs(swot_lists)
+            sections[swot_index] = swot_section
+
+        report_copy["sections"] = sections
+        safe_reports.append(report_copy)
+    return safe_reports
+
+
 # ─── Report normalization ──────────────────────────────────────────────────────
 
 def normalize_single_report(
@@ -148,9 +246,12 @@ def render_html_report(json_payload: Dict[str, Any]) -> str:
             logo_data_uri = _load_logo_data_uri()
             if logo_data_uri:
                 header["logo_data_uri"] = logo_data_uri
+        reports = _ensure_swot_sections_for_render(
+            list(json_payload.get("reports", []) or [])
+        )
         return template.render(
             header=header,
-            reports=json_payload.get("reports", []),
+            reports=reports,
         )
     except Exception as exc:
         raise RuntimeError(f"Template rendering failed: {exc}") from exc

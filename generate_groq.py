@@ -543,16 +543,14 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
     - Project future implications
 
 13. Dyadic SWOT Analysis
-    - Strengths: Relational strengths that can be leveraged
-    - Weaknesses: Relational blind spots and vulnerabilities
-    - Opportunities: Growth levers for stronger alignment
-    - Threats: Risks that can degrade trust, performance, or collaboration
-    - - Provide a detailed SWOT analysis.
-Structure the response clearly under four headings: Strengths, Weaknesses, Opportunities, and Threats.
-Under each heading ie Strengths, Weaknesses, Opportunities, and Threats. , list the points in numbered format (1, 2, 3, etc.).
-Keep each point concise but descriptive (2–3 lines each).
-
-     
+    - Show all four sections clearly with pointers and do not skip any:
+      1. Strengths
+      2. Weaknesses
+      3. Opportunities
+      4. Threats
+    - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
+    - Keep each point concise but descriptive (2-3 lines each).
+    - Ground every point in the provided relationship data.
 
 14. Recommendations for the Boss
     - Provide boss-focused interventions
@@ -600,10 +598,14 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
 11. Root Cause Assessment
 12. Implications & Impact
 13. Collective SWOT (Individual within Department).
-    - Provide a detailed SWOT analysis.
-Structure the response clearly under four headings: Strengths, Weaknesses, Opportunities, and Threats.
-Under each heading ie Strengths, Weaknesses, Opportunities, and Threats. , list the points in numbered format (1, 2, 3, etc.).
-Keep each point concise but descriptive (2–3 lines each).
+    - Show all four sections clearly with pointers and do not skip any:
+      1. Strengths
+      2. Weaknesses
+      3. Opportunities
+      4. Threats
+    - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
+    - Keep each point concise but descriptive (2-3 lines each).
+    - Ground every point in the provided team and department data.
 
 14. Recommendations for Team Development
 15. Next Steps & Development Path
@@ -638,10 +640,15 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
 8.Full 4D Alignment Profile
 9.Individual’s Position in the Organisational Emotional Map
 10.Cumulative SWOT Overlay (Employee, Boss, Dept, Company)
-    -Provide a detailed SWOT analysis.
-    Structure the response clearly under four headings: Strengths, Weaknesses, Opportunities, and Threats.
-    Under each heading ie Strengths, Weaknesses, Opportunities, and Threats. , list the points in numbered format (1, 2, 3, etc.).
-    Keep each point concise but descriptive (2–3 lines each).
+    - Show all four sections clearly with pointers and do not skip any:
+      1. Strengths
+      2. Weaknesses
+      3. Opportunities
+      4. Threats
+    - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
+    - Keep each point concise but descriptive (2-3 lines each).
+    - Ground every point in the provided employee, boss, department, and organization data.
+
 11.Psychological & Cultural Fit Map
 12.Action Navigator – Organisation-Level Interventions
 13.Strategic Value & Leadership Insights

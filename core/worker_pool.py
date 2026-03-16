@@ -5,6 +5,7 @@ Async worker pool that drains the ReportQueue and calls generation functions.
 import asyncio
 import json
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -105,6 +106,103 @@ def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, A
     swot_section["source"] = "frappe_swot"
     swot_section["sub_stage"] = _normalize_optional_str(swot_doc.get("sub_stage") or swot_doc.get("name")) or ""
     return True
+
+
+_SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threats")
+_SWOT_LABELS = {
+    "strengths": "Strengths",
+    "weaknesses": "Weaknesses",
+    "opportunities": "Opportunities",
+    "threats": "Threats",
+}
+_SWOT_SECTION_TITLES = {
+    "employee": "Individual SWOT Analysis",
+    "boss": "Dyadic SWOT Analysis",
+    "team": "Collective SWOT Analysis",
+    "organization": "Cumulative SWOT Overlay",
+}
+
+
+def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
+    normalized: Dict[str, List[str]] = {key: [] for key in _SWOT_KEYS}
+    if not isinstance(raw_swot, dict):
+        return normalized
+
+    for key in _SWOT_KEYS:
+        values = raw_swot.get(key, [])
+        if isinstance(values, str):
+            values = [values]
+        if not isinstance(values, list):
+            continue
+
+        clean_values: List[str] = []
+        for value in values:
+            text = str(value or "").strip()
+            if not text:
+                continue
+            # Remove heading prefixes when they appear in item text.
+            text = re.sub(
+                r"^(strengths?|weaknesses?|opportunities?|threats?)\s*[:\-]\s*",
+                "",
+                text,
+                flags=re.IGNORECASE,
+            ).strip()
+            if text:
+                clean_values.append(text)
+        normalized[key] = clean_values
+    return normalized
+
+
+def _fill_missing_swot_lists(swot_lists: Dict[str, List[str]]) -> None:
+    for key in _SWOT_KEYS:
+        if not swot_lists.get(key):
+            label = _SWOT_LABELS[key]
+            swot_lists[key] = [f"{label} not explicitly available in this report output."]
+
+
+def _swot_lists_to_paragraphs(swot_lists: Dict[str, List[str]]) -> List[str]:
+    paragraphs: List[str] = []
+    for key in _SWOT_KEYS:
+        items = swot_lists.get(key, [])
+        line = " ".join(f"{idx}. {item}" for idx, item in enumerate(items, 1))
+        paragraphs.append(line or f"{_SWOT_LABELS[key]} not available.")
+    return paragraphs
+
+
+def _ensure_swot_section(clean_sections: List[Dict[str, Any]], report_type: str) -> None:
+    swot_index: Optional[int] = None
+    for i, section in enumerate(clean_sections):
+        if not isinstance(section, dict):
+            continue
+        if is_swot_section(section.get("id", ""), section.get("title", "")):
+            swot_index = i
+            break
+
+    if swot_index is None:
+        swot_lists = {key: [] for key in _SWOT_KEYS}
+        _fill_missing_swot_lists(swot_lists)
+        clean_sections.append({
+            "id": "swot",
+            "title": _SWOT_SECTION_TITLES.get(report_type, "SWOT Analysis"),
+            "paragraphs": _swot_lists_to_paragraphs(swot_lists),
+            "swot_lists": swot_lists,
+        })
+        return
+
+    swot_section = clean_sections[swot_index]
+    swot_section["id"] = "swot"
+    swot_section["title"] = swot_section.get("title") or _SWOT_SECTION_TITLES.get(report_type, "SWOT Analysis")
+
+    existing_swot = swot_section.get("swot_lists")
+    if isinstance(existing_swot, dict):
+        swot_lists = _normalize_swot_lists(existing_swot)
+    else:
+        swot_lists = build_swot_lists_from_section_paragraphs(swot_section.get("paragraphs") or [])
+        swot_lists = _normalize_swot_lists(swot_lists)
+
+    _fill_missing_swot_lists(swot_lists)
+    swot_section["swot_lists"] = swot_lists
+    swot_section["paragraphs"] = _swot_lists_to_paragraphs(swot_lists)
 
 
 class WorkerPool:
@@ -294,6 +392,7 @@ class WorkerPool:
                         elif is_swot_section(section_id, section_title):
                             clean_sec["swot_lists"] = build_swot_lists_from_section_paragraphs(paras)
                         clean_sections.append(clean_sec)
+                    _ensure_swot_section(clean_sections, rtype)
                     report_sections_list.append({
                         "title": robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
                         "report_type": rtype,
