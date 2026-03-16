@@ -184,6 +184,11 @@ def _with_download_link(
     response_class=HTMLResponse,
     summary="📄 Auto Dimension HTML Report",
 )
+@router.get(
+    "/api/html-report/{employee_id}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
 async def html_report_auto(
     employee_id: str,
     submission_id: str = Query(..., description="Submission identifier"),
@@ -208,6 +213,10 @@ async def html_report_auto(
 @router.get(
     "/html-report/{employee_id}/pdf",
     summary="📥 Auto Dimension PDF Download",
+)
+@router.get(
+    "/api/html-report/{employee_id}/pdf",
+    include_in_schema=False,
 )
 async def html_report_auto_pdf(
     employee_id: str,

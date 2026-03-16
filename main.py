@@ -61,6 +61,9 @@ app.add_middleware(DynamicCORSMiddleware)
 # ─── Static files ─────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=Config.TEMPLATE_DIR), name="static")
+# Vercel-style proxy setups often expose backend under /api.
+# Mount static there as well so absolute logo URLs resolve consistently.
+app.mount("/api/static", StaticFiles(directory=Config.TEMPLATE_DIR), name="api-static")
 
 # ─── Services ─────────────────────────────────────────────────────────────────
 
