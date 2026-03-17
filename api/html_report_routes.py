@@ -148,7 +148,7 @@ def _ensure_dimension_available(
             "requested_dimension": dimension_key.upper(),
             "available_dimensions": sorted(set(available_dims)),
             "suggested_auto_url": append_identity_query(
-                f"/html-report/{employee_id}",
+                f"/api/html-report/{employee_id}",
                 submission_id=submission_id,
                 cycle_name=cycle_name,
             ),

@@ -63,7 +63,7 @@ def build_report_urls(
     cycle_name: Optional[str] = None,
 ) -> Dict[str, str]:
     report_url = append_identity_query(
-        f"/html-report/{employee_id}",
+        f"/api/html-report/{employee_id}",
         submission_id=submission_id,
         cycle_name=cycle_name,
     )
