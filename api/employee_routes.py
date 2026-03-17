@@ -206,6 +206,7 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
     """
 
     @router.get("/debug-frappe/{employee_id}", summary="🔍 Debug Frappe data (no LLM)")
+    @router.get("/api/debug-frappe/{employee_id}", include_in_schema=False)
     async def debug_frappe(
         request: Request,
         employee_id: str,
@@ -249,6 +250,7 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
         }
 
     @router.post("/generate-employee-report", summary="🚀 Submit employee report job")
+    @router.post("/api/generate-employee-report", include_in_schema=False)
     async def generate_employee_report(
         request: Request,
         payload: Dict[str, Any] = Body(
@@ -344,6 +346,7 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
         }
 
     @router.get("/report/{employee_id}", summary="📦 Get stored report JSON")
+    @router.get("/api/report/{employee_id}", include_in_schema=False)
     async def get_employee_all_reports(
         employee_id: str,
         submission_id: Optional[str] = None,
