@@ -18,7 +18,11 @@ from core.config import Config
 from core.rate_limiter import RateLimiter
 from core.worker_pool import WorkerPool
 from models.schemas import ReportQueue
-from services.report_storage import cleanup_old_per_type_files
+from services.report_storage import (
+    cleanup_old_per_type_files,
+    initialize_report_storage,
+    storage_backend_name,
+)
 
 from api.html_report_routes import router as html_router
 from api.json_report_routes import router as json_router
@@ -87,6 +91,7 @@ async def startup_event():
     print(f"Workers:     {Config.MAX_CONCURRENT_GENERATIONS}")
     print(f"Queue Size:  {Config.MAX_QUEUE_SIZE}")
     print(f"Rate Limit:  {Config.GROQ_RATE_LIMIT_PER_MINUTE}/min")
+    print(f"Storage:     {storage_backend_name()}")
     if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
         print("🔑 Frappe auth: API key+secret (✓)")
     elif Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
@@ -94,6 +99,7 @@ async def startup_event():
     else:
         print("⚠️  Frappe auth: NO CREDENTIALS – employee endpoints will 403")
     print("="*60 + "\n")
+    initialize_report_storage()
     cleanup_old_per_type_files()
     await worker_pool.start()
 

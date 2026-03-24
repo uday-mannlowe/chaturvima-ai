@@ -20,6 +20,8 @@ services:
       # Frappe authentication
       - FRAPPE_API_KEY=${FRAPPE_API_KEY}
       - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
+      # Report storage
+      - DATABASE_URL=${DATABASE_URL:-}
     volumes:
       # Persist vector DB and data
       - ./vector_db:/app/vector_db

@@ -32,6 +32,7 @@ class Config:
         "FRAPPE_RESOURCE_BASE_URL",
         "https://cvdev.m.frappe.cloud/api/resource",
     )
+    DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
     HTML_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "html_data")
 
     FRAPPE_API_KEY    = os.getenv("FRAPPE_API_KEY", "")

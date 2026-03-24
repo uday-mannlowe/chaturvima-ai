@@ -24,7 +24,7 @@ from services.report_renderer import (
     is_swot_section,
     text_to_paragraphs,
 )
-from services.report_storage import build_employee_report_path, save_employee_json
+from services.report_storage import save_employee_json
 
 # LLM generation imports (from generate_groq.py / future llm package)
 from generate_groq import (
