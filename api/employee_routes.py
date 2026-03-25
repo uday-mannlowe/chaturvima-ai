@@ -294,8 +294,13 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
                     submission_id and single_questionnaire and expected_primary
                     and (len(cached_report_types) != 1 or cached_report_types[0] != expected_primary)
                 )
+                cached_stage_scores = cached_header.get("stage_scores", [])
+                missing_final_values = any(
+                    isinstance(row, dict) and not str(row.get("final_value", "")).strip()
+                    for row in cached_stage_scores
+                )
 
-                if not dimension_mismatch and not report_scope_mismatch:
+                if not dimension_mismatch and not report_scope_mismatch and not missing_final_values:
                     cached_urls = build_report_urls(
                         employee_id,
                         submission_id=cached_submission_id or submission_id,

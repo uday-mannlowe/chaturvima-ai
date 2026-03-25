@@ -22,6 +22,9 @@ services:
       - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
       # Report storage
       - DATABASE_URL=${DATABASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       # Persist vector DB and data
       - ./vector_db:/app/vector_db
@@ -38,3 +41,22 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  postgres:
+    image: postgres:16
+    container_name: chaturvima-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-chaturvima}
+      - POSTGRES_USER=${POSTGRES_USER:-cv_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-cv_password_123}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cv_user} -d ${POSTGRES_DB:-chaturvima}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

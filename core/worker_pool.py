@@ -366,10 +366,22 @@ class WorkerPool:
                 pct = float(st.get("percentage", 0))
             except (TypeError, ValueError):
                 pct = 0.0
+            try:
+                final_value = float(st.get("final_value", score))
+            except (TypeError, ValueError):
+                final_value = score
+            try:
+                final_pct = float(st.get("final_percentage", pct))
+            except (TypeError, ValueError):
+                final_pct = pct
             stage_scores.append({
                 "stage": str(st.get("stage", "-")),
-                "score": f"{score:.2f}",
-                "percentage": f"{pct:.1f}",
+                # Keep legacy keys for backward compatibility while switching
+                # report display to final_value/final_percentage.
+                "score": f"{final_value:.2f}",
+                "percentage": f"{final_pct:.1f}",
+                "final_value": f"{final_value:.2f}",
+                "final_percentage": f"{final_pct:.1f}",
             })
 
         report_sections_list = []

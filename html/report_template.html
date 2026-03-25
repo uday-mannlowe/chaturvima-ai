@@ -506,7 +506,7 @@
                     <thead>
                         <tr>
                             <th>Behavioral Stage</th>
-                            <th>Score</th>
+                            <th>Final Value</th>
                             <th>Percentage</th>
                         </tr>
                     </thead>
@@ -514,8 +514,8 @@
                         {% for row in header.stage_scores %}
                         <tr>
                             <td><strong>{{ row.stage }}</strong></td>
-                            <td><span class="score-value">{{ row.score }}</span></td>
-                            <td>{{ row.percentage }}%</td>
+                            <td><span class="score-value">{{ row.final_value or row.score }}</span></td>
+                            <td>{{ row.final_percentage or row.percentage }}%</td>
                         </tr>
                         {% endfor %}
                     </tbody>
