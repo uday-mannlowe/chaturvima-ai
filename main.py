@@ -92,7 +92,11 @@ async def startup_event():
     print(f"Queue Size:  {Config.MAX_QUEUE_SIZE}")
     print(f"Rate Limit:  {Config.GROQ_RATE_LIMIT_PER_MINUTE}/min")
     print(f"Storage:     {storage_backend_name()}")
+<<<<<<< HEAD
     print("Frappe auth: dynamic-only mode (runtime token/key-secret required per request)")
+=======
+    print("Frappe auth: runtime token preferred, .env fallback enabled")
+>>>>>>> 39a36c9 (hardcode  api and secret key)
     print("="*60 + "\n")
     initialize_report_storage()
     cleanup_old_per_type_files()

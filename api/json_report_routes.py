@@ -60,6 +60,7 @@ def _resolve_runtime_frappe_auth(payload: Dict[str, Any], request: Request) -> O
             detail="'frappe_auth_token' must start with 'token '.",
         )
 
+<<<<<<< HEAD
     resolved = resolve_frappe_auth_token(request=request, payload=payload)
     if resolved:
         return resolved
@@ -73,6 +74,9 @@ def _resolve_runtime_frappe_auth(payload: Dict[str, Any], request: Request) -> O
             "or payload keys 'frappe_api_key' and 'frappe_api_secret'."
         ),
     )
+=======
+    return resolve_frappe_auth_token(request=request, payload=payload)
+>>>>>>> 39a36c9 (hardcode  api and secret key)
 
 
 def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, Any]]) -> bool:

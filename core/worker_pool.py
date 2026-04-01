@@ -289,11 +289,14 @@ class WorkerPool:
         runtime_auth = _normalize_optional_str(job.payload.get("_frappe_auth")) or _normalize_optional_str(
             job.payload.get("_user_auth")
         )
+<<<<<<< HEAD
         if not runtime_auth:
             raise RuntimeError(
                 "Missing runtime Frappe credentials for employee report job. "
                 "Dynamic auth is required."
             )
+=======
+>>>>>>> 39a36c9 (hardcode  api and secret key)
         headers = frappe_headers(explicit_auth=runtime_auth)
         print(f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id}")
 

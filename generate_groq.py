@@ -29,7 +29,7 @@ def create_groq_client() -> Groq:
 
 # Choose your Groq model
 # Options: "llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"
-MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 # Optional per-dimension models. If not set, each falls back to GROQ_MODEL.
 # This allows 1D/2D/3D/4D report paths to use different models.

@@ -89,13 +89,36 @@ def frappe_headers(
 
     Priority:
       1. Runtime token from explicit auth / payload / request headers
+<<<<<<< HEAD
       2. No fallback credentials in dynamic-only mode
+=======
+      2. Fall back to .env admin/user credentials when runtime token is missing
+>>>>>>> 39a36c9 (hardcode  api and secret key)
     """
     runtime_auth = resolve_frappe_auth_token(request=request, payload=payload, explicit_auth=explicit_auth)
     if runtime_auth:
         print("[FRAPPE_AUTH] using runtime token from request/payload")
         return {"Authorization": runtime_auth, "Content-Type": "application/json"}
+<<<<<<< HEAD
     print("[FRAPPE_AUTH] runtime token missing; dynamic-only mode has no fallback")
+=======
+
+    if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+        print("[FRAPPE_AUTH] using fallback admin key from .env")
+        return {
+            "Authorization": f"token {Config.FRAPPE_API_KEY}:{Config.FRAPPE_API_SECRET}",
+            "Content-Type": "application/json",
+        }
+
+    if Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
+        creds = base64.b64encode(
+            f"{Config.FRAPPE_USERNAME}:{Config.FRAPPE_PASSWORD}".encode()
+        ).decode()
+        print("[FRAPPE_AUTH] using fallback username/password from .env")
+        return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
+
+    print("[FRAPPE_AUTH] no credentials found; protected endpoints may return 403")
+>>>>>>> 39a36c9 (hardcode  api and secret key)
     return {"Content-Type": "application/json"}
 
 
@@ -227,8 +250,13 @@ async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -
         headers = {"Authorization": runtime_auth, "Content-Type": "application/json"}
         print(f"[FRAPPE_SWOT] using runtime token for sub_stage='{sub_stage}'")
     else:
+<<<<<<< HEAD
         print(f"[FRAPPE_SWOT] runtime token missing for sub_stage='{sub_stage}'")
         return None
+=======
+        headers = frappe_headers()  # fallback to .env admin/user creds
+        print(f"[FRAPPE_SWOT] runtime token missing for sub_stage='{sub_stage}', using fallback creds")
+>>>>>>> 39a36c9 (hardcode  api and secret key)
 
     async with httpx.AsyncClient(timeout=30) as client:
         # Fast path: direct doc lookup
