@@ -13,6 +13,7 @@ from models.schemas import ReportQueue
 from services.frappe_client import (
     frappe_headers,
     frappe_query_params,
+    resolve_frappe_auth_token,
 )
 from services.report_storage import build_report_urls, load_employee_json
 from generate_groq import (
@@ -54,6 +55,40 @@ def _optional_payload_str(payload: Dict[str, Any], key: str) -> Optional[str]:
     return value.strip() or None
 
 
+def _resolve_runtime_frappe_auth(payload: Dict[str, Any], request: Request) -> Optional[str]:
+    payload_api_key = _optional_payload_str(payload, "frappe_api_key")
+    payload_api_secret = _optional_payload_str(payload, "frappe_api_secret")
+    if bool(payload_api_key) != bool(payload_api_secret):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide both 'frappe_api_key' and 'frappe_api_secret' together.",
+        )
+
+    payload_token = (
+        _optional_payload_str(payload, "frappe_auth_token")
+        or _optional_payload_str(payload, "frappe_token")
+    )
+    if payload_token and not payload_token.lower().startswith("token "):
+        raise HTTPException(
+            status_code=400,
+            detail="'frappe_auth_token' must start with 'token '.",
+        )
+
+    resolved = resolve_frappe_auth_token(request=request, payload=payload)
+    if resolved:
+        return resolved
+
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            "Dynamic Frappe credentials are required. Send either "
+            "'Authorization: token <api_key>:<api_secret>', "
+            "'X-Frappe-Api-Key' + 'X-Frappe-Api-Secret' headers, "
+            "or payload keys 'frappe_api_key' and 'frappe_api_secret'."
+        ),
+    )
+
+
 def _extract_dimension_code(value: Any) -> Optional[str]:
     text = _normalize_optional_str(value)
     if not text:
@@ -80,6 +115,7 @@ async def _validate_assessment_exists(
     employee_id: str,
     cycle_name: Optional[str],
     submission_id: Optional[str],
+    frappe_auth: Optional[str] = None,
 ) -> None:
     params = frappe_query_params(
         employee_id,
@@ -97,7 +133,7 @@ async def _validate_assessment_exists(
             resp = await client.get(
                 Config.FRAPPE_BASE_URL,
                 params=params,
-                headers=frappe_headers(request),
+                headers=frappe_headers(request=request, explicit_auth=frappe_auth),
             )
             resp.raise_for_status()
         except httpx.TimeoutException as exc:
@@ -222,7 +258,7 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
                 resp = await client.get(
                     Config.FRAPPE_BASE_URL,
                     params=params,
-                    headers=frappe_headers(request),
+                    headers=frappe_headers(request=request),
                 )
                 resp.raise_for_status()
                 frappe_data = resp.json()
@@ -259,6 +295,7 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
                 "basic":           {"summary": "Generate report",        "value": {"employee": "HR-EMP-00031"}},
                 "with_cycle":      {"summary": "With cycle name",         "value": {"employee": "HR-EMP-00031", "cycle_name": "Assessment Cycle - 0442"}},
                 "with_submission": {"summary": "With submission id",      "value": {"employee": "HR-EMP-00031", "submission_id": "SUB-000442"}},
+                "with_user_keys":  {"summary": "With runtime Frappe API keys", "value": {"employee": "HR-EMP-00031", "frappe_api_key": "user_api_key", "frappe_api_secret": "user_api_secret"}},
                 "force":           {"summary": "Force regenerate",        "value": {"employee": "HR-EMP-00031", "force_regenerate": True}},
             },
         ),
@@ -269,6 +306,7 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
         submission_id = _optional_payload_str(payload, "submission_id")
         cycle_name = _normalize_optional_str(payload.get("cycle_name"))
         force_regenerate = bool(payload.get("force_regenerate", False))
+        runtime_frappe_auth = _resolve_runtime_frappe_auth(payload=payload, request=request)
 
         if not force_regenerate:
             try:
@@ -325,9 +363,8 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
             job_payload["submission_id"] = submission_id
         if cycle_name:
             job_payload["cycle_name"] = cycle_name
-        user_auth = request.headers.get("Authorization", "").strip()
-        if user_auth:
-            job_payload["_user_auth"] = user_auth
+        if runtime_frappe_auth:
+            job_payload["_frappe_auth"] = runtime_frappe_auth
 
         # Fail fast for invalid employee/cycle/submission combinations.
         await _validate_assessment_exists(
@@ -335,6 +372,7 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
             employee_id=employee_id,
             cycle_name=cycle_name,
             submission_id=submission_id,
+            frappe_auth=runtime_frappe_auth,
         )
 
         job_id = await report_queue.add_job(payload=job_payload, employee_report=True)

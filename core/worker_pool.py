@@ -286,10 +286,15 @@ class WorkerPool:
         requested_submission = _normalize_optional_str(job.payload.get("submission_id"))
 
         frappe_params = frappe_query_params(employee_id, cycle_name=requested_cycle, submission_id=requested_submission)
-        headers = frappe_headers()
-        user_auth = str(job.payload.get("_user_auth", "")).strip()
-        if user_auth.lower().startswith("token "):
-            headers = {"Authorization": user_auth, "Content-Type": "application/json"}
+        runtime_auth = _normalize_optional_str(job.payload.get("_frappe_auth")) or _normalize_optional_str(
+            job.payload.get("_user_auth")
+        )
+        if not runtime_auth:
+            raise RuntimeError(
+                "Missing runtime Frappe credentials for employee report job. "
+                "Dynamic auth is required."
+            )
+        headers = frappe_headers(explicit_auth=runtime_auth)
         print(f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id}")
 
         async with httpx.AsyncClient(timeout=30) as client:
@@ -319,7 +324,7 @@ class WorkerPool:
         dominant_sub_stage = _normalize_optional_str(msg.get("dominant_sub_stage"))
         if dimension == "1D" and dominant_sub_stage:
             # Pass the user's own token so SWOT fetch uses their identity, not the admin key
-            swot_doc = await fetch_frappe_swot_doc(dominant_sub_stage, user_auth=user_auth)
+            swot_doc = await fetch_frappe_swot_doc(dominant_sub_stage, user_auth=runtime_auth or "")
             status = "found" if swot_doc else "not found"
             print(f"🧩 Worker {worker_id}: SWOT doc {status} for sub_stage='{dominant_sub_stage}'")
 
@@ -449,3 +454,4 @@ class WorkerPool:
         self.running = False
         await asyncio.gather(*self.workers, return_exceptions=True)
         print("✅ Worker pool stopped")
+
