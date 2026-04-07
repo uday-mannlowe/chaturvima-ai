@@ -96,6 +96,11 @@ def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
     if not isinstance(raw_swot, dict):
         return normalized
 
+    # Backward compatibility: older payloads may use "threats".
+    if "threat" not in raw_swot and "threats" in raw_swot:
+        raw_swot = dict(raw_swot)
+        raw_swot["threat"] = raw_swot.get("threats", [])
+
     for key in _SWOT_KEYS:
         values = raw_swot.get(key, [])
         if isinstance(values, str):

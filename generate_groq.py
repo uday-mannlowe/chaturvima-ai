@@ -551,6 +551,7 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
     - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
     - Keep each point concise but descriptive (2-3 lines each).
     - Ground every point in the provided relationship data.
+    - This SWOT section is mandatory and must never be omitted.
 
 14. Recommendations for the Boss
     - Provide boss-focused interventions
@@ -606,6 +607,7 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
     - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
     - Keep each point concise but descriptive (2-3 lines each).
     - Ground every point in the provided team and department data.
+    - This SWOT section is mandatory and must never be omitted.
 
 14. Recommendations for Team Development
 15. Next Steps & Development Path
@@ -648,6 +650,7 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
     - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
     - Keep each point concise but descriptive (2-3 lines each).
     - Ground every point in the provided employee, boss, department, and organization data.
+    - This SWOT section is mandatory and must never be omitted.
 
 11.Psychological & Cultural Fit Map
 12.Action Navigator – Organisation-Level Interventions
@@ -1730,6 +1733,9 @@ def generate_report_as_json(
     keys_to_strip_from_prompt = ("individual_swot", "recommendation_framework")
     slim_data = {k: v for k, v in data.items() if k not in keys_to_strip_from_prompt}
 
+    mandatory_swot_types = {"boss", "team", "organization"}
+    swot_rule_block = ""
+
     if report_type == "employee":
         slim_data["_swot_note"] = (
             "SWOT analysis will be injected from assessment DB after generation. "
@@ -1740,6 +1746,11 @@ def generate_report_as_json(
     else:
         section_rule = "Each section should have 2-4 detailed paragraphs."
         paragraph_rule = "Each paragraph should be approximately 60-110 words."
+        if report_type in mandatory_swot_types:
+            swot_rule_block = (
+                '\n- SWOT is mandatory: include exactly one section with id "swot" '
+                "and populate Strengths, Weaknesses, Opportunities, and Threats."
+            )
 
     user_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
 {rag_context}
@@ -1769,6 +1780,7 @@ RULES:
 - {paragraph_rule}
 - Treat target_words as guidance, not as a strict minimum.
 - Use ONLY the provided input data. Do not invent facts, scores, or stages.
+{swot_rule_block}
 - Do NOT include any text outside the JSON object.
 - Do NOT use markdown code fences."""
 
@@ -1907,6 +1919,18 @@ RULES:
 
         return []
 
+    def _has_swot_section(sections: Any) -> bool:
+        if not isinstance(sections, list):
+            return False
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            sec_id = str(sec.get("id", "")).strip().lower()
+            sec_title = str(sec.get("title", "")).strip().lower()
+            if sec_id == "swot" or "swot" in sec_title:
+                return True
+        return False
+
     # If response looks truncated/incomplete, split into 2 half-batches.
     result = None
     try:
@@ -1915,10 +1939,15 @@ RULES:
         pass
 
     expected_min_sections = (len(specs) // 2 if specs else 1)
+    missing_mandatory_swot = (
+        report_type in mandatory_swot_types
+        and not _has_swot_section(result.get("sections", []) if isinstance(result, dict) else [])
+    )
     should_split = (
         result is None
         or len(result.get("sections", [])) < expected_min_sections
         or primary_finish_reason == "length"
+        or missing_mandatory_swot
     )
 
     if should_split:
@@ -1974,6 +2003,7 @@ Return ONLY a valid JSON array of section objects:
 Rules:
 - 2-3 paragraphs per section, about 45-85 words each.
 - Use target_words as guidance only.
+- SWOT is mandatory for 2D/3D/4D outputs: if the SWOT section is part of this batch/schema, do not omit it.
 - Return ONLY the array. No markdown fences."""
 
             for model in fallback_chain:
@@ -2028,6 +2058,20 @@ Rules:
             sec["paragraphs"] = _split_paragraphs(str(sec.get("paragraphs", "")))
         sec.setdefault("paragraphs", [])
         normalized_sections.append(sec)
+
+    # Safety net: ensure SWOT section exists for 2D/3D/4D outputs.
+    if report_type in mandatory_swot_types and not _has_swot_section(normalized_sections):
+        normalized_sections.append({
+            "id": "swot",
+            "title": "SWOT Analysis",
+            "paragraphs": [
+                "Strengths not explicitly provided in model output.",
+                "Weaknesses not explicitly provided in model output.",
+                "Opportunities not explicitly provided in model output.",
+                "Threats not explicitly provided in model output.",
+            ],
+        })
+
     result["sections"] = normalized_sections
 
     word_count = sum(

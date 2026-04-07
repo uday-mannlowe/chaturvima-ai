@@ -4,6 +4,7 @@ All Frappe API interactions: auth headers, SWOT fetching, query params, data map
 """
 import base64
 import json
+import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
@@ -131,6 +132,47 @@ def frappe_query_params(
 def frappe_swot_doc_url(docname: str) -> str:
     encoded = quote(docname, safe="")
     return f"{Config.FRAPPE_RESOURCE_BASE_URL}/SWOT%20Analysis/{encoded}"
+
+
+def _normalize_sub_stage_value(value: str) -> str:
+    text = str(value or "").strip()
+    text = text.replace("—", "-").replace("–", "-")
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s*-\s*", " - ", text)
+    return text.strip()
+
+
+def _strip_stage_suffix(value: str) -> str:
+    # "Acknowledgment of Problems - Self-Introspection" -> "Acknowledgment of Problems"
+    return re.sub(r"\s*-\s*[\w\s]+$", "", value).strip()
+
+
+def _sub_stage_candidates(sub_stage: str) -> List[str]:
+    base = _normalize_sub_stage_value(sub_stage)
+    if not base:
+        return []
+
+    candidates: List[str] = []
+
+    def _add(v: str) -> None:
+        cleaned = _normalize_sub_stage_value(v)
+        if cleaned and cleaned not in candidates:
+            candidates.append(cleaned)
+
+    _add(base)
+    _add(base.lower())
+    _add(base.title())
+
+    stripped = _strip_stage_suffix(base)
+    _add(stripped)
+    _add(stripped.lower())
+    _add(stripped.title())
+
+    # Hyphen/no-hyphen variants
+    _add(base.replace(" - ", "-"))
+    _add(base.replace(" - ", " "))
+
+    return [c for c in candidates if c]
 
 
 def collect_child_row_texts(rows: Any) -> List[str]:
@@ -319,34 +361,52 @@ async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -
         headers = frappe_headers()  # fallback to .env admin/user creds
         print(f"[FRAPPE_SWOT] runtime token missing for sub_stage='{sub_stage}', using fallback creds")
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        # Fast path: direct doc lookup
-        direct_url = frappe_swot_doc_url(sub_stage)
-        try:
-            resp = await client.get(direct_url, headers=headers)
-            if resp.status_code == 200:
-                payload = resp.json()
-                data = payload.get("data", payload)
-                if isinstance(data, dict):
-                    return data
-            elif resp.status_code not in (404,):
-                resp.raise_for_status()
-        except Exception as exc:
-            print(f"[FRAPPE_SWOT] direct lookup failed for '{sub_stage}': {exc}")
+    lookup_candidates = _sub_stage_candidates(sub_stage)
+    if not lookup_candidates:
+        lookup_candidates = [sub_stage]
 
-        # Fallback: filter search
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Fast path: direct doc lookup with candidate variants
+        for candidate in lookup_candidates:
+            direct_url = frappe_swot_doc_url(candidate)
+            try:
+                resp = await client.get(direct_url, headers=headers)
+                if resp.status_code == 200:
+                    payload = resp.json()
+                    data = payload.get("data", payload)
+                    if isinstance(data, dict):
+                        print(f"[FRAPPE_SWOT] direct lookup matched candidate='{candidate}'")
+                        return data
+                elif resp.status_code not in (404,):
+                    resp.raise_for_status()
+            except Exception as exc:
+                print(f"[FRAPPE_SWOT] direct lookup failed for '{candidate}': {exc}")
+
+        # Fallback: filter search (exact first, then like)
         list_url = f"{Config.FRAPPE_RESOURCE_BASE_URL}/SWOT%20Analysis"
-        for filters in (
-            [["sub_stage", "=", sub_stage]],
-            [["name", "=", sub_stage]],
-        ):
+        seen_filters = set()
+        filter_specs: List[List[List[str]]] = []
+        for candidate in lookup_candidates:
+            filter_specs.extend([
+                [["sub_stage", "=", candidate]],
+                [["name", "=", candidate]],
+                [["sub_stage", "like", f"%{candidate}%"]],
+                [["name", "like", f"%{candidate}%"]],
+            ])
+
+        for filters in filter_specs:
+            key = json.dumps(filters, sort_keys=True)
+            if key in seen_filters:
+                continue
+            seen_filters.add(key)
+
             try:
                 list_resp = await client.get(
                     list_url,
                     headers=headers,
                     params={
                         "filters": json.dumps(filters),
-                        "fields": json.dumps(["name"]),
+                        "fields": json.dumps(["name", "sub_stage"]),
                         "limit_page_length": "1",
                     },
                 )
@@ -362,8 +422,10 @@ async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -
 
                 doc_resp = await client.get(frappe_swot_doc_url(doc_name), headers=headers)
                 doc_resp.raise_for_status()
-                doc = doc_resp.json().get("data", doc_resp.json())
+                doc_payload = doc_resp.json()
+                doc = doc_payload.get("data", doc_payload)
                 if isinstance(doc, dict):
+                    print(f"[FRAPPE_SWOT] filter lookup matched name='{doc_name}' for filters={filters}")
                     return doc
             except Exception as exc:
                 print(f"[FRAPPE_SWOT] filter lookup failed for '{sub_stage}' with {filters}: {exc}")

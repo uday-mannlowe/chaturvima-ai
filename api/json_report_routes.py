@@ -10,16 +10,7 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException, Request
 
 from core.config import Config
-<<<<<<< HEAD
-from services.frappe_client import (
-    fetch_frappe_swot_doc,
-    frappe_headers,
-    frappe_query_params,
-    resolve_frappe_auth_token,
-)
-=======
 from services.frappe_client import extract_full_swot_doc, fetch_frappe_swot_doc, frappe_headers, frappe_query_params
->>>>>>> recover-llm
 from generate_groq import (
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     MODEL_BY_REPORT_TYPE_DEDICATED,
