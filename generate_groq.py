@@ -374,6 +374,7 @@ APPLY THE APPROPRIATE TONE THROUGHOUT THE REPORT BASED ON THE IDENTIFIED STAGE A
 """
 
 
+
 # MASTER SYSTEM PROMPT (GLOBAL)
 
 SYSTEM_PROMPT = """
@@ -401,7 +402,6 @@ GLOBAL RULES:
 """
 
 # DEVELOPER PROMPTS (DIMENSION-SPECIFIC)
-
 DEV_PROMPT_1D = """
 Generate a FULL, IN-DEPTH 1D Individual Employee Diagnostic Report.
 
@@ -788,7 +788,7 @@ SECTION_SPECS_EMPLOYEE: List[SectionSpec] = [
         min_words=300,
         max_words=420,
         guidance=(
-            "Discuss strengths, blind spots (weaknesses), opportunities, and threats as narrative "
+            "Discuss strengths, blind spots (weaknesses), opportunities, and threat as narrative "
             "paragraphs grounded in the provided SWOT data."
         ),
         data_keys=("individual_swot",),
@@ -948,7 +948,7 @@ SECTION_SPECS_BOSS: List[SectionSpec] = [
         max_words=380,
         guidance=(
             "Provide a dyadic SWOT for the employee-boss relationship in narrative form: "
-            "strengths, weaknesses (blind spots), opportunities, and threats. "
+            "strengths, weaknesses (blind spots), opportunities, and threat. "
             "Ground each part in relationship evidence from the input."
         ),
         data_keys=("relationship_variables", "superior_subordinate_dynamics", "individual_swot"),
@@ -1142,35 +1142,63 @@ def resolve_input_data(payload: Dict[str, Any], data_dir: str = "data") -> Dict[
     return data
 
 
+# The 4 canonical top-level stage names used in the RAG vector store.
+_CANONICAL_STAGES = [
+    "Honeymoon Stage",
+    "Self-Introspection Stage",
+    "Soul-Searching Stage",
+    "Steady State Stage",
+]
+
+# Maps any dominant_stage value from Frappe → canonical RAG stage name
+_STAGE_NORMALISE_MAP = {
+    "honeymoon":         "Honeymoon Stage",
+    "self-introspection": "Self-Introspection Stage",
+    "self_introspection": "Self-Introspection Stage",
+    "soul-searching":    "Soul-Searching Stage",
+    "soul_searching":    "Soul-Searching Stage",
+    "steady-state":      "Steady State Stage",
+    "steady_state":      "Steady State Stage",
+    "steady state":      "Steady State Stage",
+}
+
+
 def extract_stages_from_data(data: dict) -> List[str]:
     """
-    Extract all mentioned stages from the input data.
-    
-    Args:
-        data: Input JSON data
-        
-    Returns:
-        List of unique stage names
+    Extract ONLY the dominant stage (and its parent stage if different) from
+    the top-level behavioral_stage key in the input data.
+
+    Previously this function recursively crawled the entire JSON and collected
+    every key containing the word 'stage', which produced 16+ stage names and
+    caused the RAG context to exceed the model's 8k TPM limit.
+
+    Now it reads only the two top-level fields that matter:
+      - behavioral_stage.stage      → the dominant stage  (e.g. "Self-Introspection")
+      - behavioral_stage.sub_stage  → the sub-stage label (ignored for RAG lookup)
+
+    Returns at most 1 canonical stage name so RAG context stays small.
     """
-    stages = set()
-    
-    # Helper function to extract stage from nested structures
-    def find_stages(obj):
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-                if 'stage' in key.lower() and isinstance(value, str):
-                    # Clean up stage name
-                    stage_name = value.replace('_', ' ').title()
-                    if 'stage' not in stage_name.lower():
-                        stage_name = f"{stage_name} Stage"
-                    stages.add(stage_name)
-                find_stages(value)
-        elif isinstance(obj, list):
-            for item in obj:
-                find_stages(item)
-    
-    find_stages(data)
-    return list(stages)
+    behavioral = data.get("behavioral_stage", {})
+    if not isinstance(behavioral, dict):
+        return _CANONICAL_STAGES[:2]  # safe fallback
+
+    raw_stage = str(behavioral.get("stage", "") or "").strip().lower()
+
+    # Try direct normalisation first
+    canonical = _STAGE_NORMALISE_MAP.get(raw_stage)
+
+    # Partial match fallback (e.g. "Self-Introspection" embedded in longer string)
+    if not canonical:
+        for key, value in _STAGE_NORMALISE_MAP.items():
+            if key in raw_stage:
+                canonical = value
+                break
+
+    if canonical:
+        return [canonical]
+
+    # Nothing matched — return the two most common stages as a safe default
+    return ["Honeymoon Stage", "Self-Introspection Stage"]
 
 
 def retrieve_rag_context(data: dict) -> str:
@@ -1662,10 +1690,18 @@ def generate_report_as_json(
 
     # Pick the dedicated model for this specific report type
     dedicated_model = MODEL_BY_REPORT_TYPE_DEDICATED.get(report_type, MODEL_NAME)
-    print(f"🚀 [{report_type.upper()}] Using dedicated model: {dedicated_model}")
+    print(f"[{report_type.upper()}] Using dedicated model: {dedicated_model}")
 
-    # Build the section schema from the specs (if available) so the model
-    # knows exactly which sections to produce and in what order.
+    # Build a compact schema for fast JSON mode to reduce truncation risk.
+    def _target_words_for_fast_json(spec: SectionSpec) -> int:
+        if report_type == "employee":
+            if spec.id == "stage":
+                return 260
+            if spec.id == "action_plan":
+                return 220
+            return 130
+        return min(max(140, spec.min_words), 260)
+
     specs = REPORT_SPECS.get(report_type, [])
     if specs:
         section_schema = json.dumps(
@@ -1673,15 +1709,13 @@ def generate_report_as_json(
                 {
                     "id": spec.id,
                     "title": spec.title,
-                    "guidance": spec.guidance,
-                    "min_words": spec.min_words,
+                    "target_words": _target_words_for_fast_json(spec),
                 }
                 for spec in specs
             ],
             indent=2,
         )
     else:
-        # Fallback: derive sections from the developer prompt headings
         section_schema = "(Follow the section structure defined in the developer prompt below.)"
 
     developer_prompt = PROMPT_MAP[report_type]
@@ -1692,16 +1726,31 @@ def generate_report_as_json(
         filter(None, [SYSTEM_PROMPT, TONE_GUIDELINES, report_style, developer_prompt])
     ).strip()
 
+    # Keep payload compact so input+output can stay within model limits.
+    keys_to_strip_from_prompt = ("individual_swot", "recommendation_framework")
+    slim_data = {k: v for k, v in data.items() if k not in keys_to_strip_from_prompt}
+
+    if report_type == "employee":
+        slim_data["_swot_note"] = (
+            "SWOT analysis will be injected from assessment DB after generation. "
+            "For SWOT section, provide narrative aligned with behavioral stage data."
+        )
+        section_rule = "Each section should have 2-3 detailed paragraphs."
+        paragraph_rule = "Each paragraph should be approximately 50-90 words."
+    else:
+        section_rule = "Each section should have 2-4 detailed paragraphs."
+        paragraph_rule = "Each paragraph should be approximately 60-110 words."
+
     user_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
 {rag_context}
 
 INPUT DATA:
-{json.dumps(data, indent=2)}
+{json.dumps(slim_data, indent=2)}
 
 SECTION SCHEMA (generate EXACTLY these sections in this order):
 {section_schema}
 
-OUTPUT FORMAT — MANDATORY:
+OUTPUT FORMAT - MANDATORY:
 Return ONLY a single valid JSON object matching this exact structure:
 {{
   "title": "{report_title}",
@@ -1710,26 +1759,29 @@ Return ONLY a single valid JSON object matching this exact structure:
     {{
       "id": "<section_id>",
       "title": "<section_title>",
-      "paragraphs": ["<paragraph 1 — min 80 words>", "<paragraph 2>", "..."]
+      "paragraphs": ["<paragraph 1>", "<paragraph 2>", "..."]
     }}
   ]
 }}
 
 RULES:
-- Each section must have 3-5 detailed paragraphs.
-- Each paragraph must be at least 80 words.
-- Use ONLY the provided input data — do not invent facts, scores, or stages.
+- {section_rule}
+- {paragraph_rule}
+- Treat target_words as guidance, not as a strict minimum.
+- Use ONLY the provided input data. Do not invent facts, scores, or stages.
 - Do NOT include any text outside the JSON object.
 - Do NOT use markdown code fences."""
 
-    # Use the dedicated model directly — bypass the round-robin candidate list.
-    # If the dedicated model is rate-limited, fall back to the global fallbacks.
-    fallback_chain = _dedupe_models(
-        [dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME]
-    )
+    # Use dedicated model first. If rate-limited, fall back to global chain.
+    fallback_chain = _dedupe_models([dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME])
 
     import time as _time, random
+    max_tokens_main = int(os.getenv("JSON_REPORT_MAX_TOKENS", "4000"))
+    max_tokens_batch = int(os.getenv("JSON_REPORT_BATCH_MAX_TOKENS", "2800"))
+
     last_exc = None
+    raw = ""
+    primary_finish_reason = ""
     for attempt in range(1, 7):
         for model in fallback_chain:
             try:
@@ -1738,92 +1790,161 @@ RULES:
                     model=model,
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user",   "content": user_prompt},
+                        {"role": "user", "content": user_prompt},
                     ],
                     temperature=0.2,
-                    max_tokens=8000,
+                    max_tokens=max_tokens_main,
                 )
-                raw = response.choices[0].message.content.strip()
-                break  # success — exit model loop
+                primary_finish_reason = getattr(response.choices[0], "finish_reason", "") or ""
+                raw = (response.choices[0].message.content or "").strip()
+                break
             except Exception as exc:
                 last_exc = exc
                 err = str(exc)
                 if _is_rate_limited_error(err):
-                    print(f"⏳ [{report_type}] model '{model}' rate-limited; trying next.")
+                    print(f"[{report_type}] model '{model}' rate-limited; trying next.")
                     continue
-                print(f"⚠️  [{report_type}] model '{model}' error: {err}; trying next.")
+                print(f"[{report_type}] model '{model}' error: {err}; trying next.")
         else:
-            # All models in chain were rate-limited — wait then retry
             wait = _extract_retry_wait_seconds(str(last_exc), attempt) + random.uniform(1, 3)
-            print(f"⏳ [{report_type}] all models exhausted (attempt {attempt}/6), waiting {wait:.1f}s…")
+            print(f"[{report_type}] all models exhausted (attempt {attempt}/6), waiting {wait:.1f}s")
             _time.sleep(wait)
             continue
-        break  # success — exit retry loop
+        break
     else:
         raise RuntimeError(f"[{report_type}] JSON generation failed after 6 attempts. Last: {last_exc}")
 
-    # ── Parse and validate JSON from model response ────────────────────────
+    if primary_finish_reason == "length":
+        print(f"[{report_type}] primary response hit max token limit (finish_reason=length).")
+
+    def _iter_json_candidates(raw_text: str, prefer: str = "object"):
+        cleaned = re.sub(r"```(?:json)?\s*", "", raw_text or "").strip().rstrip("`").strip()
+        if not cleaned:
+            return
+
+        yield cleaned
+
+        start_priority = ("[", "{") if prefer == "array" else ("{", "[")
+        seen = {cleaned}
+        for start_char in start_priority:
+            for start_idx, ch in enumerate(cleaned):
+                if ch != start_char:
+                    continue
+
+                stack = []
+                in_string = False
+                escaped = False
+                for end_idx in range(start_idx, len(cleaned)):
+                    cur = cleaned[end_idx]
+                    if in_string:
+                        if escaped:
+                            escaped = False
+                        elif cur == "\\":
+                            escaped = True
+                        elif cur == '"':
+                            in_string = False
+                        continue
+
+                    if cur == '"':
+                        in_string = True
+                        continue
+                    if cur in "{[":
+                        stack.append(cur)
+                        continue
+                    if cur in "}]":
+                        if not stack:
+                            break
+                        opener = stack.pop()
+                        if (opener == "{" and cur != "}") or (opener == "[" and cur != "]"):
+                            break
+                        if not stack:
+                            snippet = cleaned[start_idx:end_idx + 1].strip()
+                            if snippet and snippet not in seen:
+                                seen.add(snippet)
+                                yield snippet
+                            break
+
     def _parse_json_response(raw_text: str) -> dict:
-        """Clean and parse JSON, with fallback extraction."""
-        cleaned = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`").strip()
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group())
-                except json.JSONDecodeError:
-                    pass
-        # Last resort: try to find a truncated JSON and repair it
-        # by finding the last complete section
-        bracket_depth = 0
-        last_valid_pos = 0
-        for i, ch in enumerate(cleaned):
-            if ch == '{':
-                bracket_depth += 1
-            elif ch == '}':
-                bracket_depth -= 1
-                if bracket_depth == 0:
-                    last_valid_pos = i + 1
-        if last_valid_pos > 0:
+        for candidate in _iter_json_candidates(raw_text, prefer="object"):
             try:
-                return json.loads(cleaned[:last_valid_pos])
+                parsed = json.loads(candidate)
             except json.JSONDecodeError:
-                pass
+                continue
+
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list):
+                return {
+                    "title": report_title,
+                    "report_type": report_type,
+                    "sections": parsed,
+                }
+
+        cleaned_preview = re.sub(r"\s+", " ", (raw_text or "").strip())[:300]
         raise ValueError(
-            f"[{report_type}] Could not parse JSON. First 300 chars: {cleaned[:300]}"
+            f"[{report_type}] Could not parse JSON. First 300 chars: {cleaned_preview}"
         )
 
-    # ── If response looks truncated (JSON decode fails at top level), ────────
-    # ── split into 2 half-batch calls and merge sections ────────────────────
+    def _parse_sections_array(raw_text: str) -> List[Dict[str, Any]]:
+        for candidate in _iter_json_candidates(raw_text, prefer="array"):
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+            if isinstance(parsed, dict):
+                if isinstance(parsed.get("sections"), list):
+                    parsed = parsed["sections"]
+                elif all(k in parsed for k in ("id", "title")):
+                    parsed = [parsed]
+                else:
+                    continue
+
+            if isinstance(parsed, list):
+                items = [s for s in parsed if isinstance(s, dict)]
+                if items:
+                    return items
+
+        return []
+
+    # If response looks truncated/incomplete, split into 2 half-batches.
     result = None
     try:
         result = _parse_json_response(raw)
     except ValueError:
         pass
 
-    if result is None or len(result.get("sections", [])) < (len(specs) // 2 if specs else 1):
-        # Response was truncated or incomplete — generate in 2 halves
-        print(f"⚠️  [{report_type}] Response truncated or incomplete. Splitting into 2 half-batch calls...")
+    expected_min_sections = (len(specs) // 2 if specs else 1)
+    should_split = (
+        result is None
+        or len(result.get("sections", [])) < expected_min_sections
+        or primary_finish_reason == "length"
+    )
+
+    if should_split:
+        print(f"[{report_type}] Response truncated/incomplete. Splitting into 2 half-batch calls...")
         if specs:
             half = len(specs) // 2
-            first_half_specs  = specs[:half]
+            first_half_specs = specs[:half]
             second_half_specs = specs[half:]
         else:
-            # No specs available, use a single retry with higher token limit
-            first_half_specs  = None
+            first_half_specs = None
             second_half_specs = None
 
-        all_sections = []
+        all_sections: List[Dict[str, Any]] = []
+        batches = [first_half_specs, second_half_specs] if first_half_specs else [None]
 
-        for batch_idx, batch_specs in enumerate(
-            [first_half_specs, second_half_specs] if first_half_specs else [None]
-        ):
+        for batch_idx, batch_specs in enumerate(batches):
             if batch_specs is not None:
                 batch_schema = json.dumps(
-                    [{"id": s.id, "title": s.title, "guidance": s.guidance, "min_words": s.min_words}
-                     for s in batch_specs],
+                    [
+                        {
+                            "id": s.id,
+                            "title": s.title,
+                            "target_words": _target_words_for_fast_json(s),
+                        }
+                        for s in batch_specs
+                    ],
                     indent=2,
                 )
                 batch_note = (
@@ -1832,25 +1953,28 @@ RULES:
                 )
             else:
                 batch_schema = section_schema
-                batch_note = "Generate all sections. Keep paragraphs concise (60-80 words each)."
+                batch_note = "Generate all sections with concise but complete paragraphs."
 
             batch_user_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
 {rag_context}
 
 INPUT DATA:
-{json.dumps(data, indent=2)}
+{json.dumps(slim_data, indent=2)}
 
 SECTION SCHEMA:
 {batch_schema}
 
 {batch_note}
 
-OUTPUT FORMAT — MANDATORY:
+OUTPUT FORMAT - MANDATORY:
 Return ONLY a valid JSON array of section objects:
 [
   {{"id": "<id>", "title": "<title>", "paragraphs": ["<para1>", "<para2>", "<para3>"]}}
 ]
-Do NOT wrap in an outer object. Return ONLY the array. No markdown fences."""
+Rules:
+- 2-3 paragraphs per section, about 45-85 words each.
+- Use target_words as guidance only.
+- Return ONLY the array. No markdown fences."""
 
             for model in fallback_chain:
                 try:
@@ -1859,32 +1983,30 @@ Do NOT wrap in an outer object. Return ONLY the array. No markdown fences."""
                         model=model,
                         messages=[
                             {"role": "system", "content": system_prompt},
-                            {"role": "user",   "content": batch_user_prompt},
+                            {"role": "user", "content": batch_user_prompt},
                         ],
                         temperature=0.2,
-                        max_tokens=8000,
+                        max_tokens=max_tokens_batch,
                     )
-                    batch_raw = resp.choices[0].message.content.strip()
+                    batch_finish_reason = getattr(resp.choices[0], "finish_reason", "") or ""
+                    batch_raw = (resp.choices[0].message.content or "").strip()
+                    if batch_finish_reason == "length":
+                        print(f"[{report_type}] batch {batch_idx + 1} hit max token limit (finish_reason=length).")
                     break
                 except Exception as exc:
                     if _is_rate_limited_error(str(exc)):
-                        print(f"⏳ [{report_type}] batch {batch_idx+1} model '{model}' rate-limited; trying next.")
+                        print(f"[{report_type}] batch {batch_idx + 1} model '{model}' rate-limited; trying next.")
                         continue
-                    print(f"⚠️  [{report_type}] batch {batch_idx+1} model '{model}' error: {exc}")
+                    print(f"[{report_type}] batch {batch_idx + 1} model '{model}' error: {exc}")
             else:
                 batch_raw = "[]"
 
-            # Parse batch response (array format)
-            batch_cleaned = re.sub(r"```(?:json)?\s*", "", batch_raw).strip().rstrip("`").strip()
-            try:
-                batch_sections = json.loads(batch_cleaned)
-                if isinstance(batch_sections, dict) and "sections" in batch_sections:
-                    batch_sections = batch_sections["sections"]
-                if isinstance(batch_sections, list):
-                    all_sections.extend(batch_sections)
-                    print(f"✅ [{report_type}] batch {batch_idx+1} parsed: {len(batch_sections)} sections")
-            except json.JSONDecodeError:
-                print(f"⚠️  [{report_type}] batch {batch_idx+1} parse failed; skipping")
+            batch_sections = _parse_sections_array(batch_raw)
+            if batch_sections:
+                all_sections.extend(batch_sections)
+                print(f"[{report_type}] batch {batch_idx + 1} parsed: {len(batch_sections)} sections")
+            else:
+                print(f"[{report_type}] batch {batch_idx + 1} parse failed; skipping")
 
         result = {
             "title": report_title,
@@ -1892,16 +2014,21 @@ Do NOT wrap in an outer object. Return ONLY the array. No markdown fences."""
             "sections": all_sections,
         }
 
-    # Ensure required keys exist
     result.setdefault("title", report_title)
     result.setdefault("report_type", report_type)
     result.setdefault("sections", [])
 
-    # Normalise each section's paragraphs field
+    normalized_sections: List[Dict[str, Any]] = []
     for sec in result["sections"]:
+        if not isinstance(sec, dict):
+            continue
         if "paragraphs" not in sec and "text" in sec:
             sec["paragraphs"] = _split_paragraphs(sec["text"])
+        if not isinstance(sec.get("paragraphs"), list):
+            sec["paragraphs"] = _split_paragraphs(str(sec.get("paragraphs", "")))
         sec.setdefault("paragraphs", [])
+        normalized_sections.append(sec)
+    result["sections"] = normalized_sections
 
     word_count = sum(
         _word_count(" ".join(sec.get("paragraphs", [])))
@@ -1911,7 +2038,7 @@ Do NOT wrap in an outer object. Return ONLY the array. No markdown fences."""
     result["generated_at"] = datetime.now().isoformat()
     result["model_used"] = dedicated_model
 
-    print(f"✅ [{report_type.upper()}] JSON report done — {len(result['sections'])} sections, {word_count} words")
+    print(f"[{report_type.upper()}] JSON report done - {len(result['sections'])} sections, {word_count} words")
     return result
 
 
@@ -2330,7 +2457,7 @@ def _frappe_build_swot(stage: str) -> Dict[str, Any]:
                 {"area": "Cross-Functional Exposure",        "description": "Opportunity to join projects beyond immediate role scope.",         "context": "Energy and initiative make them attractive collaborators.",    "impact": "Broadens perspective and builds resilience for future challenges."},
                 {"area": "Structured Development Planning",  "description": "Ideal time to anchor a personal growth roadmap with a manager.",   "context": "High motivation makes goal-setting conversations productive.", "impact": "Creates sustainable development path beyond the Honeymoon phase."},
             ],
-            "threats": [
+            "threat": [
                 {"area": "Expectation-Reality Gap",          "description": "Optimistic forecasts may not match the complexity of actual work.",  "context": "Gaps between expectation and reality emerge over time.",      "impact": "Disappointment can trigger disengagement or overreaction."},
                 {"area": "Burnout from Unsustained Pace",    "description": "High energy without recovery can lead to fatigue.",                 "context": "Sustained intensity without boundaries depletes reserves.",   "impact": "Performance drops sharply when energy runs out."},
                 {"area": "Peer Resentment",                  "description": "Excessive visibility or credit-seeking may alienate colleagues.",   "context": "Enthusiasm can be perceived as overstepping by established peers.","impact": "Damages working relationships and undermines team cohesion."},
@@ -2356,7 +2483,7 @@ def _frappe_build_swot(stage: str) -> Dict[str, Any]:
                 {"area": "Mentoring Relationship",           "description": "Right time to engage a mentor who can provide a mirror and guidance.","context": "Vulnerability at this stage creates genuine openness to mentoring.","impact": "Accelerates the transition to a more stable performance level."},
                 {"area": "Rebuilding Credibility",           "description": "Small wins during this phase can rebuild confidence and trust.",    "context": "Demonstrating learning agility is valued by leadership.",     "impact": "Positions the individual as coachable and growth-oriented."},
             ],
-            "threats": [
+            "threat": [
                 {"area": "Disengagement Risk",               "description": "Prolonged uncertainty without resolution can reduce motivation.",   "context": "Introspection without action leads to a sense of stagnation.", "impact": "Increased absenteeism, quiet quitting, or attrition risk."},
                 {"area": "Confidence Erosion",               "description": "Excessive self-criticism can undermine core capabilities.",        "context": "The inner critic becomes louder without positive reinforcement.","impact": "Capability is underutilised and contribution drops."},
                 {"area": "Isolation from Team",              "description": "Withdrawal during introspection reduces collaboration quality.",    "context": "Focus on internal process reduces peer visibility.",           "impact": "Weakens team relationships during a critical phase."},
@@ -2382,7 +2509,7 @@ def _frappe_build_swot(stage: str) -> Dict[str, Any]:
                 {"area": "Career Realignment",               "description": "The phase may reveal a better-fit role or direction.",             "context": "Honest self-assessment surfaces true strengths and interests.", "impact": "Higher engagement and performance in a realigned role."},
                 {"area": "Professional Support Access",      "description": "This is the right time to engage coaching or counselling.",        "context": "Readiness to change makes coaching maximally effective here.",  "impact": "Accelerates resolution and reduces the duration of this phase."},
             ],
-            "threats": [
+            "threat": [
                 {"area": "Phase Entrenchment",               "description": "Without support, soul-searching can become chronic rather than temporary.","context": "Absence of resolution mechanisms prolongs the crisis.", "impact": "Long-term disengagement and possible attrition."},
                 {"area": "Exit Risk",                        "description": "Unresolved questioning may lead to resignation or disengagement.",   "context": "If organisational fit feels permanently misaligned, exit follows.","impact": "Loss of talent and institutional knowledge."},
                 {"area": "Mental Health Deterioration",      "description": "Prolonged existential stress without support risks wellbeing.",     "context": "Unsupported soul-searching can intensify anxiety or low mood.",  "impact": "Performance, relationships, and health all suffer."},
@@ -2408,7 +2535,7 @@ def _frappe_build_swot(stage: str) -> Dict[str, Any]:
                 {"area": "Innovation & Process Improvement",  "description": "Deep process knowledge enables identification of optimisation areas.","context": "Insider understanding reveals inefficiencies invisible to newcomers.","impact": "Drives measurable productivity and quality improvements."},
                 {"area": "Succession Planning Readiness",     "description": "Profile suggests readiness for expanded responsibilities.",        "context": "Consistency, knowledge, and stability are key succession criteria.","impact": "Reduces organisational risk from key person dependency."},
             ],
-            "threats": [
+            "threat": [
                 {"area": "Stagnation & Disengagement",        "description": "Absence of challenge may erode engagement over time.",             "context": "Stimulation needs are not met by a stable but static environment.","impact": "Quiet disengagement reduces discretionary effort and output."},
                 {"area": "Disruption Vulnerability",          "description": "Major organisational changes can destabilise a settled equilibrium.","context": "Dependency on stable structures creates fragility to sudden shifts.","impact": "Performance and wellbeing may drop sharply during transitions."},
                 {"area": "Talent Attrition Risk",             "description": "Lack of new challenges may eventually prompt a role change.",      "context": "External opportunities with greater growth potential become attractive.","impact": "Organisational loses a high-value, high-tenure contributor."},

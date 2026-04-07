@@ -10,12 +10,16 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException, Request
 
 from core.config import Config
+<<<<<<< HEAD
 from services.frappe_client import (
     fetch_frappe_swot_doc,
     frappe_headers,
     frappe_query_params,
     resolve_frappe_auth_token,
 )
+=======
+from services.frappe_client import extract_full_swot_doc, fetch_frappe_swot_doc, frappe_headers, frappe_query_params
+>>>>>>> recover-llm
 from generate_groq import (
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     MODEL_BY_REPORT_TYPE_DEDICATED,
@@ -114,6 +118,15 @@ async def generate_json_reports(
             swot_doc = None
             single_questionnaire = False
 
+        # ── SWOT data: do NOT send to LLM — hold for post-inject ──
+        # Pre-written Frappe content needs no LLM processing. Strip from nd_data
+        # to keep the prompt lean; inject verbatim into output after LLM finishes.
+        full_swot: Optional[Dict[str, Any]] = None
+        if swot_doc:
+            full_swot = extract_full_swot_doc(swot_doc)
+            nd_data.pop("individual_swot", None)
+            nd_data.pop("recommendation_framework", None)
+
         result = await asyncio.wait_for(
             asyncio.to_thread(generate_multi_reports_json, nd_data),
             timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
@@ -125,8 +138,24 @@ async def generate_json_reports(
             if primary and isinstance(reports_map, dict) and primary in reports_map:
                 result["reports"] = {primary: reports_map[primary]}
 
-        if nd_data.get("dimension") == "1D" and swot_doc:
-            _apply_1d_swot_override(result.get("reports", {}), swot_doc)
+        # ── 1D: inject Frappe SWOT verbatim into the employee report (post-LLM) ──
+        if full_swot and isinstance(result.get("reports"), dict):
+            emp = result["reports"].get("employee")
+            if isinstance(emp, dict) and isinstance(emp.get("sections"), list):
+                from services.report_renderer import is_swot_section
+                for sec in emp["sections"]:
+                    if is_swot_section(sec.get("id", ""), sec.get("title", "")):
+                        sec["swot_lists"] = {
+                            "strengths":     [r.get("description", "") for r in full_swot["strengths"]     if r.get("description")],
+                            "weaknesses":    [r.get("description", "") for r in full_swot["weaknesses"]    if r.get("description")],
+                            "opportunities": [r.get("description", "") for r in full_swot["opportunities"] if r.get("description")],
+                            "threat":       [r.get("desription",   "") or r.get("description", "") for r in full_swot["threat"] if r.get("desription") or r.get("description")],
+                        }
+                        sec["recommendations"]  = full_swot["recommendations"]
+                        sec["actionable_steps"] = full_swot["actionable_steps"]
+                        sec["strategic_recommendations"] = full_swot["strategic_recommendations"]
+                        sec["source"] = "frappe_swot"
+                        break
 
         result["elapsed_seconds"] = round(_time.time() - start, 2)
         result["model_map"] = MODEL_BY_REPORT_TYPE_DEDICATED

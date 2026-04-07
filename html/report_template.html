@@ -265,7 +265,7 @@
             background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
         }
 
-        .swot-box.threats {
+        .swot-box.threat {
             background: linear-gradient(135deg, #fccb90 0%, #d57eeb 100%);
         }
 
@@ -537,11 +537,11 @@
                     {% set strengths_text = section.paragraphs[0] if section.paragraphs | length > 0 else "Strengths not available." %}
                     {% set weaknesses_text = section.paragraphs[1] if section.paragraphs | length > 1 else "Weaknesses not available." %}
                     {% set opportunities_text = section.paragraphs[2] if section.paragraphs | length > 2 else "Opportunities not available." %}
-                    {% set threats_text = section.paragraphs[3] if section.paragraphs | length > 3 else "Threats not available." %}
+                    {% set threat_text = section.paragraphs[3] if section.paragraphs | length > 3 else "threat not available." %}
                     {% set strengths_list = section.swot_lists.strengths if section.swot_lists is defined and section.swot_lists.strengths is defined else [] %}
                     {% set weaknesses_list = section.swot_lists.weaknesses if section.swot_lists is defined and section.swot_lists.weaknesses is defined else [] %}
                     {% set opportunities_list = section.swot_lists.opportunities if section.swot_lists is defined and section.swot_lists.opportunities is defined else [] %}
-                    {% set threats_list = section.swot_lists.threats if section.swot_lists is defined and section.swot_lists.threats is defined else [] %}
+                    {% set threat_list = section.swot_lists.threat if section.swot_lists is defined and section.swot_lists.threat is defined else [] %}
                     <div class="swot-grid">
                         <div class="swot-box strengths">
                             <h3>💪 Strengths</h3>
@@ -579,16 +579,16 @@
                             <p style="font-size:13px;line-height:1.6;">{{ opportunities_text }}</p>
                             {% endif %}
                         </div>
-                        <div class="swot-box threats">
-                            <h3>⚡ Threats</h3>
-                            {% if threats_list | length > 0 %}
+                        <div class="swot-box threat">
+                            <h3>⚡ threat</h3>
+                            {% if threat_list | length > 0 %}
                             <ol>
-                                {% for item in threats_list %}
+                                {% for item in threat_list %}
                                 <li>{{ item }}</li>
                                 {% endfor %}
                             </ol>
                             {% else %}
-                            <p style="font-size:13px;line-height:1.6;">{{ threats_text }}</p>
+                            <p style="font-size:13px;line-height:1.6;">{{ threat_text }}</p>
                             {% endif %}
                         </div>
                     </div>

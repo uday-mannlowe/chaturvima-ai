@@ -157,11 +157,84 @@ def collect_child_row_texts(rows: Any) -> List[str]:
 
 
 def extract_swot_lists(swot_doc: Dict[str, Any]) -> Dict[str, List[str]]:
+    # NOTE: Frappe's Threat child table uses 'desription' (typo, missing 'c').
+    # collect_child_row_texts already handles this via its 'desription' fallback.
     return {
-        "strengths": collect_child_row_texts(swot_doc.get("strength") or swot_doc.get("strengths")),
-        "weaknesses": collect_child_row_texts(swot_doc.get("weakness") or swot_doc.get("weaknesses")),
-        "opportunities": collect_child_row_texts(swot_doc.get("opportunity") or swot_doc.get("opportunities")),
-        "threats": collect_child_row_texts(swot_doc.get("threat") or swot_doc.get("threats")),
+        "strengths":     collect_child_row_texts(swot_doc.get("strength")     or swot_doc.get("strengths",     [])),
+        "weaknesses":    collect_child_row_texts(swot_doc.get("weakness")     or swot_doc.get("weaknesses",    [])),
+        "opportunities": collect_child_row_texts(swot_doc.get("opportunity")  or swot_doc.get("opportunities", [])),
+        "threat":       collect_child_row_texts(swot_doc.get("threat")       or swot_doc.get("threat",       [])),
+    }
+
+
+# Frappe metadata keys to strip from child-table rows (internal Frappe fields, not content)
+_FRAPPE_META_KEYS = frozenset({
+    "idx", "doctype", "parent", "parenttype", "parentfield",
+    "owner", "creation", "modified", "modified_by", "docstatus", "name",
+    "amended_from", "_user_tags", "_comments", "_assign", "_liked_by",
+})
+
+
+def collect_child_row_dicts(rows: Any) -> List[Dict[str, Any]]:
+    """
+    Return each Frappe child-table row as a plain dict, preserving all
+    content fields exactly as returned by the API.
+    Strips only Frappe internal metadata keys (idx, parent, doctype, etc.).
+    """
+    if not isinstance(rows, list):
+        return []
+    result: List[Dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            clean = {k: v for k, v in row.items() if k not in _FRAPPE_META_KEYS}
+            if clean:
+                result.append(clean)
+        elif row is not None:
+            result.append({"value": str(row)})
+    return result
+
+
+def extract_full_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extract all 6 required fields from the SWOT Frappe doc, preserving
+    the original row data exactly as returned by the API.
+
+    Fields:
+        strengths        — child table 'strength'
+        weaknesses       — child table 'weakness'
+        opportunities    — child table 'opportunity'
+        threat          — child table 'threat'
+        recommendations  — child table 'reccomendation' (Frappe typo preserved)
+        actionable_steps — child table 'actionable_steps'
+        sub_stage        — string label
+        strategic_recommendations — free-text field
+    """
+    return {
+        "sub_stage": (swot_doc.get("sub_stage") or swot_doc.get("name") or "").strip(),
+        "strengths":     collect_child_row_dicts(
+            swot_doc.get("strength")     or swot_doc.get("strengths",     [])
+        ),
+        "weaknesses":    collect_child_row_dicts(
+            swot_doc.get("weakness")     or swot_doc.get("weaknesses",    [])
+        ),
+        "opportunities": collect_child_row_dicts(
+            swot_doc.get("opportunity")  or swot_doc.get("opportunities", [])
+        ),
+        "threat":       collect_child_row_dicts(
+            swot_doc.get("threat")       or swot_doc.get("threat",       [])
+        ),
+        "recommendations": collect_child_row_dicts(
+            swot_doc.get("reccomendation")   # Frappe typo kept as-is
+            or swot_doc.get("recommendation")
+            or swot_doc.get("recommendations")
+            or []
+        ),
+        "actionable_steps": collect_child_row_dicts(
+            swot_doc.get("actionable_steps")
+            or swot_doc.get("actionable_step")
+            or []
+        ),
+        "strategic_recommendations": (swot_doc.get("strategic_recommendations") or "").strip(),
     }
 
 
@@ -220,7 +293,7 @@ def map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
             "strengths": build_swot_items(swot_lists["strengths"], "Strength"),
             "weaknesses": build_swot_items(swot_lists["weaknesses"], "Weakness"),
             "opportunities": build_swot_items(swot_lists["opportunities"], "Opportunity"),
-            "threats": build_swot_items(swot_lists["threats"], "Threat"),
+            "threat":       build_swot_items(swot_lists["threat"],       "Threat"),
         },
         "recommendation_framework": {
             "framework_name": framework_name,

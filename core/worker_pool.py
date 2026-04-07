@@ -15,6 +15,7 @@ from core.config import Config
 from core.rate_limiter import RateLimiter
 from models.schemas import JobStatus, ReportJob, ReportQueue
 from services.frappe_client import (
+    extract_full_swot_doc,
     fetch_frappe_swot_doc,
     frappe_headers,
     frappe_query_params,
@@ -45,6 +46,134 @@ from generate_groq import (
 def _normalize_optional_str(value: Any) -> Optional[str]:
     text = str(value).strip() if value is not None else ""
     return text or None
+
+
+def _generate_swot_via_llm(behavioral_stage: Dict[str, Any], report_type: str = "employee") -> Dict[str, Any]:
+    """
+    Generate SWOT via a lean LLM call.
+    Works for all report types (employee/boss/team/organization).
+
+    report_type controls the framing:
+      employee     → Individual SWOT from the employee's perspective
+      boss         → Dyadic SWOT for the employee-boss relationship
+      team         → Collective SWOT for the team/department
+      organization → Cumulative SWOT across all dimensions
+    """
+    from groq import Groq
+    import os, json as _json, re as _re
+
+    stage     = behavioral_stage.get("stage", "")
+    sub_stage = behavioral_stage.get("sub_stage", "") or behavioral_stage.get("sub_stage_definition", "")
+    definition = behavioral_stage.get("sub_stage_definition", "")
+
+    # Context and SWOT title vary by report type
+    _context_map = {
+        "employee": (
+            "an individual employee's personal growth and development",
+            "Individual SWOT",
+        ),
+        "boss": (
+            "the employee-boss working relationship and its dynamics",
+            "Dyadic SWOT (Employee-Boss Relationship)",
+        ),
+        "team": (
+            "the team's collective performance, dynamics, and collaboration",
+            "Collective SWOT (Team/Department)",
+        ),
+        "organization": (
+            "the organization's alignment, culture, and strategic performance",
+            "Cumulative SWOT (Organizational)",
+        ),
+    }
+    context_desc, swot_label = _context_map.get(report_type, _context_map["employee"])
+
+    prompt = f"""You are a senior behavioral coach working within the ChaturVima framework.
+
+Generate a {swot_label} analysis for the following context:
+
+Stage: {stage}
+Sub-Stage: {sub_stage}
+Definition: {definition}
+Focus: {context_desc}
+
+Return ONLY a valid JSON object with EXACTLY this structure (no markdown fences, no extra keys):
+{{
+  "strengths": ["point 1", "point 2", "point 3", "point 4"],
+  "weaknesses": ["point 1", "point 2", "point 3", "point 4"],
+  "opportunities": ["point 1", "point 2", "point 3", "point 4"],
+  "threats": ["point 1", "point 2", "point 3", "point 4"],
+  "recommendations": [
+    {{"recommendations_title": "Title 1", "recommendations_description": "2-3 sentence description."}},
+    {{"recommendations_title": "Title 2", "recommendations_description": "2-3 sentence description."}},
+    {{"recommendations_title": "Title 3", "recommendations_description": "2-3 sentence description."}}
+  ],
+  "actionable_steps": [
+    {{"description": "Concrete step 1"}},
+    {{"description": "Concrete step 2"}},
+    {{"description": "Concrete step 3"}},
+    {{"description": "Concrete step 4"}},
+    {{"description": "Concrete step 5"}}
+  ],
+  "strategic_recommendations": "One paragraph of strategic guidance."
+}}
+
+RULES:
+- Each strength/weakness/opportunity/threat must be a single clear sentence.
+- Frame the analysis from the perspective of: {context_desc}.
+- Ground all points in the specific stage and sub-stage characteristics.
+- Do NOT wrap in markdown code fences."""
+
+    from generate_groq import GLOBAL_MODEL_FALLBACKS, MODEL_NAME, _dedupe_models, _is_rate_limited_error
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    fallback_chain = _dedupe_models(
+        [os.getenv("GROQ_MODEL_1D", MODEL_NAME)] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME]
+    )
+
+    raw = ""
+    for model in fallback_chain:
+        try:
+            client = Groq(api_key=groq_key)
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=1500,
+            )
+            raw = resp.choices[0].message.content.strip()
+            break
+        except Exception as exc:
+            if _is_rate_limited_error(str(exc)):
+                continue
+            print(f"⚠️  SWOT LLM model '{model}' error: {exc}")
+
+    if not raw:
+        return {
+            "sub_stage": sub_stage, "source": "llm_generated",
+            "strengths": [], "weaknesses": [], "opportunities": [], "threats": [],
+            "recommendations": [], "actionable_steps": [], "strategic_recommendations": "",
+        }
+
+    cleaned = _re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
+    try:
+        parsed = _json.loads(cleaned)
+    except Exception:
+        match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+        try:
+            parsed = _json.loads(match.group()) if match else {}
+        except Exception:
+            parsed = {}
+
+    return {
+        "sub_stage": sub_stage,
+        "source": "llm_generated",
+        "strengths":     [{"description": s} for s in parsed.get("strengths",     [])],
+        "weaknesses":    [{"description": s} for s in parsed.get("weaknesses",    [])],
+        "opportunities": [{"description": s} for s in parsed.get("opportunities", [])],
+        "threats":       [{"description": s} for s in parsed.get("threats",       [])],
+        "recommendations":  parsed.get("recommendations",  []),
+        "actionable_steps": parsed.get("actionable_steps", []),
+        "strategic_recommendations": parsed.get("strategic_recommendations", ""),
+    }
 
 
 def _extract_submission_id(message: Dict[str, Any], fallback: Optional[str] = None) -> Optional[str]:
@@ -86,7 +215,7 @@ def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, A
         _fmt(swot_lists["strengths"],     "Strengths not available."),
         _fmt(swot_lists["weaknesses"],    "Weaknesses not available."),
         _fmt(swot_lists["opportunities"], "Opportunities not available."),
-        _fmt(swot_lists["threats"],       "Threats not available."),
+        _fmt(swot_lists["threat"],      "threat not available."),
     ]
 
     swot_section = next(
@@ -142,7 +271,7 @@ def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
                 continue
             # Remove heading prefixes when they appear in item text.
             text = re.sub(
-                r"^(strengths?|weaknesses?|opportunities?|threats?)\s*[:\-]\s*",
+                r"^(strengths?|weaknesses?|opportunities?|threat?)\s*[:\-]\s*",
                 "",
                 text,
                 flags=re.IGNORECASE,
@@ -323,6 +452,24 @@ class WorkerPool:
             status = "found" if swot_doc else "not found"
             print(f"🧩 Worker {worker_id}: SWOT doc {status} for sub_stage='{dominant_sub_stage}'")
 
+        # ── SWOT handling for 1D ──────────────────────────────────────────
+        # ALWAYS strip the large hardcoded fallback SWOT from nd_data before LLM.
+        # These dicts (~3-5k tokens) are never needed by the LLM.
+        #
+        # Two cases:
+        #   A) Frappe SWOT doc found  → hold it for verbatim post-inject (no LLM).
+        #   B) No Frappe SWOT doc     → LLM generates SWOT from behavioral stage data
+        #                               via a separate lean call after the main report.
+        nd_data.pop("individual_swot", None)
+        nd_data.pop("recommendation_framework", None)
+
+        full_swot: Optional[Dict[str, Any]] = None
+        if swot_doc:
+            full_swot = extract_full_swot_doc(swot_doc)
+            print(f"✅ Worker {worker_id}: Frappe SWOT held for post-inject (NOT sent to LLM)")
+        else:
+            print(f"⚠️  Worker {worker_id}: no Frappe SWOT for sub_stage='{dominant_sub_stage}' — will generate via LLM post-report")
+
         if single_questionnaire and primary_report_type:
             print(f"🧭 Worker {worker_id}: single questionnaire -> generating only '{primary_report_type}' report")
             result = await asyncio.wait_for(
@@ -336,11 +483,6 @@ class WorkerPool:
                 timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
             )
             reports_payload = result.get("reports", {})
-
-        if dimension == "1D" and swot_doc:
-            replaced = _apply_1d_swot_override(reports_payload, swot_doc)
-            if replaced:
-                print(f"✅ Worker {worker_id}: 1D SWOT section injected from Frappe")
 
         submission_id = _extract_submission_id(msg, requested_submission)
         cycle_name = _extract_cycle_name(msg, requested_cycle)
@@ -405,6 +547,89 @@ class WorkerPool:
                             clean_sec["swot_lists"] = build_swot_lists_from_section_paragraphs(paras)
                         clean_sections.append(clean_sec)
                     _ensure_swot_section(clean_sections, rtype)
+
+                    # ── SWOT inject for ALL report types ──────────────────────────────
+                    # 1D employee:  use Frappe SWOT if available, else generate via LLM
+                    # 2D boss:      always generate via LLM (no Frappe SWOT for boss)
+                    # 3D team:      always generate via LLM
+                    # 4D org:       always generate via LLM
+                    #
+                    # In all cases we also check whether the LLM already put real SWOT
+                    # content in (i.e. swot_lists has items). If it did, skip inject.
+                    swot_to_inject: Optional[Dict[str, Any]] = None
+
+                    if rtype == "employee":
+                        # 1D: Frappe SWOT if found, else LLM
+                        if full_swot is not None:
+                            swot_to_inject = full_swot
+                        else:
+                            # Check if LLM already generated real content
+                            existing_sec = next(
+                                (s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))),
+                                None,
+                            )
+                            existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
+                            has_real_content = any(
+                                existing_lists.get(k) and
+                                not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
+                                for k in ("strengths", "weaknesses", "opportunities", "threats")
+                                if existing_lists.get(k)
+                            )
+                            if not has_real_content:
+                                print(f"🤖 Worker {worker_id}: generating {rtype} SWOT via LLM (sub_stage='{dominant_sub_stage}')")
+                                swot_to_inject = await asyncio.to_thread(
+                                    _generate_swot_via_llm,
+                                    nd_data.get("behavioral_stage", {}),
+                                    rtype,
+                                )
+                    else:
+                        # 2D/3D/4D: always check if LLM already gave real SWOT content
+                        existing_sec = next(
+                            (s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))),
+                            None,
+                        )
+                        existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
+                        has_real_content = any(
+                            existing_lists.get(k) and
+                            not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
+                            for k in ("strengths", "weaknesses", "opportunities", "threats")
+                            if existing_lists.get(k)
+                        )
+                        if not has_real_content:
+                            print(f"🤖 Worker {worker_id}: generating {rtype} SWOT via LLM (stage='{nd_data.get('behavioral_stage', {}).get('stage', '')}')")
+                            swot_to_inject = await asyncio.to_thread(
+                                _generate_swot_via_llm,
+                                nd_data.get("behavioral_stage", {}),
+                                rtype,
+                            )
+
+                    if swot_to_inject:
+                        for sec in clean_sections:
+                            if is_swot_section(sec.get("id", ""), sec.get("title", "")):
+                                def _row_text(r: Dict[str, Any]) -> str:
+                                    return (
+                                        r.get("description")
+                                        or r.get("desription")   # Frappe Threat typo
+                                        or r.get("recommendations_description")
+                                        or r.get("value")
+                                        or r.get("title")
+                                        or ""
+                                    ).strip()
+                                sec["swot_lists"] = {
+                                    "strengths":     [_row_text(r) for r in swot_to_inject.get("strengths",     []) if _row_text(r)],
+                                    "weaknesses":    [_row_text(r) for r in swot_to_inject.get("weaknesses",    []) if _row_text(r)],
+                                    "opportunities": [_row_text(r) for r in swot_to_inject.get("opportunities", []) if _row_text(r)],
+                                    "threats":       [_row_text(r) for r in swot_to_inject.get("threats",       []) if _row_text(r)],
+                                }
+                                sec["recommendations"]  = swot_to_inject.get("recommendations",  [])
+                                sec["actionable_steps"] = swot_to_inject.get("actionable_steps", [])
+                                sec["strategic_recommendations"] = swot_to_inject.get("strategic_recommendations", "")
+                                sec["source"]    = swot_to_inject.get("source", "llm_generated")
+                                sec["sub_stage"] = swot_to_inject.get("sub_stage", "")
+                                sec["paragraphs"] = _swot_lists_to_paragraphs(sec["swot_lists"])
+                                print(f"✅ Worker {worker_id}: SWOT injected into '{rtype}' (source={sec['source']})")
+                                break
+
                     report_sections_list.append({
                         "title": robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
                         "report_type": rtype,
