@@ -58,11 +58,11 @@ def is_swot_section(section_id: Any, section_title: Any) -> bool:
 def build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str, List[str]]:
     """Parse free-text SWOT paragraphs into structured S/W/O/T lists."""
     swot: Dict[str, List[str]] = {
-        "strengths": [], "weaknesses": [], "opportunities": [], "threats": []
+        "strengths": [], "weaknesses": [], "opportunities": [], "threat": []
     }
     keyword_map = {
         "strength": "strengths", "weakness": "weaknesses",
-        "opportunit": "opportunities", "threat": "threats",
+        "opportunit": "opportunities", "threat": "threat",
     }
     current_key = "strengths"
     for para in paragraphs:
@@ -76,12 +76,12 @@ def build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str,
     return swot
 
 
-_SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threats")
+_SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threat")
 _SWOT_LABELS = {
     "strengths": "Strengths",
     "weaknesses": "Weaknesses",
     "opportunities": "Opportunities",
-    "threats": "Threats",
+    "threat": "threat",
 }
 _SWOT_SECTION_TITLES = {
     "employee": "Individual SWOT Analysis",

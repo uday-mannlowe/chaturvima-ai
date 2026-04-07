@@ -92,11 +92,12 @@ async def startup_event():
     print(f"Queue Size:  {Config.MAX_QUEUE_SIZE}")
     print(f"Rate Limit:  {Config.GROQ_RATE_LIMIT_PER_MINUTE}/min")
     print(f"Storage:     {storage_backend_name()}")
-<<<<<<< HEAD
-    print("Frappe auth: dynamic-only mode (runtime token/key-secret required per request)")
-=======
-    print("Frappe auth: runtime token preferred, .env fallback enabled")
->>>>>>> 39a36c9 (hardcode  api and secret key)
+    if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+        print("🔑 Frappe auth: API key+secret (✓)")
+    elif Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
+        print("🔑 Frappe auth: username+password (✓)")
+    else:
+        print("⚠️  Frappe auth: NO CREDENTIALS – employee endpoints will 403")
     print("="*60 + "\n")
     initialize_report_storage()
     cleanup_old_per_type_files()
@@ -126,4 +127,3 @@ async def health_check() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=False, workers=1)
-
