@@ -254,6 +254,23 @@ def _build_stage_default_swot(
     }
 
 
+def _swot_row_text(row: Any) -> str:
+    if isinstance(row, dict):
+        return (
+            row.get("description")
+            or row.get("desription")   # Frappe Threat typo
+            or row.get("recommendations_description")
+            or row.get("value")
+            or row.get("title")
+            or ""
+        ).strip()
+    return str(row or "").strip()
+
+
+def _has_non_empty_swot_rows(rows: Any) -> bool:
+    return isinstance(rows, list) and any(_swot_row_text(r) for r in rows)
+
+
 def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, Any]]) -> bool:
     """Inject SWOT data from Frappe into the employee report sections in-place."""
     from services.frappe_client import extract_swot_lists
@@ -312,6 +329,28 @@ _SWOT_SECTION_TITLES = {
     "team": "Collective SWOT Analysis",
     "organization": "Cumulative SWOT Overlay",
 }
+_RECOMMENDATION_SECTION_TITLES = {
+    "employee": "Recommendations",
+    "boss": "Recommendations",
+    "team": "Recommendations",
+    "organization": "Recommendations",
+}
+
+_ACTION_SECTION_ID_PRIORITY = (
+    "action_plan",
+    "next_steps",
+    "joint_recommendations",
+    "boss_recommendations",
+    "recommendations",
+)
+_ACTION_SECTION_TITLE_HINTS = (
+    "action navigator",
+    "action plan",
+    "next steps",
+    "development path",
+    "recommendation",
+    "intervention",
+)
 
 
 def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
@@ -399,6 +438,183 @@ def _ensure_swot_section(clean_sections: List[Dict[str, Any]], report_type: str)
     _fill_missing_swot_lists(swot_lists)
     swot_section["swot_lists"] = swot_lists
     swot_section["paragraphs"] = _swot_lists_to_paragraphs(swot_lists)
+
+
+def _inject_actionable_into_action_section(
+    clean_sections: List[Dict[str, Any]],
+    swot_payload: Dict[str, Any],
+) -> bool:
+    """
+    Copy actionable steps from SWOT payload into the report's primary
+    action-oriented section (Action Navigator / Next Steps / Recommendations).
+    """
+    if not isinstance(swot_payload, dict):
+        return False
+
+    raw_steps = swot_payload.get("actionable_steps", [])
+    if not isinstance(raw_steps, list):
+        return False
+
+    step_texts = [_swot_row_text(step) for step in raw_steps if _swot_row_text(step)]
+    if not step_texts:
+        return False
+
+    target_idx: Optional[int] = None
+
+    # First choose by known section IDs in priority order.
+    for preferred_id in _ACTION_SECTION_ID_PRIORITY:
+        for idx, section in enumerate(clean_sections):
+            if not isinstance(section, dict):
+                continue
+            sec_id = str(section.get("id", "")).strip().lower()
+            if sec_id == preferred_id:
+                target_idx = idx
+                break
+        if target_idx is not None:
+            break
+
+    # Then choose by title hint if ID was not a direct match.
+    if target_idx is None:
+        for idx, section in enumerate(clean_sections):
+            if not isinstance(section, dict):
+                continue
+            title = str(section.get("title", "")).strip().lower()
+            if any(hint in title for hint in _ACTION_SECTION_TITLE_HINTS):
+                target_idx = idx
+                break
+
+    if target_idx is None:
+        return False
+
+    target = clean_sections[target_idx]
+
+    existing_rows = target.get("actionable_steps", [])
+    existing_texts: List[str] = []
+    if isinstance(existing_rows, list):
+        existing_texts = [_swot_row_text(r) for r in existing_rows if _swot_row_text(r)]
+
+    merged: List[str] = list(existing_texts)
+    for text in step_texts:
+        if text not in merged:
+            merged.append(text)
+
+    target["actionable_steps"] = [{"description": text} for text in merged]
+
+    # Also append a readable paragraph line so non-specialized renderers still show it.
+    action_line = "Actionable Steps: " + " ".join(f"{i}. {t}" for i, t in enumerate(merged, 1))
+    paras = target.get("paragraphs", [])
+    if not isinstance(paras, list):
+        paras = text_to_paragraphs(str(paras))
+
+    replaced = False
+    for i, para in enumerate(paras):
+        if str(para).strip().lower().startswith("actionable steps:"):
+            paras[i] = action_line
+            replaced = True
+            break
+    if not replaced:
+        paras.append(action_line)
+
+    target["paragraphs"] = paras
+    return True
+
+
+def _inject_recommendations_section(
+    clean_sections: List[Dict[str, Any]],
+    swot_payload: Dict[str, Any],
+    report_type: str,
+) -> bool:
+    """
+    Create/update a dedicated Recommendations section from SWOT payload
+    so recommendations are not rendered inside SWOT.
+    """
+    if not isinstance(swot_payload, dict):
+        return False
+
+    rec_rows = swot_payload.get("recommendations", [])
+    strategic = str(swot_payload.get("strategic_recommendations", "") or "").strip()
+
+    rec_paragraphs: List[str] = []
+    normalized_recs: List[Dict[str, str]] = []
+    if isinstance(rec_rows, list):
+        idx = 1
+        for row in rec_rows:
+            if isinstance(row, dict):
+                title = str(row.get("recommendations_title") or row.get("title") or "").strip()
+                desc = (
+                    str(
+                        row.get("recommendations_description")
+                        or row.get("description")
+                        or row.get("desription")
+                        or row.get("value")
+                        or ""
+                    ).strip()
+                )
+                if not title and not desc:
+                    continue
+                line = f"{idx}. {title}: {desc}" if title and desc else f"{idx}. {title or desc}"
+                rec_paragraphs.append(line)
+                normalized_recs.append({
+                    "recommendations_title": title or f"Recommendation {idx}",
+                    "recommendations_description": desc or title or "",
+                })
+                idx += 1
+            else:
+                text = _swot_row_text(row)
+                if text:
+                    rec_paragraphs.append(f"{idx}. {text}")
+                    normalized_recs.append({
+                        "recommendations_title": f"Recommendation {idx}",
+                        "recommendations_description": text,
+                    })
+                    idx += 1
+
+    if strategic:
+        rec_paragraphs.append(f"Strategic Recommendations: {strategic}")
+
+    if not rec_paragraphs:
+        return False
+
+    title = _RECOMMENDATION_SECTION_TITLES.get(report_type, "Recommendations")
+
+    target_idx: Optional[int] = None
+    for idx, sec in enumerate(clean_sections):
+        if not isinstance(sec, dict):
+            continue
+        sec_id = str(sec.get("id", "")).strip().lower()
+        sec_title = str(sec.get("title", "")).strip().lower()
+        if sec_id == "recommendations" or sec_title == title.lower():
+            target_idx = idx
+            break
+
+    section_payload = {
+        "id": "recommendations",
+        "title": title,
+        "paragraphs": rec_paragraphs,
+        "recommendations": normalized_recs,
+        "strategic_recommendations": strategic,
+        "source": swot_payload.get("source", ""),
+        "sub_stage": swot_payload.get("sub_stage", ""),
+    }
+
+    if target_idx is not None:
+        clean_sections[target_idx] = section_payload
+        return True
+
+    # Prefer placing it immediately after SWOT section.
+    swot_idx: Optional[int] = None
+    for idx, sec in enumerate(clean_sections):
+        if not isinstance(sec, dict):
+            continue
+        if is_swot_section(sec.get("id", ""), sec.get("title", "")):
+            swot_idx = idx
+            break
+
+    if swot_idx is not None:
+        clean_sections.insert(swot_idx + 1, section_payload)
+    else:
+        clean_sections.append(section_payload)
+    return True
 
 
 class WorkerPool:
@@ -544,7 +760,37 @@ class WorkerPool:
             full_swot = stage_default_swot
             print(f"🧰 Worker {worker_id}: using stage-default SWOT fallback for sub_stage='{dominant_sub_stage}'")
         else:
-            print(f"⚠️  Worker {worker_id}: no Frappe SWOT for sub_stage='{dominant_sub_stage}' — will generate via LLM post-report")
+            if dimension == "1D":
+                print(f"⚠️  Worker {worker_id}: no Frappe SWOT for sub_stage='{dominant_sub_stage}' — will generate via LLM post-report")
+            else:
+                print(f"ℹ️  Worker {worker_id}: {dimension} flow uses LLM-generated SWOT (Frappe SWOT lookup skipped)")
+
+        # 1D enhancement: if SWOT exists but actionable/recommendation fields are
+        # missing for this sub-stage, fill only those missing fields via LLM.
+        if dimension == "1D" and full_swot is not None:
+            missing_actionable = not _has_non_empty_swot_rows(full_swot.get("actionable_steps", []))
+            missing_recommendations = not _has_non_empty_swot_rows(full_swot.get("recommendations", []))
+            missing_strategic = not str(full_swot.get("strategic_recommendations", "") or "").strip()
+
+            if missing_actionable or missing_recommendations or missing_strategic:
+                print(
+                    f"🤖 Worker {worker_id}: filling missing 1D SWOT guidance via LLM "
+                    f"(actionable={missing_actionable}, recommendations={missing_recommendations}, strategic={missing_strategic})"
+                )
+                llm_guidance = await asyncio.to_thread(
+                    _generate_swot_via_llm,
+                    nd_data.get("behavioral_stage", {}),
+                    "employee",
+                )
+                if missing_recommendations:
+                    full_swot["recommendations"] = llm_guidance.get("recommendations", [])
+                if missing_actionable:
+                    full_swot["actionable_steps"] = llm_guidance.get("actionable_steps", [])
+                if missing_strategic:
+                    full_swot["strategic_recommendations"] = llm_guidance.get("strategic_recommendations", "")
+
+                base_source = str(full_swot.get("source", "") or "").strip()
+                full_swot["source"] = f"{base_source}+llm_guidance_fill" if base_source else "llm_guidance_fill"
 
         if single_questionnaire and primary_report_type:
             print(f"🧭 Worker {worker_id}: single questionnaire -> generating only '{primary_report_type}' report")
@@ -682,24 +928,15 @@ class WorkerPool:
                     if swot_to_inject:
                         for sec in clean_sections:
                             if is_swot_section(sec.get("id", ""), sec.get("title", "")):
-                                def _row_text(r: Dict[str, Any]) -> str:
-                                    return (
-                                        r.get("description")
-                                        or r.get("desription")   # Frappe Threat typo
-                                        or r.get("recommendations_description")
-                                        or r.get("value")
-                                        or r.get("title")
-                                        or ""
-                                    ).strip()
                                 threat_rows = swot_to_inject.get("threat")
                                 if threat_rows is None:
                                     threat_rows = swot_to_inject.get("threats", [])
 
                                 sec["swot_lists"] = {
-                                    "strengths": [_row_text(r) for r in swot_to_inject.get("strengths", []) if _row_text(r)],
-                                    "weaknesses": [_row_text(r) for r in swot_to_inject.get("weaknesses", []) if _row_text(r)],
-                                    "opportunities": [_row_text(r) for r in swot_to_inject.get("opportunities", []) if _row_text(r)],
-                                    "threat": [_row_text(r) for r in threat_rows if _row_text(r)],
+                                    "strengths": [_swot_row_text(r) for r in swot_to_inject.get("strengths", []) if _swot_row_text(r)],
+                                    "weaknesses": [_swot_row_text(r) for r in swot_to_inject.get("weaknesses", []) if _swot_row_text(r)],
+                                    "opportunities": [_swot_row_text(r) for r in swot_to_inject.get("opportunities", []) if _swot_row_text(r)],
+                                    "threat": [_swot_row_text(r) for r in threat_rows if _swot_row_text(r)],
                                 }
                                 sec["recommendations"]  = swot_to_inject.get("recommendations",  [])
                                 sec["actionable_steps"] = swot_to_inject.get("actionable_steps", [])
@@ -709,6 +946,23 @@ class WorkerPool:
                                 sec["paragraphs"] = _swot_lists_to_paragraphs(sec["swot_lists"])
                                 print(f"✅ Worker {worker_id}: SWOT injected into '{rtype}' (source={sec['source']})")
                                 break
+
+                        # Mirror actionable steps into Action Navigator/Next Steps.
+                        actionable_pushed = _inject_actionable_into_action_section(
+                            clean_sections,
+                            swot_to_inject,
+                        )
+                        if actionable_pushed:
+                            print(f"✅ Worker {worker_id}: actionable steps added to action section for '{rtype}'")
+
+                        # Keep recommendations in a dedicated section (not inside SWOT).
+                        recommendations_pushed = _inject_recommendations_section(
+                            clean_sections,
+                            swot_to_inject,
+                            rtype,
+                        )
+                        if recommendations_pushed:
+                            print(f"✅ Worker {worker_id}: recommendations section updated for '{rtype}'")
 
                     report_sections_list.append({
                         "title": robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),

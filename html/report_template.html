@@ -265,7 +265,7 @@
             background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
         }
 
-        .swot-box.threat {
+        .swot-box.threats {
             background: linear-gradient(135deg, #fccb90 0%, #d57eeb 100%);
         }
 
@@ -471,17 +471,17 @@
          ════════════════════════════════════════ -->
     <div class="content">
 
-        {# ── Iterate over every report in the JSON (employee, boss, team, org) ── #}
+        {# Iterate over every report in the JSON (employee, boss, team, org) #}
         {% for report in reports %}
 
-            {# ── Divider between reports (not before the first one) ── #}
+            {# Divider between reports (not before the first one) #}
             {% if not loop.first %}
             <div class="report-divider">
                 <span class="report-divider-title">{{ report.title }}</span>
             </div>
             {% endif %}
 
-            {# ── Assessment Summary block (only for the first / employee report) ── #}
+            {# Assessment Summary block (only for the first / employee report) #}
             {% if loop.first %}
             <div class="section">
                 <h2 class="section-title">Assessment Summary</h2>
@@ -498,7 +498,7 @@
                 </p>
             </div>
 
-            {# ── Stage Score Table ── #}
+            {# Stage Score Table #}
             {% if header.stage_scores %}
             <div class="section">
                 <h2 class="section-title">Stage Score Summary</h2>
@@ -524,27 +524,26 @@
             {% endif %}
             {% endif %}
 
-            {# ── All sections from this report ── #}
+            {# All sections from this report #}
             {% set sec_counter = namespace(n=1) %}
             {% for section in report.sections %}
 
-                {# ── SWOT section: render in the styled grid ── #}
+                {# SWOT section: render only Strengths, Weaknesses, Opportunities, Threats #}
                 {% if section.id == 'swot' or 'swot' in section.title | lower %}
                 <div class="section">
                     <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
 
-                    {# Always render SWOT as 4 colored boxes, even when JSON has <4 paragraphs. #}
                     {% set strengths_text = section.paragraphs[0] if section.paragraphs | length > 0 else "Strengths not available." %}
                     {% set weaknesses_text = section.paragraphs[1] if section.paragraphs | length > 1 else "Weaknesses not available." %}
                     {% set opportunities_text = section.paragraphs[2] if section.paragraphs | length > 2 else "Opportunities not available." %}
-                    {% set threat_text = section.paragraphs[3] if section.paragraphs | length > 3 else "threat not available." %}
+                    {% set threats_text = section.paragraphs[3] if section.paragraphs | length > 3 else "Threats not available." %}
                     {% set strengths_list = section.swot_lists.strengths if section.swot_lists is defined and section.swot_lists.strengths is defined else [] %}
                     {% set weaknesses_list = section.swot_lists.weaknesses if section.swot_lists is defined and section.swot_lists.weaknesses is defined else [] %}
                     {% set opportunities_list = section.swot_lists.opportunities if section.swot_lists is defined and section.swot_lists.opportunities is defined else [] %}
-                    {% set threat_list = section.swot_lists.threat if section.swot_lists is defined and section.swot_lists.threat is defined else [] %}
+                    {% set threats_list = (section.swot_lists.threats if section.swot_lists.threats is defined else section.swot_lists.threat) if section.swot_lists is defined else [] %}
                     <div class="swot-grid">
                         <div class="swot-box strengths">
-                            <h3>💪 Strengths</h3>
+                            <h3>Strengths</h3>
                             {% if strengths_list | length > 0 %}
                             <ol>
                                 {% for item in strengths_list %}
@@ -556,7 +555,7 @@
                             {% endif %}
                         </div>
                         <div class="swot-box weaknesses">
-                            <h3>⚠️ Weaknesses</h3>
+                            <h3>Weaknesses</h3>
                             {% if weaknesses_list | length > 0 %}
                             <ol>
                                 {% for item in weaknesses_list %}
@@ -568,7 +567,7 @@
                             {% endif %}
                         </div>
                         <div class="swot-box opportunities">
-                            <h3>🚀 Opportunities</h3>
+                            <h3>Opportunities</h3>
                             {% if opportunities_list | length > 0 %}
                             <ol>
                                 {% for item in opportunities_list %}
@@ -579,33 +578,88 @@
                             <p style="font-size:13px;line-height:1.6;">{{ opportunities_text }}</p>
                             {% endif %}
                         </div>
-                        <div class="swot-box threat">
-                            <h3>⚡ threat</h3>
-                            {% if threat_list | length > 0 %}
+                        <div class="swot-box threats">
+                            <h3>Threats</h3>
+                            {% if threats_list | length > 0 %}
                             <ol>
-                                {% for item in threat_list %}
+                                {% for item in threats_list %}
                                 <li>{{ item }}</li>
                                 {% endfor %}
                             </ol>
                             {% else %}
-                            <p style="font-size:13px;line-height:1.6;">{{ threat_text }}</p>
+                            <p style="font-size:13px;line-height:1.6;">{{ threats_text }}</p>
                             {% endif %}
                         </div>
                     </div>
                 </div>
 
-                {# ── Action Plan section: render in styled phase boxes ── #}
+                {# Action Plan section #}
                 {% elif section.id == 'action_plan' or 'action' in section.title | lower %}
                 <div class="section">
                     <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
-                    {% for para in section.paragraphs %}
+                    {% set has_actionable_steps = section.actionable_steps is defined and section.actionable_steps | length > 0 %}
+                    {% if not has_actionable_steps %}
+                        {% for para in section.paragraphs %}
+                        {% if not (para|string|lower).startswith('actionable steps:') %}
+                        <div class="action-phase">
+                            <p class="section-content">{{ para }}</p>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                    {% if has_actionable_steps %}
                     <div class="action-phase">
-                        <p class="section-content">{{ para }}</p>
+                        <h3 style="font-size:16px;font-weight:700;margin-bottom:10px;">Actionable Steps</h3>
+                        <ol style="padding-left: 20px;">
+                            {% for step in section.actionable_steps %}
+                                {% if step is mapping %}
+                                {% set step_text = step.description if step.description is defined else (step.value if step.value is defined else (step.title if step.title is defined else "")) %}
+                                {% if step_text %}
+                                <li style="margin-bottom:8px;">{{ step_text }}</li>
+                                {% endif %}
+                                {% else %}
+                                <li style="margin-bottom:8px;">{{ step }}</li>
+                                {% endif %}
+                            {% endfor %}
+                        </ol>
                     </div>
-                    {% endfor %}
+                    {% endif %}
                 </div>
 
-                {# ── Drivers section: render with indicators list style ── #}
+                {# Recommendations section (separate from SWOT) #}
+                {% elif section.id == 'recommendations' or section.title | lower == 'recommendations' %}
+                <div class="section">
+                    <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
+                    {% if section.recommendations is defined and section.recommendations | length > 0 %}
+                    <ol style="padding-left: 20px;">
+                        {% for item in section.recommendations %}
+                            {% if item is mapping %}
+                            {% set rec_title = item.recommendations_title if item.recommendations_title is defined else (item.title if item.title is defined else "") %}
+                            {% set rec_desc = item.recommendations_description if item.recommendations_description is defined else (item.description if item.description is defined else (item.desription if item.desription is defined else "")) %}
+                            <li style="margin-bottom:10px;">
+                                {% if rec_title %}<strong>{{ rec_title }}</strong>{% endif %}
+                                {% if rec_desc %}<p class="section-content" style="margin:4px 0 0 0;">{{ rec_desc }}</p>{% endif %}
+                            </li>
+                            {% else %}
+                            <li style="margin-bottom:10px;">{{ item }}</li>
+                            {% endif %}
+                        {% endfor %}
+                    </ol>
+                    {% else %}
+                        {% for para in section.paragraphs %}
+                        <p class="section-content">{{ para }}</p>
+                        {% endfor %}
+                    {% endif %}
+
+                    {% if section.strategic_recommendations is defined and section.strategic_recommendations %}
+                    <div class="section" style="margin-top: 12px;">
+                        <h3 style="font-size:16px;font-weight:700;margin-bottom:8px;">Strategic Recommendations</h3>
+                        <p class="section-content">{{ section.strategic_recommendations }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {# Drivers section #}
                 {% elif section.id == 'drivers' or 'driver' in section.title | lower or 'stressor' in section.title | lower %}
                 <div class="section">
                     <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
@@ -616,7 +670,7 @@
                     </div>
                 </div>
 
-                {# ── Behavioural indicators: render with indicator list box ── #}
+                {# Behavioural indicators #}
                 {% elif 'indicator' in section.title | lower %}
                 <div class="section">
                     <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>
@@ -629,7 +683,7 @@
                     </div>
                 </div>
 
-                {# ── All other sections: plain paragraphs ── #}
+                {# All other sections #}
                 {% else %}
                 <div class="section">
                     <h2 class="section-title">{{ sec_counter.n }}. {{ section.title }}</h2>

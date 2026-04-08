@@ -252,6 +252,7 @@ def extract_full_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
         strategic_recommendations — free-text field
     """
     return {
+        "source": "frappe_swot",
         "sub_stage": (swot_doc.get("sub_stage") or swot_doc.get("name") or "").strip(),
         "strengths":     collect_child_row_dicts(
             swot_doc.get("strength")     or swot_doc.get("strengths",     [])
@@ -274,6 +275,8 @@ def extract_full_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
         "actionable_steps": collect_child_row_dicts(
             swot_doc.get("actionable_steps")
             or swot_doc.get("actionable_step")
+            or swot_doc.get("actionable_items")
+            or swot_doc.get("action_items")
             or []
         ),
         "strategic_recommendations": (swot_doc.get("strategic_recommendations") or "").strip(),

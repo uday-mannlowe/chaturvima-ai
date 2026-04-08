@@ -950,66 +950,257 @@ SECTION_SPECS_BOSS: List[SectionSpec] = [
         min_words=280,
         max_words=380,
         guidance=(
-            "Provide a dyadic SWOT for the employee-boss relationship in narrative form: "
-            "strengths, weaknesses (blind spots), opportunities, and threat. "
-            "Ground each part in relationship evidence from the input."
+            "Provide a dyadic SWOT for the employee-boss relationship. Include ALL four sections "
+            "with at least 3 numbered points each: Strengths, Weaknesses (blind spots), "
+            "Opportunities, and Threats. Ground each point in relationship evidence from the input. "
+            "Do NOT skip any quadrant. This section is MANDATORY."
         ),
         data_keys=("relationship_variables", "superior_subordinate_dynamics", "individual_swot"),
     ),
     SectionSpec(
-        id="boss_recommendations",
-        title="Recommendations for the Boss",
-        min_words=300,
+        id="recommendations",
+        title="Recommendations",
+        min_words=280,
         max_words=420,
         guidance=(
-            "Provide boss-focused interventions and suggest management adjustments."
+            "Provide concrete, actionable recommendations for the boss and for joint action. "
+            "Include: (1) Recommendations for the Boss — specific interventions and management adjustments; "
+            "(2) Recommendations for Joint Action — collaborative steps both parties can take together; "
+            "(3) Next Steps & Development Path — immediate actions and a long-term improvement plan."
         ),
         data_keys=("superior_subordinate_dynamics", "relationship_variables"),
-    ),
-    SectionSpec(
-        id="joint_recommendations",
-        title="Recommendations for Joint Action",
-        min_words=260,
-        max_words=360,
-        guidance=(
-            "Suggest collaborative improvements and outline relationship-building steps."
-        ),
-        data_keys=("superior_subordinate_dynamics", "relationship_variables"),
-    ),
-    SectionSpec(
-        id="next_steps",
-        title="Next Steps & Development Path",
-        min_words=220,
-        max_words=320,
-        guidance=(
-            "Outline immediate actions and suggest a long-term relationship development path."
-        ),
-        data_keys=("superior_subordinate_dynamics", "relationship_variables"),
-    ),
-    SectionSpec(
-        id="closing",
-        title="Closing Notes",
-        min_words=200,
-        max_words=300,
-        guidance=(
-            "Summarize the relationship assessment and provide a constructive outlook."
-        ),
-        data_keys=("context",),
     ),
 ]
+
+
+SECTION_SPECS_TEAM: List[SectionSpec] = [
+    SectionSpec(
+        id="purpose",
+        title="Purpose of the Assessment",
+        min_words=200, max_words=300,
+        guidance="Explain why this team assessment was conducted and what it aims to reveal about team dynamics.",
+        data_keys=("employee_context", "behavioral_stage"),
+    ),
+    SectionSpec(
+        id="overview",
+        title="Dimension Overview & Scope",
+        min_words=200, max_words=300,
+        guidance="Describe what the 3D team dimension covers and its scope and limitations.",
+        data_keys=("employee_context",),
+    ),
+    SectionSpec(
+        id="inputs",
+        title="Inputs & Assessment Instruments",
+        min_words=180, max_words=280,
+        guidance="List data sources and assessment methods used for the team evaluation.",
+        data_keys=("employee_questionnaire", "revised_employee_model_weights"),
+    ),
+    SectionSpec(
+        id="team_profile",
+        title="Team Profile Summary",
+        min_words=220, max_words=320,
+        guidance="Summarize the team's profile including composition, roles, and context.",
+        data_keys=("employee_context", "behavioral_stage"),
+    ),
+    SectionSpec(
+        id="stage_diagnosis",
+        title="Team Stage Diagnosis",
+        min_words=260, max_words=360,
+        guidance="Identify and explain the team's current behavioral stage and sub-stage using reference material.",
+        data_keys=("behavioral_stage", "employee_questionnaire"),
+        needs_rag=True,
+    ),
+    SectionSpec(
+        id="dynamics",
+        title="Team Dynamics & Collaboration Patterns",
+        min_words=240, max_words=340,
+        guidance="Analyze how team members interact, collaborate, and work together.",
+        data_keys=("behavioral_stage", "employee_questionnaire"),
+    ),
+    SectionSpec(
+        id="communication",
+        title="Communication & Interaction Analysis",
+        min_words=220, max_words=320,
+        guidance="Examine communication patterns, information flow, and interaction quality within the team.",
+        data_keys=("behavioral_stage",),
+    ),
+    SectionSpec(
+        id="trust_safety",
+        title="Trust & Psychological Safety",
+        min_words=220, max_words=320,
+        guidance="Evaluate the level of trust and psychological safety within the team.",
+        data_keys=("behavioral_stage",),
+    ),
+    SectionSpec(
+        id="performance",
+        title="Performance & Productivity Patterns",
+        min_words=220, max_words=320,
+        guidance="Describe performance patterns, productivity levels, and output quality of the team.",
+        data_keys=("behavioral_stage", "revised_employee_model_weights"),
+    ),
+    SectionSpec(
+        id="conflict",
+        title="Conflict & Tension Points",
+        min_words=200, max_words=300,
+        guidance="Identify areas of friction, conflict, and tension within the team.",
+        data_keys=("behavioral_stage",),
+    ),
+    SectionSpec(
+        id="root_cause",
+        title="Root Cause Assessment",
+        min_words=200, max_words=300,
+        guidance="Explore underlying factors driving team dynamics, challenges, and patterns.",
+        data_keys=("behavioral_stage", "employee_questionnaire"),
+    ),
+    SectionSpec(
+        id="implications",
+        title="Implications & Impact",
+        min_words=200, max_words=300,
+        guidance="Discuss current impact on performance and project future implications for the team.",
+        data_keys=("behavioral_stage",),
+    ),
+    SectionSpec(
+        id="swot",
+        title="Collective SWOT Analysis",
+        min_words=280, max_words=400,
+        guidance=(
+            "Provide a collective SWOT for the team. Include ALL four sections with at least 3 numbered points each: "
+            "Strengths, Weaknesses, Opportunities, and Threats. Ground every point in team data. "
+            "Do NOT skip any quadrant. This section is MANDATORY."
+        ),
+        data_keys=("behavioral_stage", "employee_questionnaire"),
+    ),
+    SectionSpec(
+        id="recommendations",
+        title="Recommendations & Next Steps",
+        min_words=260, max_words=380,
+        guidance=(
+            "Provide concrete recommendations for team development and next steps. Include: "
+            "(1) Recommendations for Team Development; (2) Next Steps & Development Path; (3) Closing Notes."
+        ),
+        data_keys=("behavioral_stage",),
+    ),
+]
+
+
+SECTION_SPECS_ORGANIZATION: List[SectionSpec] = [
+    SectionSpec(
+        id="purpose",
+        title="Purpose of the Assessment",
+        min_words=200, max_words=300,
+        guidance="Explain why this organizational assessment was conducted and its strategic intent.",
+        data_keys=("employee_context", "behavioral_stage"),
+    ),
+    SectionSpec(
+        id="overview",
+        title="Dimension Overview & Scope",
+        min_words=200, max_words=300,
+        guidance="Describe what the 4D organizational dimension covers and its boundaries.",
+        data_keys=("employee_context",),
+    ),
+    SectionSpec(
+        id="inputs",
+        title="Inputs & Assessment Instruments",
+        min_words=180, max_words=280,
+        guidance="List data sources and methods used for the organizational evaluation.",
+        data_keys=("employee_questionnaire", "revised_employee_model_weights"),
+    ),
+    SectionSpec(
+        id="stage",
+        title="Emotional Stage Interpretation",
+        min_words=300, max_words=420,
+        guidance=(
+            "Cover: (1) Definition of Dominant Stage and Pre-Dominant Sub-stage; "
+            "(2) Interpretation; (3) Behavioural Indicators."
+        ),
+        data_keys=("behavioral_stage", "employee_questionnaire", "revised_employee_model_weights"),
+        needs_rag=True,
+    ),
+    SectionSpec(
+        id="climate",
+        title="Organisational Climate & Alignment Analysis",
+        min_words=240, max_words=340,
+        guidance="Analyze the organizational climate, culture, and degree of strategic alignment.",
+        data_keys=("behavioral_stage", "revised_employee_model_weights"),
+    ),
+    SectionSpec(
+        id="policy_gap",
+        title="Policy–Practice Gap Assessment",
+        min_words=220, max_words=320,
+        guidance="Identify gaps between stated policies and actual practices within the organization.",
+        data_keys=("behavioral_stage",),
+    ),
+    SectionSpec(
+        id="leadership",
+        title="Leadership Consistency & Strategic Disconnect",
+        min_words=220, max_words=320,
+        guidance="Evaluate leadership consistency and identify strategic disconnects across levels.",
+        data_keys=("behavioral_stage",),
+    ),
+    SectionSpec(
+        id="alignment_profile",
+        title="Full 4D Alignment Profile",
+        min_words=220, max_words=320,
+        guidance="Describe the full 4D alignment profile across employee, boss, department, and company dimensions.",
+        data_keys=("behavioral_stage", "revised_employee_model_weights"),
+    ),
+    SectionSpec(
+        id="emotional_map",
+        title="Individual's Position in the Organisational Emotional Map",
+        min_words=200, max_words=300,
+        guidance="Locate the individual's position within the broader organizational emotional landscape.",
+        data_keys=("behavioral_stage", "employee_questionnaire"),
+    ),
+    SectionSpec(
+        id="swot",
+        title="Cumulative SWOT Overlay",
+        min_words=300, max_words=420,
+        guidance=(
+            "Provide a cumulative SWOT across Employee, Boss, Dept, and Company. "
+            "Include ALL four quadrants with at least 3 numbered points each: "
+            "Strengths, Weaknesses, Opportunities, and Threats. This section is MANDATORY."
+        ),
+        data_keys=("behavioral_stage", "employee_questionnaire", "revised_employee_model_weights"),
+    ),
+    SectionSpec(
+        id="cultural_fit",
+        title="Psychological & Cultural Fit Map",
+        min_words=200, max_words=300,
+        guidance="Map the individual's psychological profile against the organizational culture and values.",
+        data_keys=("behavioral_stage",),
+    ),
+    SectionSpec(
+        id="interventions",
+        title="Action Navigator – Organisation-Level Interventions",
+        min_words=240, max_words=340,
+        guidance="Provide targeted organizational interventions and an action plan for leadership.",
+        data_keys=("behavioral_stage",),
+    ),
+    SectionSpec(
+        id="strategic_value",
+        title="Strategic Value & Leadership Insights",
+        min_words=220, max_words=320,
+        guidance="Summarize strategic value, key leadership insights, and forward-looking recommendations.",
+        data_keys=("behavioral_stage", "revised_employee_model_weights"),
+    ),
+]
+
 
 
 REPORT_SPECS: Dict[str, List[SectionSpec]] = {
     "employee": SECTION_SPECS_EMPLOYEE,
     "boss": SECTION_SPECS_BOSS,
+    "team": SECTION_SPECS_TEAM,
+    "organization": SECTION_SPECS_ORGANIZATION,
 }
 
-# ✅ NEW: Map of report types for each dimension
+
+# ✅ Map of report types for each dimension
 REPORT_TYPE_MAP = {
     "1D": ["employee"],
     "2D": ["employee", "boss"],
     "3D": ["employee", "boss", "team"],
-    "4D": ["employee", "boss", "team", "organization"]
+    "4D": ["employee", "boss", "team", "organization"],
 }
 
 # Default report type when generating a single report per dimension
@@ -1931,6 +2122,11 @@ RULES:
                 return True
         return False
 
+    def _section_id(section: Any) -> str:
+        if not isinstance(section, dict):
+            return ""
+        return str(section.get("id", "")).strip().lower()
+
     # If response looks truncated/incomplete, split into 2 half-batches.
     result = None
     try:
@@ -2043,6 +2239,94 @@ Rules:
             "report_type": report_type,
             "sections": all_sections,
         }
+
+    # Post-recovery: if sections are still missing, regenerate only missing ones.
+    if specs and isinstance(result.get("sections"), list):
+        existing_by_id: Dict[str, Dict[str, Any]] = {}
+        extras: List[Dict[str, Any]] = []
+        for sec in result["sections"]:
+            if not isinstance(sec, dict):
+                continue
+            sid = _section_id(sec)
+            if sid and sid not in existing_by_id:
+                existing_by_id[sid] = sec
+            elif not sid:
+                extras.append(sec)
+
+        missing_specs = [s for s in specs if s.id.lower() not in existing_by_id]
+        if missing_specs:
+            print(f"[{report_type}] Missing {len(missing_specs)} section(s) after parse recovery. Refilling by section-id...")
+
+            chunk_size = 3 if report_type in mandatory_swot_types else 4
+            for start in range(0, len(missing_specs), chunk_size):
+                chunk_specs = missing_specs[start:start + chunk_size]
+                chunk_schema = json.dumps(
+                    [
+                        {
+                            "id": s.id,
+                            "title": s.title,
+                            "target_words": _target_words_for_fast_json(s),
+                        }
+                        for s in chunk_specs
+                    ],
+                    indent=2,
+                )
+                chunk_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
+{rag_context}
+
+INPUT DATA:
+{json.dumps(slim_data, indent=2)}
+
+MISSING SECTION SCHEMA (generate EXACTLY these section ids):
+{chunk_schema}
+
+OUTPUT FORMAT - MANDATORY:
+Return ONLY a valid JSON array:
+[
+  {{"id": "<id>", "title": "<title>", "paragraphs": ["<para1>", "<para2>"]}}
+]
+Rules:
+- Generate ONLY the sections listed above.
+- Keep 2-3 concise paragraphs per section.
+- Use only provided data.
+- Return only JSON array, no markdown fences."""
+
+                chunk_sections: List[Dict[str, Any]] = []
+                for model in fallback_chain:
+                    try:
+                        client = create_groq_client()
+                        chunk_resp = client.chat.completions.create(
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": chunk_prompt},
+                            ],
+                            temperature=0.2,
+                            max_tokens=max_tokens_batch,
+                        )
+                        chunk_raw = (chunk_resp.choices[0].message.content or "").strip()
+                        chunk_sections = _parse_sections_array(chunk_raw)
+                        if chunk_sections:
+                            break
+                    except Exception as exc:
+                        if _is_rate_limited_error(str(exc)):
+                            continue
+                        print(f"[{report_type}] missing-section refill model '{model}' error: {exc}")
+
+                for sec in chunk_sections:
+                    sid = _section_id(sec)
+                    if sid and sid not in existing_by_id:
+                        existing_by_id[sid] = sec
+
+            # Rebuild in spec order for consistency
+            rebuilt: List[Dict[str, Any]] = []
+            for spec in specs:
+                sid = spec.id.lower()
+                sec = existing_by_id.get(sid)
+                if sec:
+                    rebuilt.append(sec)
+            rebuilt.extend(extras)
+            result["sections"] = rebuilt
 
     result.setdefault("title", report_title)
     result.setdefault("report_type", report_type)

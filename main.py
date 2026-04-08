@@ -28,6 +28,8 @@ from api.html_report_routes import router as html_router
 from api.json_report_routes import router as json_router
 from api.employee_routes import setup_routes as make_employee_router
 
+from typing import Optional
+from fastapi import Header, HTTPException
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -117,6 +119,24 @@ async def health_check() -> Dict[str, Any]:
         "queue": report_queue.get_queue_stats(),
     }
 
+
+
+def resolve_frappe_auth(
+    authorization: Optional[str],
+    x_frappe_api_key: Optional[str],
+    x_frappe_api_secret: Optional[str],
+    x_api_key: Optional[str],
+    x_api_secret: Optional[str],
+):
+    if authorization:
+        return authorization.strip()
+
+    key = x_frappe_api_key or x_api_key
+    secret = x_frappe_api_secret or x_api_secret
+    if key and secret:
+        return f"token {key}:{secret}"
+
+    raise HTTPException(status_code=401, detail="Missing Frappe auth headers")
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 

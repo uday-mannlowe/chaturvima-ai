@@ -58,11 +58,11 @@ def is_swot_section(section_id: Any, section_title: Any) -> bool:
 def build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str, List[str]]:
     """Parse free-text SWOT paragraphs into structured S/W/O/T lists."""
     swot: Dict[str, List[str]] = {
-        "strengths": [], "weaknesses": [], "opportunities": [], "threat": []
+        "strengths": [], "weaknesses": [], "opportunities": [], "threats": []
     }
     keyword_map = {
         "strength": "strengths", "weakness": "weaknesses",
-        "opportunit": "opportunities", "threat": "threat",
+        "opportunit": "opportunities", "threat": "threats",
     }
     current_key = "strengths"
     for para in paragraphs:
@@ -76,12 +76,12 @@ def build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str,
     return swot
 
 
-_SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threat")
+_SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threats")
 _SWOT_LABELS = {
     "strengths": "Strengths",
     "weaknesses": "Weaknesses",
     "opportunities": "Opportunities",
-    "threat": "threat",
+    "threats": "Threats",
 }
 _SWOT_SECTION_TITLES = {
     "employee": "Individual SWOT Analysis",
@@ -96,10 +96,10 @@ def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
     if not isinstance(raw_swot, dict):
         return normalized
 
-    # Backward compatibility: older payloads may use "threats".
-    if "threat" not in raw_swot and "threats" in raw_swot:
+    # Backward compatibility: older payloads may use "threat" (singular).
+    if "threats" not in raw_swot and "threat" in raw_swot:
         raw_swot = dict(raw_swot)
-        raw_swot["threat"] = raw_swot.get("threats", [])
+        raw_swot["threats"] = raw_swot.get("threat", [])
 
     for key in _SWOT_KEYS:
         values = raw_swot.get(key, [])
