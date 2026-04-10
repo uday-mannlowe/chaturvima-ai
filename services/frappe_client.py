@@ -49,11 +49,13 @@ def _token_from_payload(payload: Optional[Dict[str, Any]]) -> Optional[str]:
     if not isinstance(payload, dict):
         return None
 
-    for key in ("_frappe_auth", "frappe_auth_token", "frappe_token", "frappe_authorization"):
+    # Check pre-built token strings first
+    for key in ("frappe_auth_token", "_frappe_auth", "frappe_token", "frappe_authorization"):
         token = _normalize_optional_str(payload.get(key))
         if token and token.lower().startswith("token "):
             return token
 
+    # Build token from key+secret pair
     token = _token_from_key_secret(payload.get("frappe_api_key"), payload.get("frappe_api_secret"))
     if token:
         return token
@@ -66,14 +68,18 @@ def resolve_frappe_auth_token(
     payload: Optional[Dict[str, Any]] = None,
     explicit_auth: Optional[str] = None,
 ) -> Optional[str]:
+    # 1. Explicit auth takes highest priority
     token = _normalize_optional_str(explicit_auth)
     if token and token.lower().startswith("token "):
         return token
 
+    # 2. Payload body (frappe_auth_token, frappe_api_key+secret, etc.)
     token = _token_from_payload(payload)
     if token:
         return token
 
+    # 3. Request headers — ONLY used when no explicit/payload auth is present.
+    #    This prevents Frappe session cookies/headers from overriding API tokens.
     token = _token_from_request_headers(request)
     if token:
         return token
@@ -90,14 +96,29 @@ def frappe_headers(
     Build Frappe auth headers.
 
     Priority:
-      1. Runtime token from explicit auth / payload / request headers
-      2. Fall back to .env admin/user credentials when runtime token is missing
+      1. explicit_auth (pre-built token string)
+      2. payload body  (frappe_auth_token / frappe_api_key+secret)
+      3. request headers — only when explicit_auth AND payload both have nothing
+      4. .env fallback  (FRAPPE_API_KEY + FRAPPE_API_SECRET)
+      5. .env username/password
+
+    IMPORTANT: When explicit_auth is provided, request is intentionally ignored
+    so that incoming Frappe session headers do not override the API token.
     """
+    # If explicit_auth is set, resolve ONLY from explicit+payload — skip request headers
+    if explicit_auth:
+        token = _normalize_optional_str(explicit_auth)
+        if token and token.lower().startswith("token "):
+            print("[FRAPPE_AUTH] using explicit_auth token")
+            return {"Authorization": token, "Content-Type": "application/json"}
+
+    # Full resolution including request headers
     runtime_auth = resolve_frappe_auth_token(request=request, payload=payload, explicit_auth=explicit_auth)
     if runtime_auth:
         print("[FRAPPE_AUTH] using runtime token from request/payload")
         return {"Authorization": runtime_auth, "Content-Type": "application/json"}
 
+    # Fallback to .env credentials
     if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
         print("[FRAPPE_AUTH] using fallback admin key from .env")
         return {
@@ -143,7 +164,6 @@ def _normalize_sub_stage_value(value: str) -> str:
 
 
 def _strip_stage_suffix(value: str) -> str:
-    # "Acknowledgment of Problems - Self-Introspection" -> "Acknowledgment of Problems"
     return re.sub(r"\s*-\s*[\w\s]+$", "", value).strip()
 
 
@@ -168,7 +188,6 @@ def _sub_stage_candidates(sub_stage: str) -> List[str]:
     _add(stripped.lower())
     _add(stripped.title())
 
-    # Hyphen/no-hyphen variants
     _add(base.replace(" - ", "-"))
     _add(base.replace(" - ", " "))
 
@@ -199,17 +218,14 @@ def collect_child_row_texts(rows: Any) -> List[str]:
 
 
 def extract_swot_lists(swot_doc: Dict[str, Any]) -> Dict[str, List[str]]:
-    # NOTE: Frappe's Threat child table uses 'desription' (typo, missing 'c').
-    # collect_child_row_texts already handles this via its 'desription' fallback.
     return {
         "strengths":     collect_child_row_texts(swot_doc.get("strength")     or swot_doc.get("strengths",     [])),
         "weaknesses":    collect_child_row_texts(swot_doc.get("weakness")     or swot_doc.get("weaknesses",    [])),
         "opportunities": collect_child_row_texts(swot_doc.get("opportunity")  or swot_doc.get("opportunities", [])),
-        "threat":       collect_child_row_texts(swot_doc.get("threat")       or swot_doc.get("threat",       [])),
+        "threat":        collect_child_row_texts(swot_doc.get("threat")       or swot_doc.get("threat",        [])),
     }
 
 
-# Frappe metadata keys to strip from child-table rows (internal Frappe fields, not content)
 _FRAPPE_META_KEYS = frozenset({
     "idx", "doctype", "parent", "parenttype", "parentfield",
     "owner", "creation", "modified", "modified_by", "docstatus", "name",
@@ -218,11 +234,6 @@ _FRAPPE_META_KEYS = frozenset({
 
 
 def collect_child_row_dicts(rows: Any) -> List[Dict[str, Any]]:
-    """
-    Return each Frappe child-table row as a plain dict, preserving all
-    content fields exactly as returned by the API.
-    Strips only Frappe internal metadata keys (idx, parent, doctype, etc.).
-    """
     if not isinstance(rows, list):
         return []
     result: List[Dict[str, Any]] = []
@@ -237,20 +248,6 @@ def collect_child_row_dicts(rows: Any) -> List[Dict[str, Any]]:
 
 
 def extract_full_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Extract all 6 required fields from the SWOT Frappe doc, preserving
-    the original row data exactly as returned by the API.
-
-    Fields:
-        strengths        — child table 'strength'
-        weaknesses       — child table 'weakness'
-        opportunities    — child table 'opportunity'
-        threat          — child table 'threat'
-        recommendations  — child table 'reccomendation' (Frappe typo preserved)
-        actionable_steps — child table 'actionable_steps'
-        sub_stage        — string label
-        strategic_recommendations — free-text field
-    """
     return {
         "source": "frappe_swot",
         "sub_stage": (swot_doc.get("sub_stage") or swot_doc.get("name") or "").strip(),
@@ -263,11 +260,11 @@ def extract_full_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
         "opportunities": collect_child_row_dicts(
             swot_doc.get("opportunity")  or swot_doc.get("opportunities", [])
         ),
-        "threat":       collect_child_row_dicts(
-            swot_doc.get("threat")       or swot_doc.get("threat",       [])
+        "threat":        collect_child_row_dicts(
+            swot_doc.get("threat")       or swot_doc.get("threat",        [])
         ),
         "recommendations": collect_child_row_dicts(
-            swot_doc.get("reccomendation")   # Frappe typo kept as-is
+            swot_doc.get("reccomendation")
             or swot_doc.get("recommendation")
             or swot_doc.get("recommendations")
             or []
@@ -313,7 +310,6 @@ def map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
         for idx, row in enumerate(rec_rows, start=1):
             if not isinstance(row, dict):
                 continue
-
             title = (row.get("recommendations_title") or row.get("title") or "").strip() or None
             description = (
                 row.get("recommendations_description")
@@ -321,7 +317,6 @@ def map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
                 or row.get("desription")
                 or ""
             ).strip() or None
-
             if title:
                 principles.append(title)
             if title or description:
@@ -335,10 +330,10 @@ def map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
     framework_name = (swot_doc.get("sub_stage") or "").strip() or "SWOT Strategic Recommendations"
     return {
         "individual_swot": {
-            "strengths": build_swot_items(swot_lists["strengths"], "Strength"),
-            "weaknesses": build_swot_items(swot_lists["weaknesses"], "Weakness"),
+            "strengths":     build_swot_items(swot_lists["strengths"],     "Strength"),
+            "weaknesses":    build_swot_items(swot_lists["weaknesses"],    "Weakness"),
             "opportunities": build_swot_items(swot_lists["opportunities"], "Opportunity"),
-            "threat":       build_swot_items(swot_lists["threat"],       "Threat"),
+            "threat":        build_swot_items(swot_lists["threat"],        "Threat"),
         },
         "recommendation_framework": {
             "framework_name": framework_name,
@@ -351,7 +346,7 @@ def map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
 async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -> Optional[Dict[str, Any]]:
     """
     Fetch SWOT doc from Frappe.
-    user_auth: runtime auth string like 'token api_key:api_secret'.
+    user_auth: pre-built token string like 'token api_key:api_secret'.
     """
     if not sub_stage:
         return None
@@ -361,7 +356,7 @@ async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -
         headers = {"Authorization": runtime_auth, "Content-Type": "application/json"}
         print(f"[FRAPPE_SWOT] using runtime token for sub_stage='{sub_stage}'")
     else:
-        headers = frappe_headers()  # fallback to .env admin/user creds
+        headers = frappe_headers()
         print(f"[FRAPPE_SWOT] runtime token missing for sub_stage='{sub_stage}', using fallback creds")
 
     lookup_candidates = _sub_stage_candidates(sub_stage)
@@ -369,7 +364,6 @@ async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -
         lookup_candidates = [sub_stage]
 
     async with httpx.AsyncClient(timeout=30) as client:
-        # Fast path: direct doc lookup with candidate variants
         for candidate in lookup_candidates:
             direct_url = frappe_swot_doc_url(candidate)
             try:
@@ -385,7 +379,6 @@ async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -
             except Exception as exc:
                 print(f"[FRAPPE_SWOT] direct lookup failed for '{candidate}': {exc}")
 
-        # Fallback: filter search (exact first, then like)
         list_url = f"{Config.FRAPPE_RESOURCE_BASE_URL}/SWOT%20Analysis"
         seen_filters = set()
         filter_specs: List[List[List[str]]] = []

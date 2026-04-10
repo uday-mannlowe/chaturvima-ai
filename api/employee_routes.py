@@ -56,7 +56,7 @@ def _optional_payload_str(payload: Dict[str, Any], key: str) -> Optional[str]:
 
 
 def _resolve_runtime_frappe_auth(payload: Dict[str, Any], request: Request) -> Optional[str]:
-    payload_api_key = _optional_payload_str(payload, "frappe_api_key")
+    payload_api_key    = _optional_payload_str(payload, "frappe_api_key")
     payload_api_secret = _optional_payload_str(payload, "frappe_api_secret")
     if bool(payload_api_key) != bool(payload_api_secret):
         raise HTTPException(
@@ -74,7 +74,16 @@ def _resolve_runtime_frappe_auth(payload: Dict[str, Any], request: Request) -> O
             detail="'frappe_auth_token' must start with 'token '.",
         )
 
-    return resolve_frappe_auth_token(request=request, payload=payload)
+    # ── KEY FIX ───────────────────────────────────────────────────────────────
+    # Resolve token from payload FIRST. Only fall back to request headers if
+    # the payload has no credentials. This prevents incoming Frappe session
+    # cookies/headers from overriding the API token we received in the payload.
+    # ─────────────────────────────────────────────────────────────────────────
+    token_from_payload = resolve_frappe_auth_token(request=None, payload=payload)
+    if token_from_payload:
+        return token_from_payload
+
+    return resolve_frappe_auth_token(request=request, payload=None)
 
 
 def _extract_dimension_code(value: Any) -> Optional[str]:
@@ -99,11 +108,13 @@ def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, A
 
 
 async def _validate_assessment_exists(
-    request: Request,
     employee_id: str,
     cycle_name: Optional[str],
     submission_id: Optional[str],
-    frappe_auth: Optional[str] = None,
+    frappe_auth: Optional[str],
+    # NOTE: request is intentionally NOT accepted here.
+    # We always use frappe_auth (explicit token) so request headers
+    # cannot interfere with auth resolution.
 ) -> None:
     params = frappe_query_params(
         employee_id,
@@ -116,12 +127,15 @@ async def _validate_assessment_exists(
         "submission_id": submission_id,
     }
 
+    # Pass explicit_auth only — no request object — so the token is used directly
+    headers = frappe_headers(explicit_auth=frappe_auth)
+
     async with httpx.AsyncClient(timeout=30) as client:
         try:
             resp = await client.get(
                 Config.FRAPPE_BASE_URL,
                 params=params,
-                headers=frappe_headers(request=request, explicit_auth=frappe_auth),
+                headers=headers,
             )
             resp.raise_for_status()
         except httpx.TimeoutException as exc:
@@ -294,6 +308,8 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
         submission_id = _optional_payload_str(payload, "submission_id")
         cycle_name = _normalize_optional_str(payload.get("cycle_name"))
         force_regenerate = bool(payload.get("force_regenerate", False))
+
+        # Resolve auth from payload first, then request headers as fallback
         runtime_frappe_auth = _resolve_runtime_frappe_auth(payload=payload, request=request)
 
         if not force_regenerate:
@@ -352,11 +368,12 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
         if cycle_name:
             job_payload["cycle_name"] = cycle_name
         if runtime_frappe_auth:
+            # Store as _frappe_auth so worker_pool picks it up via explicit_auth
             job_payload["_frappe_auth"] = runtime_frappe_auth
 
-        # Fail fast for invalid employee/cycle/submission combinations.
+        # Validate assessment exists — pass explicit token only, no request object
+        # to prevent Frappe session headers from overriding the API token
         await _validate_assessment_exists(
-            request=request,
             employee_id=employee_id,
             cycle_name=cycle_name,
             submission_id=submission_id,
