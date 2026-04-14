@@ -105,6 +105,24 @@ def frappe_headers(
     IMPORTANT: When explicit_auth is provided, request is intentionally ignored
     so that incoming Frappe session headers do not override the API token.
     """
+    if Config.FORCE_STATIC_FRAPPE_AUTH:
+        if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+            print("[FRAPPE_AUTH] static mode enabled; using configured admin key")
+            return {
+                "Authorization": f"token {Config.FRAPPE_API_KEY}:{Config.FRAPPE_API_SECRET}",
+                "Content-Type": "application/json",
+            }
+
+        if Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
+            creds = base64.b64encode(
+                f"{Config.FRAPPE_USERNAME}:{Config.FRAPPE_PASSWORD}".encode()
+            ).decode()
+            print("[FRAPPE_AUTH] static mode enabled; using configured username/password")
+            return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
+
+        print("[FRAPPE_AUTH] static mode enabled but no fallback credentials found")
+        return {"Content-Type": "application/json"}
+
     # If explicit_auth is set, resolve ONLY from explicit+payload — skip request headers
     if explicit_auth:
         token = _normalize_optional_str(explicit_auth)
@@ -351,13 +369,17 @@ async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -
     if not sub_stage:
         return None
 
-    runtime_auth = resolve_frappe_auth_token(explicit_auth=user_auth)
-    if runtime_auth:
-        headers = {"Authorization": runtime_auth, "Content-Type": "application/json"}
-        print(f"[FRAPPE_SWOT] using runtime token for sub_stage='{sub_stage}'")
-    else:
+    if Config.FORCE_STATIC_FRAPPE_AUTH:
         headers = frappe_headers()
-        print(f"[FRAPPE_SWOT] runtime token missing for sub_stage='{sub_stage}', using fallback creds")
+        print(f"[FRAPPE_SWOT] static auth mode enabled for sub_stage='{sub_stage}'")
+    else:
+        runtime_auth = resolve_frappe_auth_token(explicit_auth=user_auth)
+        if runtime_auth:
+            headers = {"Authorization": runtime_auth, "Content-Type": "application/json"}
+            print(f"[FRAPPE_SWOT] using runtime token for sub_stage='{sub_stage}'")
+        else:
+            headers = frappe_headers()
+            print(f"[FRAPPE_SWOT] runtime token missing for sub_stage='{sub_stage}', using fallback creds")
 
     lookup_candidates = _sub_stage_candidates(sub_stage)
     if not lookup_candidates:

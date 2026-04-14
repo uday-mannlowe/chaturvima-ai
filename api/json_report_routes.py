@@ -43,6 +43,9 @@ def _optional_payload_str(payload: Dict[str, Any], key: str) -> Optional[str]:
 
 
 def _resolve_runtime_frappe_auth(payload: Dict[str, Any], request: Request) -> Optional[str]:
+    if Config.FORCE_STATIC_FRAPPE_AUTH:
+        return None
+
     payload_api_key = _optional_payload_str(payload, "frappe_api_key")
     payload_api_secret = _optional_payload_str(payload, "frappe_api_secret")
     if bool(payload_api_key) != bool(payload_api_secret):

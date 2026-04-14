@@ -14,6 +14,7 @@ class Config:
     MAX_CONCURRENT_GENERATIONS = int(os.getenv("MAX_CONCURRENT_GENERATIONS", "5"))
     MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE", "100"))
 
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
     GROQ_RATE_LIMIT_PER_MINUTE = int(os.getenv("GROQ_RATE_LIMIT_PER_MINUTE", "30"))
     GROQ_TIMEOUT_SECONDS = int(os.getenv("GROQ_TIMEOUT_SECONDS", "120"))
 
@@ -39,6 +40,9 @@ class Config:
     FRAPPE_API_SECRET = os.getenv("FRAPPE_API_SECRET", "")
     FRAPPE_USERNAME   = os.getenv("FRAPPE_USERNAME", "")
     FRAPPE_PASSWORD   = os.getenv("FRAPPE_PASSWORD", "")
+    # Temporary safety switch: keep Frappe auth static (configured creds) until
+    # runtime/dynamic auth flow is stabilized.
+    FORCE_STATIC_FRAPPE_AUTH = os.getenv("FORCE_STATIC_FRAPPE_AUTH", "true").lower() == "true"
 
     CORS_ALLOWED_ORIGINS = [
         origin.strip()

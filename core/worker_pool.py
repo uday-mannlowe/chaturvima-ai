@@ -124,7 +124,7 @@ RULES:
 - Do NOT wrap in markdown code fences."""
 
     from generate_groq import GLOBAL_MODEL_FALLBACKS, MODEL_NAME, _dedupe_models, _is_rate_limited_error
-    groq_key = os.getenv("GROQ_API_KEY", "")
+    groq_key = Config.GROQ_API_KEY
     fallback_chain = _dedupe_models(
         [os.getenv("GROQ_MODEL_1D", MODEL_NAME)] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME]
     )

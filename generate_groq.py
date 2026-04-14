@@ -9,6 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from groq import Groq
 from typing import List, Dict, Any, Tuple
+from core.config import Config
 
 # RAG imports
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -18,10 +19,10 @@ from langchain_community.vectorstores import FAISS
 # LOAD ENV
 
 load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY = Config.GROQ_API_KEY
 
 if not GROQ_API_KEY:
-    raise ValueError("❌ GROQ_API_KEY not found in .env")
+    raise ValueError("GROQ_API_KEY not configured")
 
 # INIT GROQ CLIENT
 def create_groq_client() -> Groq:
@@ -3078,3 +3079,4 @@ def _main() -> None:
 
 if __name__ == "__main__":
     _main()
+

@@ -94,7 +94,10 @@ async def startup_event():
     print(f"Queue Size:  {Config.MAX_QUEUE_SIZE}")
     print(f"Rate Limit:  {Config.GROQ_RATE_LIMIT_PER_MINUTE}/min")
     print(f"Storage:     {storage_backend_name()}")
-    print("Frappe auth: runtime token preferred, .env fallback enabled")
+    if Config.FORCE_STATIC_FRAPPE_AUTH:
+        print("Frappe auth: static mode enabled (configured fallback credentials only)")
+    else:
+        print("Frappe auth: runtime token preferred, .env fallback enabled")
     print("="*60 + "\n")
     initialize_report_storage()
     cleanup_old_per_type_files()
