@@ -48,14 +48,14 @@ class Config:
         origin.strip()
         for origin in os.getenv(
             "CORS_ALLOWED_ORIGINS",
-            "http://localhost:5173,http://127.0.0.1:5173",
+            "*",
         ).split(",")
         if origin.strip()
     ]
     CORS_ALLOWED_ORIGIN_REGEX = (
         os.getenv(
             "CORS_ALLOWED_ORIGIN_REGEX",
-            r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+            "",
         ).strip()
         or None
     )

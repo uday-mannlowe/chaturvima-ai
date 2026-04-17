@@ -7,6 +7,7 @@ All logic lives in sub-packages:
   services/   — frappe_client, report_renderer, report_storage
   api/        — html_report_routes, employee_routes, json_report_routes
 """
+import re
 from typing import Any, Dict
 
 import uvicorn
@@ -46,20 +47,38 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
     Avoids the allow_origins=['*'] + credentials conflict while still being
     open to all origins (dev/staging/prod without extra config).
     """
+    @staticmethod
+    def _is_allowed_origin(origin: str) -> bool:
+        if not origin:
+            return False
+        if "*" in Config.CORS_ALLOWED_ORIGINS:
+            return True
+        if origin in Config.CORS_ALLOWED_ORIGINS:
+            return True
+        if Config.CORS_ALLOWED_ORIGIN_REGEX and re.match(Config.CORS_ALLOWED_ORIGIN_REGEX, origin):
+            return True
+        return False
+
     async def dispatch(self, request: Request, call_next):
         origin = request.headers.get("origin", "")
-        if request.method == "OPTIONS" and origin:
+        allowed = self._is_allowed_origin(origin)
+        allow_credentials = "true" if Config.CORS_ALLOW_CREDENTIALS else "false"
+        allow_methods = ", ".join(Config.CORS_ALLOW_METHODS or ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"])
+        allow_headers = ", ".join(Config.CORS_ALLOW_HEADERS or ["Authorization", "Content-Type", "Accept", "X-Requested-With"])
+
+        if request.method == "OPTIONS" and origin and allowed:
             response = Response(status_code=200)
             response.headers["Access-Control-Allow-Origin"]   = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Methods"]  = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-            response.headers["Access-Control-Allow-Headers"]  = "Authorization, Content-Type, Accept, X-Requested-With"
+            response.headers["Access-Control-Allow-Credentials"] = allow_credentials
+            response.headers["Access-Control-Allow-Methods"]  = allow_methods
+            response.headers["Access-Control-Allow-Headers"]  = allow_headers
             response.headers["Access-Control-Max-Age"]        = "600"
             return response
+
         response = await call_next(request)
-        if origin:
+        if origin and allowed:
             response.headers["Access-Control-Allow-Origin"]      = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Credentials"] = allow_credentials
         return response
 
 app.add_middleware(DynamicCORSMiddleware)
@@ -95,7 +114,10 @@ async def startup_event():
     print(f"Rate Limit:  {Config.GROQ_RATE_LIMIT_PER_MINUTE}/min")
     print(f"Storage:     {storage_backend_name()}")
     if Config.FORCE_STATIC_FRAPPE_AUTH:
-        print("Frappe auth: static mode enabled (configured fallback credentials only)")
+        if (Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET) or (Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD):
+            print("Frappe auth: static mode enabled (using configured fallback credentials)")
+        else:
+            print("Frappe auth: static mode enabled (no static creds found, runtime fallback allowed)")
     else:
         print("Frappe auth: runtime token preferred, .env fallback enabled")
     print("="*60 + "\n")

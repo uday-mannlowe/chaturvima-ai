@@ -120,8 +120,7 @@ def frappe_headers(
             print("[FRAPPE_AUTH] static mode enabled; using configured username/password")
             return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
 
-        print("[FRAPPE_AUTH] static mode enabled but no fallback credentials found")
-        return {"Content-Type": "application/json"}
+        print("[FRAPPE_AUTH] static mode enabled but no static credentials found; falling back to runtime token resolution")
 
     # If explicit_auth is set, resolve ONLY from explicit+payload — skip request headers
     if explicit_auth:
@@ -370,8 +369,8 @@ async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -
         return None
 
     if Config.FORCE_STATIC_FRAPPE_AUTH:
-        headers = frappe_headers()
-        print(f"[FRAPPE_SWOT] static auth mode enabled for sub_stage='{sub_stage}'")
+        headers = frappe_headers(explicit_auth=user_auth)
+        print(f"[FRAPPE_SWOT] static auth mode enabled for sub_stage='{sub_stage}' (runtime fallback allowed)")
     else:
         runtime_auth = resolve_frappe_auth_token(explicit_auth=user_auth)
         if runtime_auth:
