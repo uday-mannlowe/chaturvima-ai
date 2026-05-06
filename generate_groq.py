@@ -2283,68 +2283,56 @@ Rules:
 
         missing_specs = [s for s in specs if s.id.lower() not in existing_by_id]
         if missing_specs:
-            print(f"[{report_type}] Missing {len(missing_specs)} section(s) after parse recovery. Refilling by section-id...")
+            print(f"[{report_type}] Missing {len(missing_specs)} section(s) after batch recovery. Refilling one-by-one...")
 
-            chunk_size = 3 if report_type in mandatory_swot_types else 4
-            for start in range(0, len(missing_specs), chunk_size):
-                chunk_specs = missing_specs[start:start + chunk_size]
-                chunk_schema = json.dumps(
-                    [
-                        {
-                            "id": s.id,
-                            "title": s.title,
-                            "target_words": _target_words_for_fast_json(s),
-                        }
-                        for s in chunk_specs
-                    ],
+            # Refill each missing section INDIVIDUALLY — one LLM call per section.
+            # This is the most reliable recovery: tiny prompt, no truncation risk.
+            for missing_spec in missing_specs:
+                single_schema = json.dumps(
+                    [{"id": missing_spec.id, "title": missing_spec.title,
+                      "target_words": _target_words_for_fast_json(missing_spec)}],
                     indent=2,
                 )
-                chunk_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
+                single_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
 {rag_context}
 
 INPUT DATA:
 {json.dumps(slim_data, indent=2)}
 
-MISSING SECTION SCHEMA (generate EXACTLY these section ids):
-{chunk_schema}
+Generate ONLY this ONE section:
+{single_schema}
 
 OUTPUT FORMAT - MANDATORY:
-Return ONLY a valid JSON array:
-[
-  {{"id": "<id>", "title": "<title>", "paragraphs": ["<para1>", "<para2>"]}}
-]
-Rules:
-- Generate ONLY the sections listed above.
-- Keep 2-3 concise paragraphs per section.
+Return ONLY a valid JSON array with exactly 1 object:
+[{{"id": "{missing_spec.id}", "title": "{missing_spec.title}", "paragraphs": ["<para1>", "<para2>", "<para3>"]}}]
+- 2-3 paragraphs, 60-90 words each.
 - Use only provided data.
-- Return only JSON array, no markdown fences."""
+- Return ONLY the JSON array, no markdown fences."""
 
-                chunk_sections: List[Dict[str, Any]] = []
                 for model in fallback_chain:
                     try:
                         client = create_groq_client()
-                        chunk_resp = client.chat.completions.create(
+                        single_resp = client.chat.completions.create(
                             model=model,
                             messages=[
                                 {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": chunk_prompt},
+                                {"role": "user",   "content": single_prompt},
                             ],
                             temperature=0.2,
-                            max_tokens=max_tokens_batch,
+                            max_tokens=1200,
                         )
-                        chunk_raw = (chunk_resp.choices[0].message.content or "").strip()
-                        chunk_sections = _parse_sections_array(chunk_raw)
-                        if chunk_sections:
-                            break
+                        single_raw = (single_resp.choices[0].message.content or "").strip()
+                        single_sections = _parse_sections_array(single_raw)
+                        for sec in single_sections:
+                            sid = _section_id(sec)
+                            if sid and sid not in existing_by_id:
+                                existing_by_id[sid] = sec
+                                print(f"[{report_type}] ✅ Refilled section '{missing_spec.id}'")
+                        break
                     except Exception as exc:
                         if _is_rate_limited_error(str(exc)):
                             continue
-                        print(f"[{report_type}] missing-section refill model '{model}' error: {exc}")
-
-                for sec in chunk_sections:
-                    sid = _section_id(sec)
-                    if sid and sid not in existing_by_id:
-                        existing_by_id[sid] = sec
+                        print(f"[{report_type}] refill '{missing_spec.id}' model '{model}' error: {exc}")
 
             # Rebuild in spec order for consistency
             rebuilt: List[Dict[str, Any]] = []
