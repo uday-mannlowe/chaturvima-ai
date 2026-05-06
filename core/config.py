@@ -36,13 +36,13 @@ class Config:
     DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
     HTML_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "html_data")
 
-    FRAPPE_API_KEY    = os.getenv("FRAPPE_API_KEY", "")
-    FRAPPE_API_SECRET = os.getenv("FRAPPE_API_SECRET", "")
-    FRAPPE_USERNAME   = os.getenv("FRAPPE_USERNAME", "")
-    FRAPPE_PASSWORD   = os.getenv("FRAPPE_PASSWORD", "")
-    # Temporary safety switch: keep Frappe auth static (configured creds) until
-    # runtime/dynamic auth flow is stabilized.
-    FORCE_STATIC_FRAPPE_AUTH = os.getenv("FORCE_STATIC_FRAPPE_AUTH", "true").lower() == "true"
+    FRAPPE_API_KEY    = os.getenv("FRAPPE_API_KEY", "").strip()
+    FRAPPE_API_SECRET = os.getenv("FRAPPE_API_SECRET", "").strip()
+    FRAPPE_USERNAME   = os.getenv("FRAPPE_USERNAME", "").strip()
+    FRAPPE_PASSWORD   = os.getenv("FRAPPE_PASSWORD", "").strip()
+    # Optional escape hatch. Keep false for dynamic-first auth with configured
+    # fallback; true forces configured credentials before runtime credentials.
+    FORCE_STATIC_FRAPPE_AUTH = os.getenv("FORCE_STATIC_FRAPPE_AUTH", "false").lower() == "true"
 
     CORS_ALLOWED_ORIGINS = [
         origin.strip()

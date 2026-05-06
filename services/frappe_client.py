@@ -27,6 +27,25 @@ def _token_from_key_secret(api_key: Any, api_secret: Any) -> Optional[str]:
     return None
 
 
+def configured_frappe_auth_token() -> Optional[str]:
+    """Return the configured fallback API token, when both key and secret exist."""
+    return _token_from_key_secret(Config.FRAPPE_API_KEY, Config.FRAPPE_API_SECRET)
+
+
+def _configured_frappe_headers() -> Optional[dict]:
+    token = configured_frappe_auth_token()
+    if token:
+        return {"Authorization": token, "Content-Type": "application/json"}
+
+    if Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
+        creds = base64.b64encode(
+            f"{Config.FRAPPE_USERNAME}:{Config.FRAPPE_PASSWORD}".encode()
+        ).decode()
+        return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
+
+    return None
+
+
 def _token_from_request_headers(request: Optional[Request]) -> Optional[str]:
     if request is None:
         return None
@@ -67,6 +86,7 @@ def resolve_frappe_auth_token(
     request: Optional[Request] = None,
     payload: Optional[Dict[str, Any]] = None,
     explicit_auth: Optional[str] = None,
+    include_configured_fallback: bool = True,
 ) -> Optional[str]:
     # 1. Explicit auth takes highest priority
     token = _normalize_optional_str(explicit_auth)
@@ -84,6 +104,9 @@ def resolve_frappe_auth_token(
     if token:
         return token
 
+    if include_configured_fallback:
+        return configured_frappe_auth_token()
+
     return None
 
 
@@ -99,26 +122,17 @@ def frappe_headers(
       1. explicit_auth (pre-built token string)
       2. payload body  (frappe_auth_token / frappe_api_key+secret)
       3. request headers — only when explicit_auth AND payload both have nothing
-      4. .env fallback  (FRAPPE_API_KEY + FRAPPE_API_SECRET)
-      5. .env username/password
+      4. configured fallback  (FRAPPE_API_KEY + FRAPPE_API_SECRET)
+      5. configured username/password
 
     IMPORTANT: When explicit_auth is provided, request is intentionally ignored
     so that incoming Frappe session headers do not override the API token.
     """
     if Config.FORCE_STATIC_FRAPPE_AUTH:
-        if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+        configured_headers = _configured_frappe_headers()
+        if configured_headers:
             print("[FRAPPE_AUTH] static mode enabled; using configured admin key")
-            return {
-                "Authorization": f"token {Config.FRAPPE_API_KEY}:{Config.FRAPPE_API_SECRET}",
-                "Content-Type": "application/json",
-            }
-
-        if Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
-            creds = base64.b64encode(
-                f"{Config.FRAPPE_USERNAME}:{Config.FRAPPE_PASSWORD}".encode()
-            ).decode()
-            print("[FRAPPE_AUTH] static mode enabled; using configured username/password")
-            return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
+            return configured_headers
 
         print("[FRAPPE_AUTH] static mode enabled but no static credentials found; falling back to runtime token resolution")
 
@@ -130,25 +144,21 @@ def frappe_headers(
             return {"Authorization": token, "Content-Type": "application/json"}
 
     # Full resolution including request headers
-    runtime_auth = resolve_frappe_auth_token(request=request, payload=payload, explicit_auth=explicit_auth)
+    runtime_auth = resolve_frappe_auth_token(
+        request=request,
+        payload=payload,
+        explicit_auth=explicit_auth,
+        include_configured_fallback=False,
+    )
     if runtime_auth:
         print("[FRAPPE_AUTH] using runtime token from request/payload")
         return {"Authorization": runtime_auth, "Content-Type": "application/json"}
 
-    # Fallback to .env credentials
-    if Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET:
+    # Fallback to configured credentials
+    configured_headers = _configured_frappe_headers()
+    if configured_headers:
         print("[FRAPPE_AUTH] using fallback admin key from .env")
-        return {
-            "Authorization": f"token {Config.FRAPPE_API_KEY}:{Config.FRAPPE_API_SECRET}",
-            "Content-Type": "application/json",
-        }
-
-    if Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD:
-        creds = base64.b64encode(
-            f"{Config.FRAPPE_USERNAME}:{Config.FRAPPE_PASSWORD}".encode()
-        ).decode()
-        print("[FRAPPE_AUTH] using fallback username/password from .env")
-        return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
+        return configured_headers
 
     print("[FRAPPE_AUTH] no credentials found; protected endpoints may return 403")
     return {"Content-Type": "application/json"}

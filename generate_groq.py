@@ -1887,14 +1887,24 @@ def generate_report_as_json(
     dedicated_model = MODEL_BY_REPORT_TYPE_DEDICATED.get(report_type, MODEL_NAME)
     print(f"[{report_type.upper()}] Using dedicated model: {dedicated_model}")
 
+    # Detect large/verbose models BEFORE defining the inner function so the
+    # closure can reference it without a 'free variable' error.
+    _model_lower = dedicated_model.lower()
+    _is_large_model = any(
+        tok in _model_lower
+        for tok in ("scout", "70b", "llama-4", "maverick", "gemma-3")
+    )
+
     # Build a compact schema for fast JSON mode to reduce truncation risk.
     def _target_words_for_fast_json(spec: SectionSpec) -> int:
         if report_type == "employee":
-            if spec.id == "stage":
-                return 260
-            if spec.id == "action_plan":
-                return 220
+            if spec.id == "stage":       return 260
+            if spec.id == "action_plan": return 220
             return 130
+        # For large models use smaller per-section targets so the full report
+        # fits inside the output token budget in a single call.
+        if _is_large_model:
+            return min(max(80, spec.min_words // 3), 110)
         return min(max(140, spec.min_words), 260)
 
     specs = REPORT_SPECS.get(report_type, [])
@@ -1980,8 +1990,14 @@ RULES:
     fallback_chain = _dedupe_models([dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME])
 
     import time as _time, random
-    max_tokens_main = int(os.getenv("JSON_REPORT_MAX_TOKENS", "4000"))
-    max_tokens_batch = int(os.getenv("JSON_REPORT_BATCH_MAX_TOKENS", "2800"))
+    # Large models (Scout/70B/Llama-4) are verbose enough that even 8000 tokens
+    # cannot fit all 17 boss sections in one shot.  Skip the single-call attempt
+    # and go straight to small batches of 4-5 sections each at 6000 tokens.
+    # This guarantees every batch fits comfortably.
+    max_tokens_main  = int(os.getenv("JSON_REPORT_MAX_TOKENS",  "0"    if _is_large_model else "4000"))
+    max_tokens_batch = int(os.getenv("JSON_REPORT_BATCH_MAX_TOKENS", "6000" if _is_large_model else "2800"))
+    _large_model_batch_size = int(os.getenv("JSON_REPORT_LARGE_BATCH_SIZE", "4"))
+    print(f"[{report_type}] token budget: main={max_tokens_main}, batch={max_tokens_batch}, large_batch_size={_large_model_batch_size} (large_model={_is_large_model})")
 
     last_exc = None
     raw = ""
@@ -2128,37 +2144,46 @@ RULES:
             return ""
         return str(section.get("id", "")).strip().lower()
 
-    # If response looks truncated/incomplete, split into 2 half-batches.
+    # For large models we skip the single-call attempt (max_tokens_main=0) and
+    # go straight to small fixed-size batches.  raw will be empty string.
     result = None
-    try:
-        result = _parse_json_response(raw)
-    except ValueError:
-        pass
+    if not _is_large_model and raw:
+        try:
+            result = _parse_json_response(raw)
+        except ValueError:
+            pass
 
-    expected_min_sections = (len(specs) // 2 if specs else 1)
+    expected_min_sections = (len(specs) if specs else 1)
     missing_mandatory_swot = (
         report_type in mandatory_swot_types
         and not _has_swot_section(result.get("sections", []) if isinstance(result, dict) else [])
     )
     should_split = (
-        result is None
+        _is_large_model  # always batch for large models
+        or result is None
         or len(result.get("sections", [])) < expected_min_sections
         or primary_finish_reason == "length"
         or missing_mandatory_swot
     )
 
     if should_split:
-        print(f"[{report_type}] Response truncated/incomplete. Splitting into 2 half-batch calls...")
-        if specs:
+        if _is_large_model and specs:
+            # Fixed small batch size: 4 sections per call for large models.
+            # 4 sections × ~110 words × 1.4 tokens/word ≈ 616 output tokens → safe in 6000.
+            chunk = _large_model_batch_size
+            split_specs = [specs[i:i + chunk] for i in range(0, len(specs), chunk)]
+        elif specs:
             half = len(specs) // 2
-            first_half_specs = specs[:half]
-            second_half_specs = specs[half:]
+            split_specs = [specs[:half], specs[half:]]
         else:
-            first_half_specs = None
-            second_half_specs = None
+            split_specs = []
 
+        num_batches = len(split_specs) if split_specs else 1
+        print(f"[{report_type}] Splitting into {num_batches} batch calls (large_model={_is_large_model})...")
+
+        first_half_specs = split_specs[0] if split_specs else None
         all_sections: List[Dict[str, Any]] = []
-        batches = [first_half_specs, second_half_specs] if first_half_specs else [None]
+        batches = split_specs if first_half_specs else [None]
 
         for batch_idx, batch_specs in enumerate(batches):
             if batch_specs is not None:
@@ -2173,9 +2198,11 @@ RULES:
                     ],
                     indent=2,
                 )
+                start_num = sum(len(batches[i]) for i in range(batch_idx) if batches[i] is not None) + 1
+                end_num = start_num + len(batch_specs) - 1
                 batch_note = (
-                    f"Generate ONLY sections {batch_idx * half + 1} to "
-                    f"{batch_idx * half + len(batch_specs)} (batch {batch_idx + 1} of 2)."
+                    f"Generate ONLY sections {start_num} to {end_num} "
+                    f"(batch {batch_idx + 1} of {len(batches)})."
                 )
             else:
                 batch_schema = section_schema

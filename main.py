@@ -24,6 +24,7 @@ from services.report_storage import (
     initialize_report_storage,
     storage_backend_name,
 )
+from services.frappe_client import configured_frappe_auth_token
 
 from api.html_report_routes import router as html_router
 from api.json_report_routes import router as json_router
@@ -160,6 +161,10 @@ def resolve_frappe_auth(
     secret = x_frappe_api_secret or x_api_secret
     if key and secret:
         return f"token {key}:{secret}"
+
+    configured_auth = configured_frappe_auth_token()
+    if configured_auth:
+        return configured_auth
 
     raise HTTPException(status_code=401, detail="Missing Frappe auth headers")
 

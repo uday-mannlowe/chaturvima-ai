@@ -79,7 +79,11 @@ def _resolve_runtime_frappe_auth(payload: Dict[str, Any], request: Request) -> O
     # the payload has no credentials. This prevents incoming Frappe session
     # cookies/headers from overriding the API token we received in the payload.
     # ─────────────────────────────────────────────────────────────────────────
-    token_from_payload = resolve_frappe_auth_token(request=None, payload=payload)
+    token_from_payload = resolve_frappe_auth_token(
+        request=None,
+        payload=payload,
+        include_configured_fallback=False,
+    )
     if token_from_payload:
         return token_from_payload
 
