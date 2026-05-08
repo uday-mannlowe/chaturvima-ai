@@ -31,7 +31,7 @@ from generate_groq import (
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     MODEL_BY_REPORT_TYPE_DEDICATED,
     REPORT_TITLE_MAP,
-    generate_structured_report,
+    generate_report_as_json,
     generate_structured_report_by_dimension,
     generate_text_report,
     map_frappe_to_nd,
@@ -701,18 +701,22 @@ class WorkerPool:
 
         if single_questionnaire and primary_report_type:
             print(f"Worker {worker_id}: single questionnaire -> generating only '{primary_report_type}' report")
-            print(f"SINGLE REPORT GENERATION -- {dimension} -> {primary_report_type} [structured]")
+            print(f"SINGLE REPORT GENERATION -- {dimension} -> {primary_report_type} [fast-json]")
             with rag_lock:
                 rag_context = retrieve_rag_context(nd_data)
             result_report = await asyncio.wait_for(
-                asyncio.to_thread(generate_structured_report, nd_data, primary_report_type, rag_context),
+                asyncio.to_thread(generate_report_as_json, nd_data, primary_report_type, rag_context),
                 timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
             )
             reports_payload = {primary_report_type: result_report}
         else:
-            print(f"SINGLE REPORT GENERATION -- {dimension} [structured]")
+            print(f"SINGLE REPORT GENERATION -- {dimension} [fast-json]")
+            if not primary_report_type:
+                raise ValueError(f"Unsupported dimension: {dimension}")
+            with rag_lock:
+                rag_context = retrieve_rag_context(nd_data)
             result = await asyncio.wait_for(
-                asyncio.to_thread(generate_structured_report_by_dimension, nd_data),
+                asyncio.to_thread(generate_report_as_json, nd_data, primary_report_type, rag_context),
                 timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
             )
             result_report_type = (
