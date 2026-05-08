@@ -27,7 +27,6 @@ from services.report_renderer import (
 )
 from services.report_storage import save_employee_json
 
-# LLM generation imports (from generate_groq.py / future llm package)
 from generate_groq import (
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     MODEL_BY_REPORT_TYPE_DEDICATED,
@@ -36,10 +35,13 @@ from generate_groq import (
     generate_multi_reports_json,
     generate_multi_reports_structured,
     generate_primary_report_json,
+    generate_structured_report,
     generate_structured_report_by_dimension,
     generate_text_report,
     map_frappe_to_nd,
+    rag_lock,
     resolve_input_data,
+    retrieve_rag_context,
 )
 
 
@@ -49,41 +51,18 @@ def _normalize_optional_str(value: Any) -> Optional[str]:
 
 
 def _generate_swot_via_llm(behavioral_stage: Dict[str, Any], report_type: str = "employee") -> Dict[str, Any]:
-    """
-    Generate SWOT via a lean LLM call.
-    Works for all report types (employee/boss/team/organization).
-
-    report_type controls the framing:
-      employee     → Individual SWOT from the employee's perspective
-      boss         → Dyadic SWOT for the employee-boss relationship
-      team         → Collective SWOT for the team/department
-      organization → Cumulative SWOT across all dimensions
-    """
     from groq import Groq
     import os, json as _json, re as _re
 
-    stage     = behavioral_stage.get("stage", "")
-    sub_stage = behavioral_stage.get("sub_stage", "") or behavioral_stage.get("sub_stage_definition", "")
+    stage      = behavioral_stage.get("stage", "")
+    sub_stage  = behavioral_stage.get("sub_stage", "") or behavioral_stage.get("sub_stage_definition", "")
     definition = behavioral_stage.get("sub_stage_definition", "")
 
-    # Context and SWOT title vary by report type
     _context_map = {
-        "employee": (
-            "an individual employee's personal growth and development",
-            "Individual SWOT",
-        ),
-        "boss": (
-            "the employee-boss working relationship and its dynamics",
-            "Dyadic SWOT (Employee-Boss Relationship)",
-        ),
-        "team": (
-            "the team's collective performance, dynamics, and collaboration",
-            "Collective SWOT (Team/Department)",
-        ),
-        "organization": (
-            "the organization's alignment, culture, and strategic performance",
-            "Cumulative SWOT (Organizational)",
-        ),
+        "employee":     ("an individual employee's personal growth and development",          "Individual SWOT"),
+        "boss":         ("the employee-boss working relationship and its dynamics",           "Dyadic SWOT (Employee-Boss Relationship)"),
+        "team":         ("the team's collective performance, dynamics, and collaboration",    "Collective SWOT (Team/Department)"),
+        "organization": ("the organization's alignment, culture, and strategic performance", "Cumulative SWOT (Organizational)"),
     }
     context_desc, swot_label = _context_map.get(report_type, _context_map["employee"])
 
@@ -144,21 +123,14 @@ RULES:
         except Exception as exc:
             if _is_rate_limited_error(str(exc)):
                 continue
-            print(f"⚠️  SWOT LLM model '{model}' error: {exc}")
+            print(f"SWOT LLM model '{model}' error: {exc}")
 
     if not raw:
         return {
-            "sub_stage": sub_stage,
-            "source": "llm_generated",
-            "strengths": [],
-            "weaknesses": [],
-            "opportunities": [],
-            "threat": [],
-            # keep legacy alias for backward compatibility
-            "threats": [],
-            "recommendations": [],
-            "actionable_steps": [],
-            "strategic_recommendations": "",
+            "sub_stage": sub_stage, "source": "llm_generated",
+            "strengths": [], "weaknesses": [], "opportunities": [],
+            "threat": [], "threats": [],
+            "recommendations": [], "actionable_steps": [], "strategic_recommendations": "",
         }
 
     cleaned = _re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
@@ -174,16 +146,13 @@ RULES:
     parsed_threats = parsed.get("threat", parsed.get("threats", []))
     threat_rows = [{"description": s} for s in parsed_threats]
     return {
-        "sub_stage": sub_stage,
-        "source": "llm_generated",
-        "strengths": [{"description": s} for s in parsed.get("strengths", [])],
-        "weaknesses": [{"description": s} for s in parsed.get("weaknesses", [])],
+        "sub_stage": sub_stage, "source": "llm_generated",
+        "strengths":     [{"description": s} for s in parsed.get("strengths",     [])],
+        "weaknesses":    [{"description": s} for s in parsed.get("weaknesses",    [])],
         "opportunities": [{"description": s} for s in parsed.get("opportunities", [])],
-        "threat": threat_rows,
-        # keep legacy alias for backward compatibility
-        "threats": threat_rows,
-        "recommendations": parsed.get("recommendations", []),
-        "actionable_steps": parsed.get("actionable_steps", []),
+        "threat": threat_rows, "threats": threat_rows,
+        "recommendations":           parsed.get("recommendations",           []),
+        "actionable_steps":          parsed.get("actionable_steps",          []),
         "strategic_recommendations": parsed.get("strategic_recommendations", ""),
     }
 
@@ -204,22 +173,13 @@ def _extract_cycle_name(message: Dict[str, Any], fallback: Optional[str] = None)
     return _normalize_optional_str(fallback)
 
 
-def _build_stage_default_swot(
-    nd_data: Dict[str, Any],
-    dominant_sub_stage: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    """
-    Build a deterministic 1D SWOT fallback from stage-level defaults present in
-    nd_data (generated by map_frappe_to_nd), used when Frappe sub-stage SWOT
-    doc is missing.
-    """
+def _build_stage_default_swot(nd_data: Dict[str, Any], dominant_sub_stage: Optional[str] = None) -> Optional[Dict[str, Any]]:
     raw_swot = nd_data.get("individual_swot")
     if not isinstance(raw_swot, dict):
         return None
-
-    rec_fw = nd_data.get("recommendation_framework")
+    rec_fw      = nd_data.get("recommendation_framework")
     rec_actions = rec_fw.get("recommended_actions", []) if isinstance(rec_fw, dict) else []
-    principles = rec_fw.get("principles", []) if isinstance(rec_fw, dict) else []
+    principles  = rec_fw.get("principles", [])           if isinstance(rec_fw, dict) else []
 
     recommendations: List[Dict[str, Any]] = []
     actionable_steps: List[Dict[str, Any]] = []
@@ -227,29 +187,25 @@ def _build_stage_default_swot(
         for idx, row in enumerate(rec_actions, start=1):
             if not isinstance(row, dict):
                 continue
-            title = str(row.get("focus_area") or row.get("title") or f"Action {idx}").strip()
+            title       = str(row.get("focus_area") or row.get("title") or f"Action {idx}").strip()
             description = str(row.get("recommendation") or row.get("description") or "").strip()
             if title or description:
-                recommendations.append({
-                    "recommendations_title": title,
-                    "recommendations_description": description or title,
-                })
+                recommendations.append({"recommendations_title": title, "recommendations_description": description or title})
                 actionable_steps.append({"description": description or title})
 
     strategic_recommendations = ""
     if isinstance(principles, list):
-        strategy_lines = [str(p).strip() for p in principles if str(p).strip()]
-        strategic_recommendations = " ".join(strategy_lines)
+        strategic_recommendations = " ".join(str(p).strip() for p in principles if str(p).strip())
 
     return {
         "sub_stage": _normalize_optional_str(dominant_sub_stage) or "",
         "source": "stage_default_swot",
-        "strengths": raw_swot.get("strengths", []),
-        "weaknesses": raw_swot.get("weaknesses", []),
+        "strengths":     raw_swot.get("strengths",     []),
+        "weaknesses":    raw_swot.get("weaknesses",    []),
         "opportunities": raw_swot.get("opportunities", []),
         "threat": raw_swot.get("threat", raw_swot.get("threats", [])),
-        "recommendations": recommendations,
-        "actionable_steps": actionable_steps,
+        "recommendations":           recommendations,
+        "actionable_steps":          actionable_steps,
         "strategic_recommendations": strategic_recommendations,
     }
 
@@ -257,12 +213,9 @@ def _build_stage_default_swot(
 def _swot_row_text(row: Any) -> str:
     if isinstance(row, dict):
         return (
-            row.get("description")
-            or row.get("desription")   # Frappe Threat typo
+            row.get("description") or row.get("desription")
             or row.get("recommendations_description")
-            or row.get("value")
-            or row.get("title")
-            or ""
+            or row.get("value") or row.get("title") or ""
         ).strip()
     return str(row or "").strip()
 
@@ -272,9 +225,7 @@ def _has_non_empty_swot_rows(rows: Any) -> bool:
 
 
 def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, Any]]) -> bool:
-    """Inject SWOT data from Frappe into the employee report sections in-place."""
     from services.frappe_client import extract_swot_lists
-
     if not isinstance(reports_payload, dict) or not isinstance(swot_doc, dict):
         return False
     employee_report = reports_payload.get("employee")
@@ -286,7 +237,6 @@ def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, A
 
     swot_lists = extract_swot_lists(swot_doc)
 
-    # Build paragraph lines from the structured lists
     def _fmt(texts: List[str], fallback: str) -> str:
         return " ".join(f"{i}. {t}" for i, t in enumerate(texts, 1)) if texts else fallback
 
@@ -294,7 +244,7 @@ def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, A
         _fmt(swot_lists["strengths"],     "Strengths not available."),
         _fmt(swot_lists["weaknesses"],    "Weaknesses not available."),
         _fmt(swot_lists["opportunities"], "Opportunities not available."),
-        _fmt(swot_lists["threat"],      "threat not available."),
+        _fmt(swot_lists["threat"],        "Threats not available."),
     ]
 
     swot_section = next(
@@ -311,57 +261,97 @@ def _apply_1d_swot_override(reports_payload: Any, swot_doc: Optional[Dict[str, A
         swot_section["paragraphs"] = paragraphs
 
     swot_section["swot_lists"] = swot_lists
-    swot_section["source"] = "frappe_swot"
-    swot_section["sub_stage"] = _normalize_optional_str(swot_doc.get("sub_stage") or swot_doc.get("name")) or ""
+    swot_section["source"]     = "frappe_swot"
+    swot_section["sub_stage"]  = _normalize_optional_str(swot_doc.get("sub_stage") or swot_doc.get("name")) or ""
     return True
 
 
 _SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threat")
 _SWOT_LABELS = {
-    "strengths": "Strengths",
-    "weaknesses": "Weaknesses",
-    "opportunities": "Opportunities",
-    "threat": "Threats",
+    "strengths": "Strengths", "weaknesses": "Weaknesses",
+    "opportunities": "Opportunities", "threat": "Threats",
 }
 _SWOT_SECTION_TITLES = {
-    "employee": "Individual SWOT Analysis",
-    "boss": "Dyadic SWOT Analysis",
-    "team": "Collective SWOT Analysis",
-    "organization": "Cumulative SWOT Overlay",
+    "employee": "Individual SWOT Analysis", "boss": "Dyadic SWOT Analysis",
+    "team": "Collective SWOT Analysis",     "organization": "Cumulative SWOT Overlay",
 }
 _RECOMMENDATION_SECTION_TITLES = {
-    "employee": "Recommendations",
-    "boss": "Recommendations",
-    "team": "Recommendations",
-    "organization": "Recommendations",
+    "employee": "Recommendations", "boss": "Recommendations",
+    "team": "Recommendations",     "organization": "Recommendations",
 }
+_ACTION_SECTION_ID_PRIORITY = ("action_plan", "next_steps", "joint_recommendations", "boss_recommendations", "recommendations")
+_ACTION_SECTION_TITLE_HINTS = ("action navigator", "action plan", "next steps", "development path", "recommendation", "intervention")
 
-_ACTION_SECTION_ID_PRIORITY = (
-    "action_plan",
-    "next_steps",
-    "joint_recommendations",
-    "boss_recommendations",
-    "recommendations",
-)
-_ACTION_SECTION_TITLE_HINTS = (
-    "action navigator",
-    "action plan",
-    "next steps",
-    "development path",
-    "recommendation",
-    "intervention",
-)
+
+def _split_swot_item_into_points(text: str) -> List[str]:
+    text = str(text or "").strip()
+    if not text:
+        return []
+    if text.startswith('[') and text.endswith(']'):
+        inner = text[1:-1].strip()
+        if (inner.startswith('"') and inner.endswith('"')) or (inner.startswith("'") and inner.endswith("'")):
+            inner = inner[1:-1].strip()
+        text = inner.strip()
+    if not text:
+        return []
+    quad_pat = re.compile(r'(strengths?|weaknesses?|opportunities?|threats?)\s*[:\-]', re.IGNORECASE)
+    quad_matches = list(quad_pat.finditer(text))
+    if len(quad_matches) >= 2:
+        text = text[:quad_matches[1].start()].strip()
+    text = re.sub(r'^(strengths?|weaknesses?|opportunities?|threats?)\s*[:\-]\s*', '', text, flags=re.IGNORECASE).strip()
+    if not text:
+        return []
+    numbered = re.split(r'(?<=\S)\s+(?=\d+\.\s+[^\d])', text)
+    if len(numbered) < 2:
+        numbered = re.split(r'(?<=\S)\s+(?=\d+\)\s)', text)
+    if len(numbered) >= 2:
+        clean = []
+        for part in numbered:
+            part = re.sub(r'^\s*\d+[.)\]]\s*', '', part).strip()
+            if part and len(part) > 15:
+                clean.append(part)
+        if len(clean) >= 2:
+            return clean
+    if any(ch in text for ch in ('\u2022', '\u25e6', '\u25b8', '\u00b7')):
+        parts = re.split(r'\s*[\u2022\u25e6\u25b8\u00b7]\s*', text)
+        clean = [p.strip() for p in parts if p.strip() and len(p.strip()) > 15]
+        if len(clean) >= 2:
+            return clean
+    return [text] if text else []
 
 
 def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
     normalized: Dict[str, List[str]] = {key: [] for key in _SWOT_KEYS}
     if not isinstance(raw_swot, dict):
         return normalized
-
-    # accept legacy key name
     if "threat" not in raw_swot and "threats" in raw_swot:
         raw_swot = dict(raw_swot)
         raw_swot["threat"] = raw_swot.get("threats", [])
+
+    _quad_intro = re.compile(
+        r'^(there are|one|another|additionally|furthermore|the|these)?\s*'
+        r'(strengths?|weaknesses?|blind.?spots?|opportunities?|threats?)'
+        r'\s*(of|for|to|include|in|is|are|:)', re.IGNORECASE,
+    )
+    _quad_kw = [
+        (re.compile(r'\bopportunit', re.IGNORECASE), "opportunities"),
+        (re.compile(r'\bthreat',     re.IGNORECASE), "threat"),
+        (re.compile(r'\bweakness|\bblind.?spot', re.IGNORECASE), "weaknesses"),
+        (re.compile(r'\bstrength',   re.IGNORECASE), "strengths"),
+    ]
+
+    def _detect(text: str) -> Optional[str]:
+        m = _quad_intro.match(text.strip())
+        if m:
+            w = m.group(2).lower()
+            if 'opportunit' in w: return 'opportunities'
+            if 'threat'     in w: return 'threat'
+            if 'weakness' in w or 'blind' in w: return 'weaknesses'
+            if 'strength'   in w: return 'strengths'
+        for pat, k in _quad_kw:
+            if pat.search(text):
+                return k
+        return None
 
     for key in _SWOT_KEYS:
         values = raw_swot.get(key, [])
@@ -369,37 +359,33 @@ def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
             values = [values]
         if not isinstance(values, list):
             continue
-
-        clean_values: List[str] = []
         for value in values:
             text = str(value or "").strip()
+            if text.startswith('[') and text.endswith(']'):
+                inner = text[1:-1].strip()
+                if (inner.startswith('"') and inner.endswith('"')) or (inner.startswith("'") and inner.endswith("'")):
+                    inner = inner[1:-1].strip()
+                text = inner
             if not text:
                 continue
-            # Remove heading prefixes when they appear in item text.
-            text = re.sub(
-                r"^(strengths?|weaknesses?|opportunities?|threat?)\s*[:\-]\s*",
-                "",
-                text,
-                flags=re.IGNORECASE,
-            ).strip()
-            if text:
-                clean_values.append(text)
-        normalized[key] = clean_values
+            for point in _split_swot_item_into_points(text):
+                detected_key = _detect(point)
+                target = detected_key if detected_key else key
+                normalized[target].append(point)
     return normalized
 
 
 def _fill_missing_swot_lists(swot_lists: Dict[str, List[str]]) -> None:
     for key in _SWOT_KEYS:
         if not swot_lists.get(key):
-            label = _SWOT_LABELS[key]
-            swot_lists[key] = [f"{label} not explicitly available in this report output."]
+            swot_lists[key] = [f"{_SWOT_LABELS[key]} not explicitly available in this report output."]
 
 
 def _swot_lists_to_paragraphs(swot_lists: Dict[str, List[str]]) -> List[str]:
     paragraphs: List[str] = []
     for key in _SWOT_KEYS:
         items = swot_lists.get(key, [])
-        line = " ".join(f"{idx}. {item}" for idx, item in enumerate(items, 1))
+        line  = " ".join(f"{idx}. {item}" for idx, item in enumerate(items, 1))
         paragraphs.append(line or f"{_SWOT_LABELS[key]} not available.")
     return paragraphs
 
@@ -425,7 +411,7 @@ def _ensure_swot_section(clean_sections: List[Dict[str, Any]], report_type: str)
         return
 
     swot_section = clean_sections[swot_index]
-    swot_section["id"] = "swot"
+    swot_section["id"]    = "swot"
     swot_section["title"] = swot_section.get("title") or _SWOT_SECTION_TITLES.get(report_type, "SWOT Analysis")
 
     existing_swot = swot_section.get("swot_lists")
@@ -440,40 +426,26 @@ def _ensure_swot_section(clean_sections: List[Dict[str, Any]], report_type: str)
     swot_section["paragraphs"] = _swot_lists_to_paragraphs(swot_lists)
 
 
-def _inject_actionable_into_action_section(
-    clean_sections: List[Dict[str, Any]],
-    swot_payload: Dict[str, Any],
-) -> bool:
-    """
-    Copy actionable steps from SWOT payload into the report's primary
-    action-oriented section (Action Navigator / Next Steps / Recommendations).
-    """
+def _inject_actionable_into_action_section(clean_sections: List[Dict[str, Any]], swot_payload: Dict[str, Any]) -> bool:
     if not isinstance(swot_payload, dict):
         return False
-
-    raw_steps = swot_payload.get("actionable_steps", [])
+    raw_steps  = swot_payload.get("actionable_steps", [])
     if not isinstance(raw_steps, list):
         return False
-
     step_texts = [_swot_row_text(step) for step in raw_steps if _swot_row_text(step)]
     if not step_texts:
         return False
 
     target_idx: Optional[int] = None
-
-    # First choose by known section IDs in priority order.
     for preferred_id in _ACTION_SECTION_ID_PRIORITY:
         for idx, section in enumerate(clean_sections):
             if not isinstance(section, dict):
                 continue
-            sec_id = str(section.get("id", "")).strip().lower()
-            if sec_id == preferred_id:
+            if str(section.get("id", "")).strip().lower() == preferred_id:
                 target_idx = idx
                 break
         if target_idx is not None:
             break
-
-    # Then choose by title hint if ID was not a direct match.
     if target_idx is None:
         for idx, section in enumerate(clean_sections):
             if not isinstance(section, dict):
@@ -482,30 +454,22 @@ def _inject_actionable_into_action_section(
             if any(hint in title for hint in _ACTION_SECTION_TITLE_HINTS):
                 target_idx = idx
                 break
-
     if target_idx is None:
         return False
 
     target = clean_sections[target_idx]
-
-    existing_rows = target.get("actionable_steps", [])
-    existing_texts: List[str] = []
-    if isinstance(existing_rows, list):
-        existing_texts = [_swot_row_text(r) for r in existing_rows if _swot_row_text(r)]
-
-    merged: List[str] = list(existing_texts)
+    existing_rows  = target.get("actionable_steps", [])
+    existing_texts = [_swot_row_text(r) for r in existing_rows if _swot_row_text(r)] if isinstance(existing_rows, list) else []
+    merged = list(existing_texts)
     for text in step_texts:
         if text not in merged:
             merged.append(text)
-
     target["actionable_steps"] = [{"description": text} for text in merged]
 
-    # Also append a readable paragraph line so non-specialized renderers still show it.
     action_line = "Actionable Steps: " + " ".join(f"{i}. {t}" for i, t in enumerate(merged, 1))
     paras = target.get("paragraphs", [])
     if not isinstance(paras, list):
         paras = text_to_paragraphs(str(paras))
-
     replaced = False
     for i, para in enumerate(paras):
         if str(para).strip().lower().startswith("actionable steps:"):
@@ -514,24 +478,14 @@ def _inject_actionable_into_action_section(
             break
     if not replaced:
         paras.append(action_line)
-
     target["paragraphs"] = paras
     return True
 
 
-def _inject_recommendations_section(
-    clean_sections: List[Dict[str, Any]],
-    swot_payload: Dict[str, Any],
-    report_type: str,
-) -> bool:
-    """
-    Create/update a dedicated Recommendations section from SWOT payload
-    so recommendations are not rendered inside SWOT.
-    """
+def _inject_recommendations_section(clean_sections: List[Dict[str, Any]], swot_payload: Dict[str, Any], report_type: str) -> bool:
     if not isinstance(swot_payload, dict):
         return False
-
-    rec_rows = swot_payload.get("recommendations", [])
+    rec_rows  = swot_payload.get("recommendations", [])
     strategic = str(swot_payload.get("strategic_recommendations", "") or "").strip()
 
     rec_paragraphs: List[str] = []
@@ -541,59 +495,41 @@ def _inject_recommendations_section(
         for row in rec_rows:
             if isinstance(row, dict):
                 title = str(row.get("recommendations_title") or row.get("title") or "").strip()
-                desc = (
-                    str(
-                        row.get("recommendations_description")
-                        or row.get("description")
-                        or row.get("desription")
-                        or row.get("value")
-                        or ""
-                    ).strip()
-                )
+                desc  = str(row.get("recommendations_description") or row.get("description") or row.get("desription") or row.get("value") or "").strip()
                 if not title and not desc:
                     continue
                 line = f"{idx}. {title}: {desc}" if title and desc else f"{idx}. {title or desc}"
                 rec_paragraphs.append(line)
-                normalized_recs.append({
-                    "recommendations_title": title or f"Recommendation {idx}",
-                    "recommendations_description": desc or title or "",
-                })
+                normalized_recs.append({"recommendations_title": title or f"Recommendation {idx}", "recommendations_description": desc or title or ""})
                 idx += 1
             else:
                 text = _swot_row_text(row)
                 if text:
                     rec_paragraphs.append(f"{idx}. {text}")
-                    normalized_recs.append({
-                        "recommendations_title": f"Recommendation {idx}",
-                        "recommendations_description": text,
-                    })
+                    normalized_recs.append({"recommendations_title": f"Recommendation {idx}", "recommendations_description": text})
                     idx += 1
 
     if strategic:
         rec_paragraphs.append(f"Strategic Recommendations: {strategic}")
-
     if not rec_paragraphs:
         return False
 
     title = _RECOMMENDATION_SECTION_TITLES.get(report_type, "Recommendations")
-
     target_idx: Optional[int] = None
     for idx, sec in enumerate(clean_sections):
         if not isinstance(sec, dict):
             continue
-        sec_id = str(sec.get("id", "")).strip().lower()
+        sec_id    = str(sec.get("id", "")).strip().lower()
         sec_title = str(sec.get("title", "")).strip().lower()
         if sec_id == "recommendations" or sec_title == title.lower():
             target_idx = idx
             break
 
     section_payload = {
-        "id": "recommendations",
-        "title": title,
-        "paragraphs": rec_paragraphs,
-        "recommendations": normalized_recs,
+        "id": "recommendations", "title": title,
+        "paragraphs": rec_paragraphs, "recommendations": normalized_recs,
         "strategic_recommendations": strategic,
-        "source": swot_payload.get("source", ""),
+        "source":    swot_payload.get("source", ""),
         "sub_stage": swot_payload.get("sub_stage", ""),
     }
 
@@ -601,7 +537,6 @@ def _inject_recommendations_section(
         clean_sections[target_idx] = section_payload
         return True
 
-    # Prefer placing it immediately after SWOT section.
     swot_idx: Optional[int] = None
     for idx, sec in enumerate(clean_sections):
         if not isinstance(sec, dict):
@@ -619,90 +554,70 @@ def _inject_recommendations_section(
 
 class WorkerPool:
     def __init__(self, queue: ReportQueue, rate_limiter: RateLimiter, num_workers: int = 5):
-        self.queue = queue
+        self.queue        = queue
         self.rate_limiter = rate_limiter
-        self.num_workers = num_workers
+        self.num_workers  = num_workers
         self.workers: List[asyncio.Task] = []
         self.running = False
 
     async def _worker(self, worker_id: int):
-        print(f"🔧 Worker {worker_id} started")
+        print(f"Worker {worker_id} started")
         while self.running:
             try:
                 job: ReportJob = await asyncio.wait_for(self.queue.get_job(), timeout=1.0)
-                print(f"👷 Worker {worker_id} processing job {job.job_id}")
-                job.status = JobStatus.PROCESSING
+                print(f"Worker {worker_id} processing job {job.job_id}")
+                job.status     = JobStatus.PROCESSING
                 job.started_at = datetime.now()
                 try:
                     await self.rate_limiter.acquire()
 
-                    # ── BRANCH 1: Frappe employee report ──────────────────────
                     if job.employee_report:
                         await self._process_employee_report(job, worker_id)
-
-                    # ── BRANCH 2: Standard multi-report ──────────────────────
                     elif job.multi_report:
                         data = resolve_input_data(job.payload)
                         if job.structured:
-                            result = await asyncio.wait_for(
-                                asyncio.to_thread(generate_multi_reports_structured, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
-                            )
+                            result = await asyncio.wait_for(asyncio.to_thread(generate_multi_reports_structured, data), timeout=Config.GROQ_TIMEOUT_SECONDS * 5)
                         else:
-                            result = await asyncio.wait_for(
-                                asyncio.to_thread(generate_multi_reports, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
-                            )
+                            result = await asyncio.wait_for(asyncio.to_thread(generate_multi_reports, data), timeout=Config.GROQ_TIMEOUT_SECONDS * 3)
                         job.result = result
-
-                    # ── BRANCH 3: Standard single-report ─────────────────────
                     else:
                         data = resolve_input_data(job.payload)
                         if job.structured:
-                            result = await asyncio.wait_for(
-                                asyncio.to_thread(generate_structured_report_by_dimension, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
-                            )
+                            result = await asyncio.wait_for(asyncio.to_thread(generate_structured_report_by_dimension, data), timeout=Config.GROQ_TIMEOUT_SECONDS * 3)
                         else:
-                            result = await asyncio.wait_for(
-                                asyncio.to_thread(generate_text_report, data),
-                                timeout=Config.GROQ_TIMEOUT_SECONDS,
-                            )
+                            result = await asyncio.wait_for(asyncio.to_thread(generate_text_report, data), timeout=Config.GROQ_TIMEOUT_SECONDS)
                         job.result = result
 
-                    job.status = JobStatus.COMPLETED
+                    job.status       = JobStatus.COMPLETED
                     job.completed_at = datetime.now()
                     duration = (job.completed_at - job.started_at).total_seconds()
-                    print(f"✅ Worker {worker_id} completed job {job.job_id} in {duration:.2f}s")
+                    print(f"Worker {worker_id} completed job {job.job_id} in {duration:.2f}s")
 
                 except asyncio.TimeoutError:
-                    job.status = JobStatus.FAILED
-                    job.error = "Report generation timed out"
+                    job.status       = JobStatus.FAILED
+                    job.error        = "Report generation timed out"
                     job.completed_at = datetime.now()
-                    print(f"⏱️ Worker {worker_id} timeout on job {job.job_id}")
-
+                    print(f"Worker {worker_id} timeout on job {job.job_id}")
                 except Exception as exc:
-                    job.status = JobStatus.FAILED
-                    job.error = str(exc)
+                    job.status       = JobStatus.FAILED
+                    job.error        = str(exc)
                     job.completed_at = datetime.now()
-                    print(f"❌ Worker {worker_id} error on job {job.job_id}: {exc}")
+                    print(f"Worker {worker_id} error on job {job.job_id}: {exc}")
 
             except asyncio.TimeoutError:
                 continue
             except Exception as exc:
-                print(f"⚠️ Worker {worker_id} unexpected error: {exc}")
+                print(f"Worker {worker_id} unexpected error: {exc}")
 
     async def _process_employee_report(self, job: ReportJob, worker_id: int):
-        employee_id = job.payload["employee"]
-        requested_cycle = _normalize_optional_str(job.payload.get("cycle_name"))
+        employee_id          = job.payload["employee"]
+        requested_cycle      = _normalize_optional_str(job.payload.get("cycle_name"))
         requested_submission = _normalize_optional_str(job.payload.get("submission_id"))
 
         frappe_params = frappe_query_params(employee_id, cycle_name=requested_cycle, submission_id=requested_submission)
-        runtime_auth = _normalize_optional_str(job.payload.get("_frappe_auth")) or _normalize_optional_str(
-            job.payload.get("_user_auth")
-        )
-        headers = frappe_headers(explicit_auth=runtime_auth)
-        print(f"🌐 Worker {worker_id}: fetching Frappe data for {employee_id}")
+        runtime_auth  = _normalize_optional_str(job.payload.get("_frappe_auth")) or _normalize_optional_str(job.payload.get("_user_auth"))
+        headers       = frappe_headers(explicit_auth=runtime_auth)
+        print(f"Worker {worker_id}: fetching Frappe data for {employee_id}")
 
         async with httpx.AsyncClient(timeout=30) as client:
             try:
@@ -711,108 +626,93 @@ class WorkerPool:
                 frappe_data = resp.json()
             except httpx.HTTPStatusError as exc:
                 body_snippet = (exc.response.text or "").strip().replace("\n", " ")[:300]
-                raise RuntimeError(
-                    f"Frappe {exc.response.status_code} for params={frappe_params}. Response: {body_snippet}"
-                ) from exc
+                raise RuntimeError(f"Frappe {exc.response.status_code} for params={frappe_params}. Response: {body_snippet}") from exc
 
         if "message" not in frappe_data:
             raise ValueError(f"Unexpected Frappe response: {list(frappe_data.keys())}")
 
-        msg = frappe_data.get("message", frappe_data)
-        nd_data = map_frappe_to_nd(employee_id, frappe_data)
+        msg       = frappe_data.get("message", frappe_data)
+        nd_data   = map_frappe_to_nd(employee_id, frappe_data)
         dimension = nd_data["dimension"]
-        print(f"📐 Worker {worker_id}: dimension={dimension}")
+        print(f"Worker {worker_id}: dimension={dimension}")
 
-        questionnaires = msg.get("questionnaires_considered", [])
+        questionnaires       = msg.get("questionnaires_considered", [])
         single_questionnaire = len(questionnaires) == 1
-        primary_report_type = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension)
+        primary_report_type  = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension)
 
         swot_doc: Optional[Dict[str, Any]] = None
         dominant_sub_stage = _normalize_optional_str(msg.get("dominant_sub_stage"))
         if dimension == "1D" and dominant_sub_stage:
-            # Pass the user's own token so SWOT fetch uses their identity, not the admin key
             swot_doc = await fetch_frappe_swot_doc(dominant_sub_stage, user_auth=runtime_auth or "")
-            status = "found" if swot_doc else "not found"
-            print(f"🧩 Worker {worker_id}: SWOT doc {status} for sub_stage='{dominant_sub_stage}'")
+            status   = "found" if swot_doc else "not found"
+            print(f"Worker {worker_id}: SWOT doc {status} for sub_stage='{dominant_sub_stage}'")
 
-        # Backup SWOT from stage-level defaults so 1D never depends only on a
-        # sub-stage SWOT document existing in Frappe.
         stage_default_swot: Optional[Dict[str, Any]] = None
         if dimension == "1D":
             stage_default_swot = _build_stage_default_swot(nd_data, dominant_sub_stage)
 
-        # ── SWOT handling for 1D ──────────────────────────────────────────
-        # ALWAYS strip the large hardcoded fallback SWOT from nd_data before LLM.
-        # These dicts (~3-5k tokens) are never needed by the LLM.
-        #
-        # Two cases:
-        #   A) Frappe SWOT doc found  → hold it for verbatim post-inject (no LLM).
-        #   B) No Frappe SWOT doc     → LLM generates SWOT from behavioral stage data
-        #                               via a separate lean call after the main report.
-        nd_data.pop("individual_swot", None)
+        # Strip large hardcoded SWOT/recommendation dicts — never sent to LLM for 1D.
+        # Frappe SWOT quadrant lists are injected AFTER the LLM finishes.
+        nd_data.pop("individual_swot",         None)
         nd_data.pop("recommendation_framework", None)
 
         full_swot: Optional[Dict[str, Any]] = None
         if swot_doc:
             full_swot = extract_full_swot_doc(swot_doc)
-            print(f"✅ Worker {worker_id}: Frappe SWOT held for post-inject (NOT sent to LLM)")
+            print(f"Worker {worker_id}: Frappe SWOT held for post-inject (NOT sent to LLM)")
         elif stage_default_swot:
             full_swot = stage_default_swot
-            print(f"🧰 Worker {worker_id}: using stage-default SWOT fallback for sub_stage='{dominant_sub_stage}'")
+            print(f"Worker {worker_id}: using stage-default SWOT fallback for sub_stage='{dominant_sub_stage}'")
         else:
             if dimension == "1D":
-                print(f"⚠️  Worker {worker_id}: no Frappe SWOT for sub_stage='{dominant_sub_stage}' — will generate via LLM post-report")
+                print(f"Worker {worker_id}: no Frappe SWOT for sub_stage='{dominant_sub_stage}' -- will generate via LLM post-report")
             else:
-                print(f"ℹ️  Worker {worker_id}: {dimension} flow uses LLM-generated SWOT (Frappe SWOT lookup skipped)")
+                print(f"Worker {worker_id}: {dimension} flow uses LLM-generated SWOT (Frappe SWOT lookup skipped)")
 
-        # 1D enhancement: if SWOT exists but actionable/recommendation fields are
-        # missing for this sub-stage, fill only those missing fields via LLM.
+        # 1D: if SWOT quadrant lists exist but action/recommendation fields are missing, fill via LLM
         if dimension == "1D" and full_swot is not None:
-            missing_actionable = not _has_non_empty_swot_rows(full_swot.get("actionable_steps", []))
-            missing_recommendations = not _has_non_empty_swot_rows(full_swot.get("recommendations", []))
-            missing_strategic = not str(full_swot.get("strategic_recommendations", "") or "").strip()
+            missing_actionable      = not _has_non_empty_swot_rows(full_swot.get("actionable_steps",   []))
+            missing_recommendations = not _has_non_empty_swot_rows(full_swot.get("recommendations",    []))
+            missing_strategic       = not str(full_swot.get("strategic_recommendations", "") or "").strip()
 
             if missing_actionable or missing_recommendations or missing_strategic:
-                print(
-                    f"🤖 Worker {worker_id}: filling missing 1D SWOT guidance via LLM "
-                    f"(actionable={missing_actionable}, recommendations={missing_recommendations}, strategic={missing_strategic})"
-                )
-                llm_guidance = await asyncio.to_thread(
-                    _generate_swot_via_llm,
-                    nd_data.get("behavioral_stage", {}),
-                    "employee",
-                )
+                print(f"Worker {worker_id}: filling missing 1D SWOT guidance via LLM")
+                llm_guidance = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), "employee")
                 if missing_recommendations:
                     full_swot["recommendations"] = llm_guidance.get("recommendations", [])
                 if missing_actionable:
                     full_swot["actionable_steps"] = llm_guidance.get("actionable_steps", [])
                 if missing_strategic:
                     full_swot["strategic_recommendations"] = llm_guidance.get("strategic_recommendations", "")
-
                 base_source = str(full_swot.get("source", "") or "").strip()
                 full_swot["source"] = f"{base_source}+llm_guidance_fill" if base_source else "llm_guidance_fill"
 
         if single_questionnaire and primary_report_type:
-            print(f"🧭 Worker {worker_id}: single questionnaire -> generating only '{primary_report_type}' report")
-            result = await asyncio.wait_for(
-                asyncio.to_thread(generate_primary_report_json, nd_data),
-                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+            print(f"Worker {worker_id}: single questionnaire -> generating only '{primary_report_type}' report")
+            print(f"SINGLE REPORT GENERATION -- {dimension} -> {primary_report_type} [structured]")
+            with rag_lock:
+                rag_context = retrieve_rag_context(nd_data)
+            result_report = await asyncio.wait_for(
+                asyncio.to_thread(generate_structured_report, nd_data, primary_report_type, rag_context),
+                timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
             )
-            reports_payload = result.get("reports", {})
+            reports_payload = {primary_report_type: result_report}
         else:
+            print(f"MULTI REPORT GENERATION -- {dimension} [structured]")
+            with rag_lock:
+                rag_context = retrieve_rag_context(nd_data)
             result = await asyncio.wait_for(
-                asyncio.to_thread(generate_multi_reports_json, nd_data),
-                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+                asyncio.to_thread(generate_multi_reports_structured, nd_data),
+                timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
             )
-            reports_payload = result.get("reports", {})
+            reports_payload = result if isinstance(result, dict) and all(
+                isinstance(v, dict) and "sections" in v for v in result.values()
+            ) else result.get("reports", result)
 
-        submission_id = _extract_submission_id(msg, requested_submission)
-        cycle_name = _extract_cycle_name(msg, requested_cycle)
-        employee_name = (
-            msg.get("employee_name") or msg.get("employee_full_name")
-            or msg.get("employee") or employee_id
-        )
-        designation = msg.get("designation") or msg.get("role") or msg.get("employee_role") or "Employee"
+        submission_id   = _extract_submission_id(msg, requested_submission)
+        cycle_name      = _extract_cycle_name(msg, requested_cycle)
+        employee_name   = msg.get("employee_name") or msg.get("employee_full_name") or msg.get("employee") or employee_id
+        designation     = msg.get("designation") or msg.get("role") or msg.get("employee_role") or "Employee"
         dimension_label = {
             "1D": "1D - Individual Assessment",
             "2D": "2D - Employee-Boss Relationship",
@@ -822,176 +722,138 @@ class WorkerPool:
 
         stage_scores = []
         for st in msg.get("stages", []):
-            try:
-                score = float(st.get("score", 0))
-            except (TypeError, ValueError):
-                score = 0.0
-            try:
-                pct = float(st.get("percentage", 0))
-            except (TypeError, ValueError):
-                pct = 0.0
-            try:
-                final_value = float(st.get("final_value", score))
-            except (TypeError, ValueError):
-                final_value = score
-            try:
-                final_pct = float(st.get("final_percentage", pct))
-            except (TypeError, ValueError):
-                final_pct = pct
+            try:    score       = float(st.get("score",       0))
+            except: score       = 0.0
+            try:    pct         = float(st.get("percentage",  0))
+            except: pct         = 0.0
+            try:    final_value = float(st.get("final_value", score))
+            except: final_value = score
+            try:    final_pct   = float(st.get("final_percentage", pct))
+            except: final_pct   = pct
             stage_scores.append({
-                "stage": str(st.get("stage", "-")),
-                # Keep legacy keys for backward compatibility while switching
-                # report display to final_value/final_percentage.
-                "score": f"{final_value:.2f}",
-                "percentage": f"{final_pct:.1f}",
-                "final_value": f"{final_value:.2f}",
+                "stage":            str(st.get("stage", "-")),
+                "score":            f"{final_value:.2f}",
+                "percentage":       f"{final_pct:.1f}",
+                "final_value":      f"{final_value:.2f}",
                 "final_percentage": f"{final_pct:.1f}",
             })
 
         report_sections_list = []
         if isinstance(reports_payload, dict):
             for rtype, robj in reports_payload.items():
-                if isinstance(robj, dict) and "sections" in robj:
-                    clean_sections = []
-                    for sec in robj.get("sections", []):
-                        paras = sec.get("paragraphs") or text_to_paragraphs(sec.get("text", ""))
-                        section_id = sec.get("id", "")
-                        section_title = sec.get("title", "")
-                        clean_sec: Dict[str, Any] = {
-                            "id": section_id,
-                            "title": section_title,
-                            "paragraphs": paras,
-                        }
-                        existing_swot = sec.get("swot_lists")
-                        if isinstance(existing_swot, dict):
-                            clean_sec["swot_lists"] = existing_swot
-                        elif is_swot_section(section_id, section_title):
-                            clean_sec["swot_lists"] = build_swot_lists_from_section_paragraphs(paras)
-                        clean_sections.append(clean_sec)
-                    _ensure_swot_section(clean_sections, rtype)
+                if not (isinstance(robj, dict) and "sections" in robj):
+                    continue
 
-                    # ── SWOT inject for ALL report types ──────────────────────────────
-                    # 1D employee:  use Frappe SWOT if available, else generate via LLM
-                    # 2D boss:      always generate via LLM (no Frappe SWOT for boss)
-                    # 3D team:      always generate via LLM
-                    # 4D org:       always generate via LLM
-                    #
-                    # In all cases we also check whether the LLM already put real SWOT
-                    # content in (i.e. swot_lists has items). If it did, skip inject.
-                    swot_to_inject: Optional[Dict[str, Any]] = None
+                clean_sections: List[Dict[str, Any]] = []
+                for sec in robj.get("sections", []):
+                    paras         = sec.get("paragraphs") or text_to_paragraphs(sec.get("text", ""))
+                    section_id    = sec.get("id",    "")
+                    section_title = sec.get("title", "")
+                    clean_sec: Dict[str, Any] = {"id": section_id, "title": section_title, "paragraphs": paras}
+                    existing_swot = sec.get("swot_lists")
+                    if isinstance(existing_swot, dict):
+                        clean_sec["swot_lists"] = existing_swot
+                    elif is_swot_section(section_id, section_title):
+                        clean_sec["swot_lists"] = build_swot_lists_from_section_paragraphs(paras)
+                    clean_sections.append(clean_sec)
+                _ensure_swot_section(clean_sections, rtype)
 
-                    if rtype == "employee":
-                        # 1D: Frappe SWOT if found, else LLM
-                        if full_swot is not None:
-                            swot_to_inject = full_swot
-                        else:
-                            # Check if LLM already generated real content
-                            existing_sec = next(
-                                (s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))),
-                                None,
-                            )
-                            existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
-                            has_real_content = any(
-                                existing_lists.get(k)
-                                and not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
-                                for k in ("strengths", "weaknesses", "opportunities", "threat", "threats")
-                                if existing_lists.get(k)
-                            )
-                            if not has_real_content:
-                                print(f"🤖 Worker {worker_id}: generating {rtype} SWOT via LLM (sub_stage='{dominant_sub_stage}')")
-                                swot_to_inject = await asyncio.to_thread(
-                                    _generate_swot_via_llm,
-                                    nd_data.get("behavioral_stage", {}),
-                                    rtype,
-                                )
+                # ── Determine SWOT data to inject ────────────────────────────────
+                swot_to_inject: Optional[Dict[str, Any]] = None
+
+                if rtype == "employee":
+                    # 1D: Frappe SWOT quadrant lists if available, else LLM
+                    if full_swot is not None:
+                        swot_to_inject = full_swot
                     else:
-                        # 2D/3D/4D: always check if LLM already gave real SWOT content
-                        existing_sec = next(
-                            (s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))),
-                            None,
-                        )
+                        existing_sec   = next((s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))), None)
                         existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
-                        has_real_content = any(
-                            existing_lists.get(k)
-                            and not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
+                        has_real = any(
+                            existing_lists.get(k) and not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
                             for k in ("strengths", "weaknesses", "opportunities", "threat", "threats")
                             if existing_lists.get(k)
                         )
-                        if not has_real_content:
-                            print(f"🤖 Worker {worker_id}: generating {rtype} SWOT via LLM (stage='{nd_data.get('behavioral_stage', {}).get('stage', '')}')")
-                            swot_to_inject = await asyncio.to_thread(
-                                _generate_swot_via_llm,
-                                nd_data.get("behavioral_stage", {}),
-                                rtype,
-                            )
+                        if not has_real:
+                            print(f"Worker {worker_id}: generating {rtype} SWOT via LLM")
+                            swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), rtype)
+                else:
+                    existing_sec   = next((s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))), None)
+                    existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
+                    has_real = any(
+                        existing_lists.get(k) and not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
+                        for k in ("strengths", "weaknesses", "opportunities", "threat", "threats")
+                        if existing_lists.get(k)
+                    )
+                    if not has_real:
+                        print(f"Worker {worker_id}: generating {rtype} SWOT via LLM")
+                        swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), rtype)
 
-                    if swot_to_inject:
-                        for sec in clean_sections:
-                            if is_swot_section(sec.get("id", ""), sec.get("title", "")):
-                                threat_rows = swot_to_inject.get("threat")
-                                if threat_rows is None:
-                                    threat_rows = swot_to_inject.get("threats", [])
-
-                                sec["swot_lists"] = {
-                                    "strengths": [_swot_row_text(r) for r in swot_to_inject.get("strengths", []) if _swot_row_text(r)],
-                                    "weaknesses": [_swot_row_text(r) for r in swot_to_inject.get("weaknesses", []) if _swot_row_text(r)],
-                                    "opportunities": [_swot_row_text(r) for r in swot_to_inject.get("opportunities", []) if _swot_row_text(r)],
-                                    "threat": [_swot_row_text(r) for r in threat_rows if _swot_row_text(r)],
-                                }
-                                sec["recommendations"]  = swot_to_inject.get("recommendations",  [])
-                                sec["actionable_steps"] = swot_to_inject.get("actionable_steps", [])
+                if swot_to_inject:
+                    for sec in clean_sections:
+                        if is_swot_section(sec.get("id", ""), sec.get("title", "")):
+                            threat_rows = swot_to_inject.get("threat") or swot_to_inject.get("threats", [])
+                            sec["swot_lists"] = {
+                                "strengths":     [_swot_row_text(r) for r in swot_to_inject.get("strengths",     []) if _swot_row_text(r)],
+                                "weaknesses":    [_swot_row_text(r) for r in swot_to_inject.get("weaknesses",    []) if _swot_row_text(r)],
+                                "opportunities": [_swot_row_text(r) for r in swot_to_inject.get("opportunities", []) if _swot_row_text(r)],
+                                "threat":        [_swot_row_text(r) for r in threat_rows                         if _swot_row_text(r)],
+                            }
+                            # ── 1D employee: inject ONLY the four SWOT quadrant lists ──
+                            # Recommendations (section 9) and Action Navigator (section 10)
+                            # were generated by generate_structured_report() with full
+                            # word targets, week-wise format, and score-specific content.
+                            # Do NOT overwrite them with the short API data here.
+                            #
+                            # 2D/3D/4D: inject recommendations/actionable from swot_to_inject
+                            # because those report types do not have dedicated LLM sections.
+                            if rtype != "employee":
+                                sec["recommendations"]           = swot_to_inject.get("recommendations",           [])
+                                sec["actionable_steps"]          = swot_to_inject.get("actionable_steps",          [])
                                 sec["strategic_recommendations"] = swot_to_inject.get("strategic_recommendations", "")
-                                sec["source"]    = swot_to_inject.get("source", "llm_generated")
-                                sec["sub_stage"] = swot_to_inject.get("sub_stage", "")
-                                sec["paragraphs"] = _swot_lists_to_paragraphs(sec["swot_lists"])
-                                print(f"✅ Worker {worker_id}: SWOT injected into '{rtype}' (source={sec['source']})")
-                                break
 
-                        # Mirror actionable steps into Action Navigator/Next Steps.
-                        actionable_pushed = _inject_actionable_into_action_section(
-                            clean_sections,
-                            swot_to_inject,
-                        )
-                        if actionable_pushed:
-                            print(f"✅ Worker {worker_id}: actionable steps added to action section for '{rtype}'")
+                            sec["source"]    = swot_to_inject.get("source", "llm_generated")
+                            sec["sub_stage"] = swot_to_inject.get("sub_stage", "")
+                            sec["paragraphs"] = _swot_lists_to_paragraphs(sec["swot_lists"])
+                            print(f"Worker {worker_id}: SWOT quadrants injected into '{rtype}' (source={sec['source']})")
+                            break
 
-                        # Keep recommendations in a dedicated section (not inside SWOT).
-                        recommendations_pushed = _inject_recommendations_section(
-                            clean_sections,
-                            swot_to_inject,
-                            rtype,
-                        )
-                        if recommendations_pushed:
-                            print(f"✅ Worker {worker_id}: recommendations section updated for '{rtype}'")
+                    # 2D/3D/4D only: push actionable steps and recommendations
+                    # into their dedicated sections.
+                    # 1D: LLM already generated these with week-wise format -- do not overwrite.
+                    if rtype != "employee":
+                        if _inject_actionable_into_action_section(clean_sections, swot_to_inject):
+                            print(f"Worker {worker_id}: actionable steps added for '{rtype}'")
+                        if _inject_recommendations_section(clean_sections, swot_to_inject, rtype):
+                            print(f"Worker {worker_id}: recommendations section updated for '{rtype}'")
 
-                    report_sections_list.append({
-                        "title": robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
-                        "report_type": rtype,
-                        "sections": clean_sections,
-                    })
+                report_sections_list.append({
+                    "title":       robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
+                    "report_type": rtype,
+                    "sections":    clean_sections,
+                })
 
         from datetime import datetime as _dt
         json_payload = {
             "status": "ok",
             "header": {
-                "employee_id": employee_id,
-                "submission_id": submission_id or "",
-                "cycle_name": cycle_name or "",
-                "employee_name": employee_name,
-                "designation": designation,
-                "report_type": f"{dimension_label} Growth Report",
-                "dimension_label": dimension_label,
-                "dominant_stage": str(msg.get("dominant_stage", "-")),
+                "employee_id":        employee_id,
+                "submission_id":      submission_id or "",
+                "cycle_name":         cycle_name or "",
+                "employee_name":      employee_name,
+                "designation":        designation,
+                "report_type":        f"{dimension_label} Growth Report",
+                "dimension_label":    dimension_label,
+                "dominant_stage":     str(msg.get("dominant_stage",     "-")),
                 "dominant_sub_stage": str(msg.get("dominant_sub_stage", "-")),
                 "questionnaire_text": ", ".join(str(q) for q in questionnaires) if questionnaires else "-",
-                "generated_date": _dt.now().strftime("%d %B %Y"),
-                "stage_scores": stage_scores,
+                "generated_date":     _dt.now().strftime("%d %B %Y"),
+                "stage_scores":       stage_scores,
             },
             "reports": report_sections_list,
         }
 
         path = save_employee_json(json_payload, employee_id, submission_id=submission_id, cycle_name=cycle_name)
-        print(f"💾 Worker {worker_id}: saved {path}")
+        print(f"Worker {worker_id}: saved {path}")
         job.result = json_payload
 
     async def start(self):
@@ -999,13 +861,12 @@ class WorkerPool:
             return
         self.running = True
         self.workers = [asyncio.create_task(self._worker(i)) for i in range(self.num_workers)]
-        print(f"✅ Started {self.num_workers} workers")
+        print(f"Started {self.num_workers} workers")
 
     async def stop(self):
         if not self.running:
             return
-        print("🛑 Stopping worker pool...")
+        print("Stopping worker pool...")
         self.running = False
         await asyncio.gather(*self.workers, return_exceptions=True)
-        print("✅ Worker pool stopped")
-
+        print("Worker pool stopped")

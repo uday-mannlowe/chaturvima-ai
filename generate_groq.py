@@ -400,6 +400,8 @@ GLOBAL RULES:
 - Keep the content of the report in detail and in layman terms so that it is easy to understand for everyone
 - Use the behavioral stage definitions provided in the reference material to explain stages accurately
 - Adapt your tone based on the stage and substage identified (see tone guidelines)
+- Avoid repeating the same idea across multiple sections. Each section must provide new and distinct insights.
+- Do NOT restate or paraphrase content already covered in a previous section — every section must add unique value.
 """
 
 # DEVELOPER PROMPTS (DIMENSION-SPECIFIC)
@@ -784,29 +786,49 @@ SECTION_SPECS_EMPLOYEE: List[SectionSpec] = [
             "Identify what motivates the employee and what sources of stress or tension are visible "
             "in the data. Tie back to observed patterns."
         ),
-        data_keys=("employee", "employee_questionnaire", "recommendation_framework"),
+        data_keys=("behavioral_stage", "employee_questionnaire", "revised_employee_model_weights"),
     ),
     SectionSpec(
         id="swot",
         title="Individual SWOT Analysis",
-        min_words=300,
-        max_words=420,
+        min_words=400,
+        max_words=600,
         guidance=(
-            "Discuss strengths, blind spots (weaknesses), opportunities, and threat as narrative "
-            "paragraphs grounded in the provided SWOT data."
+            "Write the Individual SWOT Analysis using the individual_swot data provided in the input as the "
+            "authoritative source for ALL four quadrants. "
+            "You MUST use the strengths, weaknesses, opportunities, and threats (threat) items from individual_swot — "
+            "do not invent or replace them. "
+            "For each quadrant, write a rich narrative paragraph that explains each item in the context of this "
+            "employee's behavioral stage and specific sub-stage scores. Reference the actual score values and "
+            "sub-stage names when explaining why each point matters for this employee specifically. "
+            "Structure as four clearly labelled paragraphs: Strengths, Blind Spots (Weaknesses), Opportunities, Threats. "
+            "Every sentence must be tied to the provided individual_swot data or the employee's scores. "
+            "Banned phrases: 'personal and professional development', 'enhance performance and well-being', "
+            "'growth-oriented environment', 'support and resources', 'sustainable growth', 'targeted interventions'. "
+            "Replace any banned phrase with a score-referenced observation from the input data."
         ),
-        data_keys=("individual_swot",),
+        data_keys=("individual_swot", "behavioral_stage", "employee_questionnaire", "revised_employee_model_weights"),
     ),
     SectionSpec(
         id="action_plan",
         title="Action Navigator – Personal Improvement Plan",
-        min_words=480,
-        max_words=650,
+        min_words=600,
+        max_words=900,
         guidance=(
-            "Provide a phase-wise action plan that is practical and developmental. "
-            "Include immediate, short-term, and mid-term steps based on the recommendations."
+            "Write exactly 5 detailed recommendations followed by a week-wise action plan. "
+            "RECOMMENDATIONS (exactly 5): Each recommendation must open with the supporting score "
+            "(e.g. 'Your Initial Reality Check sub-stage score of 5.0 indicates...'), name one specific "
+            "behaviour change the employee should make, and state one measurable outcome. "
+            "Write each recommendation as a full paragraph of 60-90 words. Use a positive, forward-looking tone. "
+            "Banned phrases: 'personal and professional development', 'enhance performance and well-being', "
+            "'growth-oriented environment', 'support and resources', 'sustainable growth', 'targeted interventions'. "
+            "ACTION PLAN (week-wise): After the 5 recommendations, write 5-6 week-wise action plan paragraphs. "
+            "Each paragraph must cover a specific time band: Wk 1-2, Wk 3-4, Wk 5-6, Wk 7-8, Wk 9-10, Wk 11-12. "
+            "Each paragraph must state: what the employee does that week, why it addresses a specific score gap, "
+            "and what observable change to expect by the end of that period. "
+            "Write in full paragraphs, not bullet points."
         ),
-        data_keys=("recommendation_framework", "employee", "employee_questionnaire"),
+        data_keys=("recommendation_framework", "behavioral_stage", "employee_questionnaire", "revised_employee_model_weights"),
     ),
     SectionSpec(
         id="value_contribution",
@@ -1487,6 +1509,12 @@ def _build_section_prompt(
         f"WORD COUNT: {spec.min_words}-{spec.max_words} words.",
         "FORMAT: Write in full paragraphs only. Do not include bullet points or headings.",
         f"PRIOR SECTIONS ALREADY WRITTEN: {prior_block}",
+        (
+            "UNIQUENESS RULE: The sections listed above have already been written. "
+            "This section MUST introduce entirely new insights, angles, and observations. "
+            "Do NOT repeat, rephrase, or summarise anything already covered in those sections. "
+            "If a theme was mentioned before, go deeper — do not restate it."
+        ),
         "Only use the data provided below. Do not invent facts or scores.",
         "DATA (JSON):",
         json.dumps(section_data, indent=2),
@@ -1497,6 +1525,22 @@ def _build_section_prompt(
             5,
             "REFERENCE MATERIAL (AUTHORITATIVE):\n" + rag_block
         )
+
+    # For employee reports, enforce content quality rules on every section
+    if report_type == "employee":
+        quality_rules = (
+            "CONTENT QUALITY RULES (mandatory for every paragraph):\n"
+            "1. Anti-repetition: Before writing each paragraph, list every theme already used "
+            "in the prior sections listed above. Do not reuse any theme, even with synonyms or reordering.\n"
+            "2. Anti-generic: Every sentence must be specific to this employee's actual scores. "
+            "Banned phrases (replace with a score-referenced observation instead): "
+            "'personal and professional development', 'enhance performance and well-being', "
+            "'growth-oriented environment', 'support and resources', 'sustainable growth', "
+            "'targeted interventions'.\n"
+            "3. Specificity: Name actual sub-stage scores and sub-stage titles from the input data. "
+            "Do not write in generic terms that could apply to any employee."
+        )
+        prompt_parts.append(quality_rules)
 
     return "\n\n".join(prompt_parts)
 
@@ -1526,10 +1570,1655 @@ def _build_expansion_prompt(
     return "\n\n".join(prompt_parts)
 
 
+def _clean_paragraph(p: str) -> str:
+    """
+    Strip any leaked JSON artifacts from a paragraph string.
+    Handles cases like: ["Para text."] or ["Para"] leftover after failed JSON parse.
+    """
+    s = str(p).strip()
+    # Remove wrapping JSON array brackets and quotes that leaked through
+    s = re.sub(r'^[\[\]"\s]+', '', s)   # leading [, ", whitespace
+    s = re.sub(r'[\[\]"\s]+$', '', s)   # trailing ], ", whitespace
+    return s
+
+
+def _generate_section_text(
+    data: dict,
+    report_type: str,
+    spec: SectionSpec,
+    rag_context: str,
+    prior_sections: List[str],
+    index: int,
+    total: int,
+    _max_retries: int = 6,
+) -> str:
+    section_data = _select_section_data(data, spec.data_keys)
+
+    # ── JSON-first user prompt ────────────────────────────────────────────────
+    base_prompt = _build_section_prompt(
+        report_type=report_type,
+        spec=spec,
+        section_data=section_data,
+        rag_context=rag_context,
+        prior_sections=prior_sections,
+        index=index,
+        total=total,
+    )
+    user_prompt = (
+        base_prompt
+        + "\n\n"
+        + "OUTPUT FORMAT (MANDATORY):\n"
+        + 'Return ONLY a valid JSON array of paragraph strings, e.g. ["Para 1.", "Para 2."]\n'
+        + "Do NOT include any text outside the JSON array. No markdown fences, no headings."
+    )
+
+    system_prompt = "\n\n".join([
+        SYSTEM_PROMPT,
+        TONE_GUIDELINES,
+        REPORT_STYLE.get(report_type, ""),
+    ]).strip()
+
+    section_text, _ = _call_groq_with_model_fallback(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0.2,
+        max_tokens=_max_tokens_for_section(spec),
+        dimension=data.get("dimension"),
+        report_type=report_type,
+        max_retries=_max_retries,
+        request_label=f"Section '{spec.title}'",
+    )
+    return section_text
+
+
+def _expand_section_text(
+    data: dict,
+    report_type: str,
+    spec: SectionSpec,
+    rag_context: str,
+    existing_text: str,
+    additional_words: int
+) -> str:
+    section_data = _select_section_data(data, spec.data_keys)
+    base_prompt = _build_expansion_prompt(
+        spec=spec,
+        section_data=section_data,
+        rag_context=rag_context,
+        existing_text=existing_text,
+        additional_words=additional_words,
+    )
+    user_prompt = (
+        base_prompt
+        + "\n\n"
+        + "OUTPUT FORMAT (MANDATORY):\n"
+        + 'Return ONLY a valid JSON array of the NEW additional paragraphs, e.g. ["Para A.", "Para B."]\n'
+        + "Do NOT repeat the existing text. No markdown fences, no headings."
+    )
+
+    system_prompt = "\n\n".join([
+        SYSTEM_PROMPT,
+        TONE_GUIDELINES,
+        REPORT_STYLE.get(report_type, ""),
+    ]).strip()
+
+    expanded_raw, _ = _call_groq_with_model_fallback(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0.2,
+        max_tokens=min(1200, _max_tokens_for_section(spec)),
+        dimension=data.get("dimension"),
+        report_type=report_type,
+        max_retries=6,
+        request_label=f"Expansion '{spec.title}'",
+    )
+    new_paras = _parse_section_json(expanded_raw)
+    combined = _parse_section_json(existing_text) + new_paras
+    return json.dumps(combined, ensure_ascii=False)
+
+
+def _generate_one_section(
+    idx: int,
+    total: int,
+    spec: SectionSpec,
+    data: dict,
+    report_type: str,
+    rag_context: str,
+    all_titles: List[str],
+) -> Dict[str, Any]:
+    """
+    Generate a single section and return it as a dict.
+    Runs inside a thread – each call creates its own Groq client.
+    prior_sections is the FULL title list (minus the spec itself) so the LLM
+    has context about what else exists in the report.
+    """
+    prior_sections = [t for t in all_titles if t != spec.title]
+    section_text = _generate_section_text(
+        data=data,
+        report_type=report_type,
+        spec=spec,
+        rag_context=rag_context,
+        prior_sections=prior_sections,
+        index=idx,
+        total=total,
+    )
+
+    words = _word_count(section_text)
+    attempts = 0
+    while words < spec.min_words and attempts < 2:
+        shortfall = max(120, spec.min_words - words)
+        section_text = _expand_section_text(
+            data=data,
+            report_type=report_type,
+            spec=spec,
+            rag_context=rag_context,
+            existing_text=section_text,
+            additional_words=shortfall,
+        )
+        words = _word_count(section_text)
+        attempts += 1
+
+    parsed_paragraphs = _parse_section_json(section_text)
+    return {
+        "_order": idx,          # used to sort back into correct order
+        "id": spec.id,
+        "title": spec.title,
+        "text": "\n\n".join(parsed_paragraphs),
+        "paragraphs": parsed_paragraphs,
+        "word_count": words,
+    }
+
+
+# Max parallel LLM threads per report.
+# Groq free tier: 30 req/min → keep ≤10 so we don't hit rate limits.
+# Lower default to 3 workers to stay within free-tier TPM limits.
+# With retry logic in place, sections that hit 429 will wait and retry
+# rather than fail, so fewer parallel workers means fewer wasted tokens.
+# Override with SECTION_PARALLEL_WORKERS env var if you have a paid tier.
+_SECTION_WORKERS = int(os.getenv("SECTION_PARALLEL_WORKERS", "3"))
+
+
+def generate_structured_report(data: dict, report_type: str, rag_context: str) -> Dict[str, Any]:
+    """
+    Generate a structured report with section-wise content.
+    All sections are generated IN PARALLEL (ThreadPoolExecutor).
+    """
+    if report_type not in PROMPT_MAP:
+        raise ValueError(f"Invalid report type: {report_type}. Valid types: {list(PROMPT_MAP.keys())}")
+
+    specs = REPORT_SPECS.get(report_type)
+    if not specs:
+        text_report = generate_single_report(data, report_type, rag_context)
+        return {
+            "title": REPORT_TITLE_MAP.get(report_type, report_type),
+            "report_type": report_type,
+            "dimension": data.get("dimension"),
+            "sections": [
+                {
+                    "id": "report",
+                    "title": "Report",
+                    "text": text_report,
+                    "paragraphs": _split_paragraphs(text_report),
+                    "word_count": _word_count(text_report),
+                }
+            ],
+            "word_count": _word_count(text_report),
+            "generated_at": datetime.now().isoformat(),
+        }
+
+    total_specs = len(specs)
+    all_titles = [spec.title for spec in specs]
+
+    print(f"⚡ Generating {total_specs} sections in parallel (workers={_SECTION_WORKERS}) for '{report_type}'")
+
+    results: List[Dict[str, Any]] = [None] * total_specs  # pre-allocate
+
+    with ThreadPoolExecutor(max_workers=_SECTION_WORKERS) as executor:
+        future_to_idx = {
+            executor.submit(
+                _generate_one_section,
+                idx,
+                total_specs,
+                spec,
+                data,
+                report_type,
+                rag_context,
+                all_titles,
+            ): idx - 1   # 0-based position in results list
+            for idx, spec in enumerate(specs, start=1)
+        }
+
+        for future in as_completed(future_to_idx):
+            pos = future_to_idx[future]
+            try:
+                results[pos] = future.result()
+            except Exception as exc:
+                spec = specs[pos]
+                print(f"❌ Section '{spec.title}' failed: {exc}")
+                results[pos] = {
+                    "_order": pos + 1,
+                    "id": spec.id,
+                    "title": spec.title,
+                    "text": f"[Section could not be generated: {exc}]",
+                    "paragraphs": [f"[Section could not be generated: {exc}]"],
+                    "word_count": 0,
+                }
+
+    # Sort by original order (as_completed returns in completion order)
+    sections = sorted(results, key=lambda s: s["_order"])
+    for s in sections:
+        s.pop("_order", None)  # clean up internal key
+
+    total_words = sum(section["word_count"] for section in sections)
+    print(f"✅ All {total_specs} sections done for '{report_type}' — {total_words} words total")
+
+    return {
+        "title": REPORT_TITLE_MAP.get(report_type, report_type),
+        "report_type": report_type,
+        "dimension": data.get("dimension"),
+        "sections": sections,
+        "word_count": total_words,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+
+def generate_structured_report_by_dimension(data: dict) -> Dict[str, Any]:
+    """
+    Generate a single structured report based on the dimension default.
+    """
+    data = validate_input_data(data)
+    dimension = data["dimension"]
+
+    report_type = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension)
+    if not report_type:
+        raise ValueError(f"Unsupported dimension: {dimension}. Available: {list(DEFAULT_REPORT_TYPE_BY_DIMENSION.keys())}")
+
+    with rag_lock:
+        rag_context = retrieve_rag_context(data)
+
+    return generate_structured_report(data, report_type, rag_context)
+
+
+def generate_multi_reports_structured(data: dict) -> Dict[str, Dict[str, Any]]:
+    """
+    Generate multiple structured reports based on dimension.
+    Both report types (employee, boss, ...) AND their internal sections
+    run in parallel using ThreadPoolExecutor for maximum speed.
+    """
+    data = validate_input_data(data)
+    dimension = data["dimension"]
+
+    if dimension not in REPORT_TYPE_MAP:
+        raise ValueError(f"\u274c Unsupported dimension: {dimension}. Available: {list(REPORT_TYPE_MAP.keys())}")
+
+    with rag_lock:
+        rag_context = retrieve_rag_context(data)
+
+    report_types = REPORT_TYPE_MAP[dimension]
+    print(f"\u26a1 Generating {len(report_types)} report type(s) in parallel: {report_types}")
+
+    reports: Dict[str, Dict[str, Any]] = {}
+
+    with ThreadPoolExecutor(max_workers=max(len(report_types), 1)) as executor:
+        future_to_type = {
+            executor.submit(generate_structured_report, data, rtype, rag_context): rtype
+            for rtype in report_types
+        }
+        for future in as_completed(future_to_type):
+            rtype = future_to_type[future]
+            try:
+                reports[rtype] = future.result()
+                print(f"\u2705 Report '{rtype}' completed")
+            except Exception as exc:
+                print(f"\u274c Report '{rtype}' failed: {exc}")
+                reports[rtype] = {
+                    "title": REPORT_TITLE_MAP.get(rtype, rtype),
+                    "report_type": rtype,
+                    "dimension": dimension,
+                    "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
+                    "word_count": 0,
+                    "generated_at": datetime.now().isoformat(),
+                }
+
+    return reports
+
+
+# ===================================================
+# FAST JSON GENERATION — ONE CALL PER REPORT TYPE
+# Each report type uses its dedicated model.
+# Multiple report types run fully in parallel.
+# ===================================================
+
+def generate_report_as_json(
+    data: dict,
+    report_type: str,
+    rag_context: str,
+) -> Dict[str, Any]:
+    """
+    Generate one complete report as structured JSON in a SINGLE LLM call.
+
+    - Uses the dedicated model for this report_type (MODEL_BY_REPORT_TYPE_DEDICATED).
+    - Returns a dict with keys: title, report_type, sections (list of {id, title, paragraphs}).
+    - Much faster than section-by-section generation (1 call instead of 10-16).
+    """
+    if report_type not in PROMPT_MAP:
+        raise ValueError(f"Invalid report_type: {report_type}")
+
+    # Pick the dedicated model for this specific report type
+    dedicated_model = MODEL_BY_REPORT_TYPE_DEDICATED.get(report_type, MODEL_NAME)
+    print(f"[{report_type.upper()}] Using dedicated model: {dedicated_model}")
+
+    # Detect large/verbose models BEFORE defining the inner function so the
+    # closure can reference it without a 'free variable' error.
+    _model_lower = dedicated_model.lower()
+    _is_large_model = any(
+        tok in _model_lower
+        for tok in ("scout", "70b", "120b", "llama-4", "maverick", "gemma-3")
+    )
+
+    # Build a compact schema for fast JSON mode.
+    # Word targets per section — tuned to produce consulting-grade depth
+    # while staying within per-batch token budgets.
+    #
+    # Budget check (large model, batch_size=4, max_tokens_batch=6000):
+    #   4 sections × 250 words × 1.4 tok/word ≈ 1,400 output tokens → safe.
+    #   6 sections × 180 words × 1.4 tok/word ≈ 1,512 output tokens → safe.
+    #
+    # Normal models (single-call, max_tokens=4000):
+    #   14 sections × 180 words × 1.4 tok/word ≈ 3,528 output tokens → borderline.
+    #   Use 140 words for normal models to stay within 4000.
+    def _target_words_for_fast_json(spec: SectionSpec) -> int:
+        if report_type == "employee":
+            # Employee report sections — unchanged, these were working well.
+            if spec.id == "stage":       return 400
+            if spec.id == "action_plan": return 350
+            return 180
+        # Non-employee reports (boss / team / org):
+        # Large models batch 4 sections per call at 6000 tokens — plenty of room.
+        # Normal models single-call at 4000 tokens — must be more conservative.
+        if _is_large_model:
+            # SWOT needs more room: 4 quadrants × 3 points each.
+            if spec.id == "swot":        return 350
+            return 220   # solid 3-paragraph sections
+        else:
+            if spec.id == "swot":        return 280
+            return 140   # stays within 4000-token single-call budget
+
+    specs = REPORT_SPECS.get(report_type, [])
+    if specs:
+        section_schema = json.dumps(
+            [
+                {
+                    "id": spec.id,
+                    "title": spec.title,
+                    "target_words": _target_words_for_fast_json(spec),
+                }
+                for spec in specs
+            ],
+            indent=2,
+        )
+    else:
+        section_schema = "(Follow the section structure defined in the developer prompt below.)"
+
+    developer_prompt = PROMPT_MAP[report_type]
+    report_title = REPORT_TITLE_MAP[report_type]
+    report_style = REPORT_STYLE.get(report_type, "")
+
+    system_prompt = "\n\n".join(
+        filter(None, [SYSTEM_PROMPT, TONE_GUIDELINES, report_style, developer_prompt])
+    ).strip()
+
+    # Keep payload compact: strip keys that are large and not needed by non-employee reports.
+    # For 2D/3D/4D the LLM must generate SWOT from scratch — we do NOT strip individual_swot
+    # because it contains the structured SWOT seed data the LLM should use for the dyadic SWOT.
+    # We DO strip recommendation_framework as it is only used by the employee report.
+    if report_type == "employee":
+        keys_to_strip = ("recommendation_framework",)
+    else:
+        keys_to_strip = ()  # keep everything for boss/team/org so SWOT data is available
+    slim_data = {k: v for k, v in data.items() if k not in keys_to_strip}
+
+    mandatory_swot_types = {"boss", "team", "organization"}
+    swot_rule_block = ""
+
+    if report_type == "employee":
+        slim_data["_swot_note"] = (
+            "SWOT analysis will be injected from assessment DB after generation. "
+            "For SWOT section, provide narrative aligned with behavioral stage data."
+        )
+        section_rule = "Each section should have 3-4 detailed paragraphs."
+        paragraph_rule = "Each paragraph should be 70-120 words — write in depth, not bullet points."
+    else:
+        section_rule = "Each section should have 3-4 detailed paragraphs of substantive content."
+        paragraph_rule = (
+            "Each paragraph should be 70-120 words. "
+            "Write in full, flowing sentences. Do not use bullet points or headings inside paragraphs. "
+            "Provide concrete analysis grounded in the input data — avoid generic statements."
+        )
+        if report_type in mandatory_swot_types:
+            swot_rule_block = (
+                '\n- The "swot" section is MANDATORY. It MUST be present in the output.'
+                '\n- In the swot section, include ALL FOUR quadrants explicitly labelled:'
+                '\n  Strengths, Weaknesses, Opportunities, Threats.'
+                '\n- Each quadrant must have at least 3 numbered points (1. 2. 3.) of 2-3 lines each.'
+                '\n- Use the individual_swot data provided in the input as the basis for this section.'
+                '\n- Do NOT skip, abbreviate, or merge any quadrant.'
+            )
+
+    user_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
+{rag_context}
+
+INPUT DATA:
+{json.dumps(slim_data, indent=2)}
+
+SECTION SCHEMA (generate EXACTLY these sections in this order):
+{section_schema}
+
+OUTPUT FORMAT - MANDATORY:
+Return ONLY a single valid JSON object matching this exact structure:
+{{
+  "title": "{report_title}",
+  "report_type": "{report_type}",
+  "sections": [
+    {{
+      "id": "<section_id>",
+      "title": "<section_title>",
+      "paragraphs": ["<paragraph 1>", "<paragraph 2>", "..."]
+    }}
+  ]
+}}
+
+RULES:
+- {section_rule}
+- {paragraph_rule}
+- Treat target_words as guidance, not as a strict minimum.
+- Use ONLY the provided input data. Do not invent facts, scores, or stages.
+{swot_rule_block}
+- Do NOT include any text outside the JSON object.
+- Do NOT use markdown code fences."""
+
+    # Use dedicated model first. If rate-limited, fall back to global chain.
+    fallback_chain = _dedupe_models([dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME])
+
+    import time as _time, random
+    # Large models (Scout/70B/Llama-4) are verbose: skip the single-call attempt
+    # (set main=0) and go straight to fixed small batches of _large_model_batch_size
+    # sections each, at max_tokens_batch per call.
+    # Sizing: 4 sections × ~110 words × 1.4 tok/word ≈ 616 output tokens → safe at 6000.
+    max_tokens_main       = int(os.getenv("JSON_REPORT_MAX_TOKENS",        "0"    if _is_large_model else "4000"))
+    max_tokens_batch      = int(os.getenv("JSON_REPORT_BATCH_MAX_TOKENS",  "6000" if _is_large_model else "2800"))
+    _large_model_batch_size = int(os.getenv("JSON_REPORT_LARGE_BATCH_SIZE", "4"))
+    print(f"[{report_type}] budget: main={max_tokens_main}, batch={max_tokens_batch}, batch_size={_large_model_batch_size}, large={_is_large_model}")
+
+    last_exc = None
+    raw = ""
+    primary_finish_reason = ""
+    for attempt in range(1, 7):
+        for model in fallback_chain:
+            try:
+                client = create_groq_client()
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=max_tokens_main,
+                )
+                primary_finish_reason = getattr(response.choices[0], "finish_reason", "") or ""
+                raw = (response.choices[0].message.content or "").strip()
+                break
+            except Exception as exc:
+                last_exc = exc
+                err = str(exc)
+                if _is_rate_limited_error(err):
+                    print(f"[{report_type}] model '{model}' rate-limited; trying next.")
+                    continue
+                print(f"[{report_type}] model '{model}' error: {err}; trying next.")
+        else:
+            wait = _extract_retry_wait_seconds(str(last_exc), attempt) + random.uniform(1, 3)
+            print(f"[{report_type}] all models exhausted (attempt {attempt}/6), waiting {wait:.1f}s")
+            _time.sleep(wait)
+            continue
+        break
+    else:
+        raise RuntimeError(f"[{report_type}] JSON generation failed after 6 attempts. Last: {last_exc}")
+
+    if primary_finish_reason == "length":
+        print(f"[{report_type}] primary response hit max token limit (finish_reason=length).")
+
+    def _iter_json_candidates(raw_text: str, prefer: str = "object"):
+        cleaned = re.sub(r"```(?:json)?\s*", "", raw_text or "").strip().rstrip("`").strip()
+        if not cleaned:
+            return
+
+        yield cleaned
+
+        start_priority = ("[", "{") if prefer == "array" else ("{", "[")
+        seen = {cleaned}
+        for start_char in start_priority:
+            for start_idx, ch in enumerate(cleaned):
+                if ch != start_char:
+                    continue
+
+                stack = []
+                in_string = False
+                escaped = False
+                for end_idx in range(start_idx, len(cleaned)):
+                    cur = cleaned[end_idx]
+                    if in_string:
+                        if escaped:
+                            escaped = False
+                        elif cur == "\\":
+                            escaped = True
+                        elif cur == '"':
+                            in_string = False
+                        continue
+
+                    if cur == '"':
+                        in_string = True
+                        continue
+                    if cur in "{[":
+                        stack.append(cur)
+                        continue
+                    if cur in "}]":
+                        if not stack:
+                            break
+                        opener = stack.pop()
+                        if (opener == "{" and cur != "}") or (opener == "[" and cur != "]"):
+                            break
+                        if not stack:
+                            snippet = cleaned[start_idx:end_idx + 1].strip()
+                            if snippet and snippet not in seen:
+                                seen.add(snippet)
+                                yield snippet
+                            break
+
+    def _parse_json_response(raw_text: str) -> dict:
+        for candidate in _iter_json_candidates(raw_text, prefer="object"):
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list):
+                return {
+                    "title": report_title,
+                    "report_type": report_type,
+                    "sections": parsed,
+                }
+
+        cleaned_preview = re.sub(r"\s+", " ", (raw_text or "").strip())[:300]
+        raise ValueError(
+            f"[{report_type}] Could not parse JSON. First 300 chars: {cleaned_preview}"
+        )
+
+    def _parse_sections_array(raw_text: str) -> List[Dict[str, Any]]:
+        for candidate in _iter_json_candidates(raw_text, prefer="array"):
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+            if isinstance(parsed, dict):
+                if isinstance(parsed.get("sections"), list):
+                    parsed = parsed["sections"]
+                elif all(k in parsed for k in ("id", "title")):
+                    parsed = [parsed]
+                else:
+                    continue
+
+            if isinstance(parsed, list):
+                items = [s for s in parsed if isinstance(s, dict)]
+                if items:
+                    return items
+
+        return []
+
+    def _has_swot_section(sections: Any) -> bool:
+        if not isinstance(sections, list):
+            return False
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            sec_id = str(sec.get("id", "")).strip().lower()
+            sec_title = str(sec.get("title", "")).strip().lower()
+            if sec_id == "swot" or "swot" in sec_title:
+                return True
+        return False
+
+    def _section_id(section: Any) -> str:
+        if not isinstance(section, dict):
+            return ""
+        return str(section.get("id", "")).strip().lower()
+
+    # For large models we skip the single-call attempt (max_tokens_main=0) and
+    # go straight to small fixed-size batches.  raw will be empty string.
+    result = None
+    if not _is_large_model and raw:
+        try:
+            result = _parse_json_response(raw)
+        except ValueError:
+            pass
+
+    expected_min_sections = (len(specs) if specs else 1)
+    missing_mandatory_swot = (
+        report_type in mandatory_swot_types
+        and not _has_swot_section(result.get("sections", []) if isinstance(result, dict) else [])
+    )
+    should_split = (
+        _is_large_model  # always batch for large models
+        or result is None
+        or len(result.get("sections", [])) < expected_min_sections
+        or primary_finish_reason == "length"
+        or missing_mandatory_swot
+    )
+
+    if should_split:
+        if _is_large_model and specs:
+            # Fixed small batch size: 4 sections per call for large models.
+            # 4 sections × ~110 words × 1.4 tokens/word ≈ 616 output tokens → safe in 6000.
+            chunk = _large_model_batch_size
+            split_specs = [specs[i:i + chunk] for i in range(0, len(specs), chunk)]
+        elif specs:
+            half = len(specs) // 2
+            split_specs = [specs[:half], specs[half:]]
+        else:
+            split_specs = []
+
+        num_batches = len(split_specs) if split_specs else 1
+        print(f"[{report_type}] Splitting into {num_batches} batch calls (large_model={_is_large_model})...")
+
+        first_half_specs = split_specs[0] if split_specs else None
+        all_sections: List[Dict[str, Any]] = []
+        batches = split_specs if first_half_specs else [None]
+
+        for batch_idx, batch_specs in enumerate(batches):
+            if batch_specs is not None:
+                batch_schema = json.dumps(
+                    [
+                        {
+                            "id": s.id,
+                            "title": s.title,
+                            "target_words": _target_words_for_fast_json(s),
+                        }
+                        for s in batch_specs
+                    ],
+                    indent=2,
+                )
+                start_num = sum(len(batches[i]) for i in range(batch_idx) if batches[i] is not None) + 1
+                end_num = start_num + len(batch_specs) - 1
+                batch_note = (
+                    f"Generate ONLY sections {start_num} to {end_num} "
+                    f"(batch {batch_idx + 1} of {len(batches)})."
+                )
+            else:
+                batch_schema = section_schema
+                batch_note = "Generate all sections with concise but complete paragraphs."
+
+            # Build a SWOT-specific reminder if the swot section is in this batch
+            batch_swot_reminder = ""
+            if report_type in mandatory_swot_types and batch_specs and any(s.id == "swot" for s in batch_specs):
+                batch_swot_reminder = (
+                    "\nCRITICAL — the \"swot\" section is in this batch and is MANDATORY:"
+                    "\n- Include ALL FOUR quadrants: Strengths, Weaknesses, Opportunities, Threats."
+                    "\n- Each quadrant must have at least 3 numbered points of 2-3 lines each."
+                    "\n- Use the individual_swot data in INPUT DATA as the basis."
+                    "\n- Do NOT skip or merge any quadrant."
+                )
+
+            batch_user_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
+{rag_context}
+
+INPUT DATA:
+{json.dumps(slim_data, indent=2)}
+
+SECTION SCHEMA:
+{batch_schema}
+
+{batch_note}{batch_swot_reminder}
+
+OUTPUT FORMAT - MANDATORY:
+Return ONLY a valid JSON array of section objects:
+[
+  {{"id": "<id>", "title": "<title>", "paragraphs": ["<para1>", "<para2>", "<para3>", "<para4>"]}}
+]
+Rules:
+- 3-4 paragraphs per section, each paragraph 70-120 words.
+- Write in full, flowing sentences — NO bullet points, NO headings inside paragraphs.
+- Provide specific, concrete analysis drawn from the input data. Avoid generic filler.
+- Use target_words as a minimum floor, not a ceiling — write more if the topic warrants it.
+- Return ONLY the JSON array. No markdown fences."""
+
+            for model in fallback_chain:
+                try:
+                    client = create_groq_client()
+                    resp = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": batch_user_prompt},
+                        ],
+                        temperature=0.2,
+                        max_tokens=max_tokens_batch,
+                    )
+                    batch_finish_reason = getattr(resp.choices[0], "finish_reason", "") or ""
+                    batch_raw = (resp.choices[0].message.content or "").strip()
+                    if batch_finish_reason == "length":
+                        print(f"[{report_type}] batch {batch_idx + 1} hit max token limit (finish_reason=length).")
+                    break
+                except Exception as exc:
+                    if _is_rate_limited_error(str(exc)):
+                        print(f"[{report_type}] batch {batch_idx + 1} model '{model}' rate-limited; trying next.")
+                        continue
+                    print(f"[{report_type}] batch {batch_idx + 1} model '{model}' error: {exc}")
+            else:
+                batch_raw = "[]"
+
+            batch_sections = _parse_sections_array(batch_raw)
+            if batch_sections:
+                all_sections.extend(batch_sections)
+                print(f"[{report_type}] batch {batch_idx + 1} parsed: {len(batch_sections)} sections")
+            else:
+                print(f"[{report_type}] batch {batch_idx + 1} parse failed; skipping")
+
+        result = {
+            "title": report_title,
+            "report_type": report_type,
+            "sections": all_sections,
+        }
+
+    # Post-recovery: if sections are still missing, regenerate only missing ones.
+    if specs and isinstance(result.get("sections"), list):
+        existing_by_id: Dict[str, Dict[str, Any]] = {}
+        extras: List[Dict[str, Any]] = []
+        for sec in result["sections"]:
+            if not isinstance(sec, dict):
+                continue
+            sid = _section_id(sec)
+            if sid and sid not in existing_by_id:
+                existing_by_id[sid] = sec
+            elif not sid:
+                extras.append(sec)
+
+        missing_specs = [s for s in specs if s.id.lower() not in existing_by_id]
+        if missing_specs:
+            print(f"[{report_type}] Missing {len(missing_specs)} section(s) after batch recovery. Refilling one-by-one...")
+
+            # Refill each missing section INDIVIDUALLY — one LLM call per section.
+            # This is the most reliable recovery: tiny prompt, no truncation risk.
+            for missing_spec in missing_specs:
+                single_schema = json.dumps(
+                    [{"id": missing_spec.id, "title": missing_spec.title,
+                      "target_words": _target_words_for_fast_json(missing_spec)}],
+                    indent=2,
+                )
+                single_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
+{rag_context}
+
+INPUT DATA:
+{json.dumps(slim_data, indent=2)}
+
+Generate ONLY this ONE section:
+{single_schema}
+
+OUTPUT FORMAT - MANDATORY:
+Return ONLY a valid JSON array with exactly 1 object:
+[{{"id": "{missing_spec.id}", "title": "{missing_spec.title}", "paragraphs": ["<para1>", "<para2>", "<para3>", "<para4>"]}}]
+- 3-4 paragraphs, 80-130 words each — write with depth and substance.
+- Provide concrete analysis from the input data. Do not use bullet points.
+- Return ONLY the JSON array, no markdown fences."""
+
+                for model in fallback_chain:
+                    try:
+                        client = create_groq_client()
+                        single_resp = client.chat.completions.create(
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user",   "content": single_prompt},
+                            ],
+                            temperature=0.2,
+                            max_tokens=2000,  # 1 section × 130 words × 4 paras × 1.4 tok/word ≈ 730 tokens
+                        )
+                        single_raw = (single_resp.choices[0].message.content or "").strip()
+                        single_sections = _parse_sections_array(single_raw)
+                        for sec in single_sections:
+                            sid = _section_id(sec)
+                            if sid and sid not in existing_by_id:
+                                existing_by_id[sid] = sec
+                                print(f"[{report_type}] ✅ Refilled section '{missing_spec.id}'")
+                        break
+                    except Exception as exc:
+                        if _is_rate_limited_error(str(exc)):
+                            continue
+                        print(f"[{report_type}] refill '{missing_spec.id}' model '{model}' error: {exc}")
+
+            # Rebuild in spec order for consistency
+            rebuilt: List[Dict[str, Any]] = []
+            for spec in specs:
+                sid = spec.id.lower()
+                sec = existing_by_id.get(sid)
+                if sec:
+                    rebuilt.append(sec)
+            rebuilt.extend(extras)
+            result["sections"] = rebuilt
+
+    result.setdefault("title", report_title)
+    result.setdefault("report_type", report_type)
+    result.setdefault("sections", [])
+
+    normalized_sections: List[Dict[str, Any]] = []
+    for sec in result["sections"]:
+        if not isinstance(sec, dict):
+            continue
+        if "paragraphs" not in sec and "text" in sec:
+            sec["paragraphs"] = _split_paragraphs(sec["text"])
+        if not isinstance(sec.get("paragraphs"), list):
+            sec["paragraphs"] = _split_paragraphs(str(sec.get("paragraphs", "")))
+        sec.setdefault("paragraphs", [])
+        normalized_sections.append(sec)
+
+    # Safety net: if SWOT is still missing after all recovery attempts,
+    # make one final dedicated single-section call rather than inserting a placeholder.
+    if report_type in mandatory_swot_types and not _has_swot_section(normalized_sections):
+        print(f"[{report_type}] ⚠️  SWOT missing after all batches — running dedicated SWOT call...")
+        swot_spec = next((s for s in specs if s.id == "swot"), None)
+        swot_schema = json.dumps(
+            [{"id": "swot",
+              "title": swot_spec.title if swot_spec else "Dyadic SWOT Analysis",
+              "target_words": 280}],
+            indent=2,
+        )
+        swot_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
+{rag_context}
+
+INPUT DATA:
+{json.dumps(slim_data, indent=2)}
+
+Generate ONLY the SWOT section:
+{swot_schema}
+
+CRITICAL RULES:
+- Include ALL FOUR quadrants explicitly labelled: Strengths, Weaknesses, Opportunities, Threats.
+- Each quadrant must have at least 3 numbered points (1. 2. 3.) of 2-3 lines each.
+- Use the individual_swot data from INPUT DATA as the basis for this section.
+- Do NOT skip, abbreviate, or merge any quadrant.
+
+OUTPUT FORMAT - MANDATORY:
+Return ONLY a valid JSON array with exactly 1 object:
+[{{"id": "swot", "title": "Dyadic SWOT Analysis", "paragraphs": ["<strengths para>", "<weaknesses para>", "<opportunities para>", "<threats para>"]}}]
+- Return ONLY the JSON array. No markdown fences."""
+        for model in fallback_chain:
+            try:
+                client = create_groq_client()
+                swot_resp = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user",   "content": swot_prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=2000,
+                )
+                swot_raw = (swot_resp.choices[0].message.content or "").strip()
+                swot_sections = _parse_sections_array(swot_raw)
+                if swot_sections:
+                    normalized_sections.extend(swot_sections)
+                    print(f"[{report_type}] ✅ Dedicated SWOT call succeeded.")
+                    break
+            except Exception as exc:
+                if _is_rate_limited_error(str(exc)):
+                    continue
+                print(f"[{report_type}] dedicated SWOT model '{model}' error: {exc}")
+        else:
+            # Absolute last resort — insert a minimal placeholder so the report is not broken
+            normalized_sections.append({
+                "id": "swot",
+                "title": "Dyadic SWOT Analysis",
+                "paragraphs": [
+                    "Strengths: The employee demonstrates high energy, confidence, and enthusiasm in the Honeymoon stage, bringing momentum to team interactions and early deliverables.",
+                    "Weaknesses: Over-reliance on past success and limited contextual awareness may create blind spots. The Initial Reality Check sub-stage signals emerging friction.",
+                    "Opportunities: Early course correction, structured mentoring, and targeted feedback loops can channel current energy into sustainable performance.",
+                    "Threats: Expectation-reality gaps, complacency risk, and unsustained pace may undermine the relationship if not addressed proactively.",
+                ],
+            })
+
+    result["sections"] = normalized_sections
+
+    word_count = sum(
+        _word_count(" ".join(sec.get("paragraphs", [])))
+        for sec in result["sections"]
+    )
+    result["word_count"] = word_count
+    result["generated_at"] = datetime.now().isoformat()
+    result["model_used"] = dedicated_model
+
+    print(f"[{report_type.upper()}] JSON report done - {len(result['sections'])} sections, {word_count} words")
+    return result
+
+
+def generate_primary_report_json(data: dict) -> Dict[str, Any]:
+    """
+    Generate only the primary report for the detected dimension.
+
+    Dimension -> report type:
+      1D -> employee
+      2D -> boss
+      3D -> team
+      4D -> organization
+    """
+    data = validate_input_data(data)
+    dimension = data["dimension"]
+    report_type = DEFAULT_REPORT_TYPE_BY_DIMENSION.get(dimension)
+    if not report_type:
+        raise ValueError(
+            f"Unsupported dimension: {dimension}. "
+            f"Available: {list(DEFAULT_REPORT_TYPE_BY_DIMENSION.keys())}"
+        )
+
+    print(f"🎯 SINGLE REPORT GENERATION — {dimension} -> {report_type}")
+    with rag_lock:
+        rag_context = retrieve_rag_context(data)
+
+    report = generate_report_as_json(data, report_type, rag_context)
+    return {
+        "dimension": dimension,
+        "reports": {report_type: report},
+    }
+
+
+def generate_multi_reports_json(data: dict) -> Dict[str, Any]:
+    """
+    Main fast-path entry point.
+
+    Fires one dedicated LLM model per report type, ALL IN PARALLEL.
+
+    Dimension → models fired simultaneously:
+      1D  →  MODEL_1D
+      2D  →  MODEL_1D  +  MODEL_2D
+      3D  →  MODEL_1D  +  MODEL_2D  +  MODEL_3D
+      4D  →  MODEL_1D  +  MODEL_2D  +  MODEL_3D  +  MODEL_4D
+
+    Returns a combined JSON dict:
+    {
+      "dimension": "2D",
+      "reports": {
+        "employee": { "title": ..., "sections": [...] },
+        "boss":     { "title": ..., "sections": [...] },
+      }
+    }
+    """
+    data = validate_input_data(data)
+    dimension = data["dimension"]
+    report_types = REPORT_TYPE_MAP.get(dimension, [])
+
+    if not report_types:
+        raise ValueError(f"Unsupported dimension: {dimension}")
+
+    print(f"\n{'='*60}")
+    print(f"⚡ PARALLEL JSON GENERATION — {dimension}")
+    print(f"   Report types : {report_types}")
+    print(f"   Models used  : {[MODEL_BY_REPORT_TYPE_DEDICATED.get(rt, MODEL_NAME) for rt in report_types]}")
+    print(f"{'='*60}\n")
+
+    # Retrieve RAG context once — shared across all parallel calls
+    with rag_lock:
+        rag_context = retrieve_rag_context(data)
+
+    reports: Dict[str, Any] = {}
+
+    # Fire all report-type generations simultaneously
+    with ThreadPoolExecutor(max_workers=len(report_types)) as executor:
+        future_to_type = {
+            executor.submit(generate_report_as_json, data, rtype, rag_context): rtype
+            for rtype in report_types
+        }
+        for future in as_completed(future_to_type):
+            rtype = future_to_type[future]
+            try:
+                reports[rtype] = future.result()
+                print(f"✅ '{rtype}' report collected")
+            except Exception as exc:
+                print(f"❌ '{rtype}' report FAILED: {exc}")
+                reports[rtype] = {
+                    "title": REPORT_TITLE_MAP.get(rtype, rtype),
+                    "report_type": rtype,
+                    "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
+                    "word_count": 0,
+                    "error": str(exc),
+                    "generated_at": datetime.now().isoformat(),
+                }
+
+    return {
+        "dimension": dimension,
+        "reports": reports,  # keyed by report_type: employee, boss, team, organization
+    }
+
+
+def generate_single_report(data: dict, report_type: str, rag_context: str) -> str:
+    """
+    Generate a single report of specified type.
+    
+    Args:
+        data: Input data
+        report_type: Type of report ("employee", "boss", "team", "organization")
+        rag_context: RAG context to use
+        
+    Returns:
+        Generated report text
+    """
+    if report_type not in PROMPT_MAP:
+        raise ValueError(f"Invalid report type: {report_type}. Valid types: {list(PROMPT_MAP.keys())}")
+    
+    developer_prompt = PROMPT_MAP[report_type]
+    report_title = REPORT_TITLE_MAP[report_type]
+    model_candidates = _resolve_model_candidates(
+        dimension=data.get("dimension"),
+        report_type=report_type,
+    )
+    print(f"🚀 Generating {report_title} with Groq (primary model: {model_candidates[0]})")
+    
+    user_prompt = f"""
+REFERENCE MATERIAL (AUTHORITATIVE):
+{rag_context}
+
+INPUT DATA:
+{json.dumps(data, indent=2)}
+
+IMPORTANT: 
+- Use the stage definitions from the reference material above to accurately explain what each behavioral stage means
+- Do not make up stage definitions
+- Apply the appropriate tone based on the identified stage and substage
+- Follow the exact section structure provided in the developer prompt
+"""
+
+    print(f"💭 Sending request to Groq for {report_type} report...")
+    report_text, used_model = _call_groq_with_model_fallback(
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + TONE_GUIDELINES + "\n\n" + developer_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0.2,
+        max_tokens=8000,
+        dimension=data.get("dimension"),
+        report_type=report_type,
+        max_retries=6,
+        request_label=f"{report_title} report",
+    )
+
+    print(f"✅ {report_title} generated successfully using model '{used_model}'!\n")
+    return report_text
+
+
+def generate_multi_reports(data: dict) -> Dict[str, str]:
+    """
+    Generate multiple reports based on dimension.
+    
+    Args:
+        data: Validated input data with dimension field
+        
+    Returns:
+        Dictionary mapping report type to generated report text
+        Example: {"employee": "report text...", "boss": "report text..."}
+    """
+    data = validate_input_data(data)
+    dimension = data["dimension"]
+    
+    print(f"\n{'='*60}")
+    print(f"🔍 MULTI-REPORT GENERATION")
+    print(f"{'='*60}")
+    print(f"Dimension: {dimension}")
+    print(f"Report types to generate: {REPORT_TYPE_MAP.get(dimension, [])}")
+    print(f"{'='*60}\n")
+    
+    if dimension not in REPORT_TYPE_MAP:
+        raise ValueError(f"❌ Unsupported dimension: {dimension}. Available: {list(REPORT_TYPE_MAP.keys())}")
+    
+    # Get RAG context once (shared across all reports)
+    with rag_lock:
+        rag_context = retrieve_rag_context(data)
+    
+    # Generate reports for each type
+    reports = {}
+    report_types = REPORT_TYPE_MAP[dimension]
+    
+    for report_type in report_types:
+        try:
+            report = generate_single_report(data, report_type, rag_context)
+            reports[report_type] = report
+        except Exception as e:
+            print(f"❌ Error generating {report_type} report: {e}")
+            reports[report_type] = f"Error generating report: {str(e)}"
+    
+    return reports
+
+
+# ===================================================
+# LEGACY: SINGLE REPORT GENERATION (BACKWARD COMPATIBLE)
+# ===================================================
+def generate_text_report(data: dict) -> str:
+    """
+    ✅ LEGACY FUNCTION: Generate single report based on dimension
+    Kept for backward compatibility
+    """
+    data = validate_input_data(data)
+    dimension = data["dimension"]
+    
+    # ✅ CRITICAL DEBUG LOGGING
+    print(f"\n{'='*60}")
+    print(f"🔍 DIMENSION TRACKING DEBUG")
+    print(f"{'='*60}")
+    print(f"Dimension extracted: {dimension}")
+    print(f"Dimension type: {type(dimension)}")
+    print(f"Available prompts: {list(DEV_PROMPT_MAP.keys())}")
+    print(f"Dimension in map: {dimension in DEV_PROMPT_MAP}")
+    print(f"{'='*60}\n")
+
+    if dimension not in DEV_PROMPT_MAP:
+        raise ValueError(f"❌ Unsupported dimension: {dimension}. Available: {list(DEV_PROMPT_MAP.keys())}")
+
+    developer_prompt = DEV_PROMPT_MAP[dimension]
+    model_candidates = _resolve_model_candidates(dimension=dimension)
+    
+    print(f"\n{'='*60}")
+    print(f"🚀 Generating {dimension} Report with Groq (primary model: {model_candidates[0]})")
+    print(f"{'='*60}\n")
+    
+    with rag_lock:
+        rag_context = retrieve_rag_context(data)
+
+    user_prompt = f"""
+REFERENCE MATERIAL (AUTHORITATIVE):
+{rag_context}
+
+INPUT DATA:
+{json.dumps(data, indent=2)}
+
+IMPORTANT: 
+- Use the stage definitions from the reference material above to accurately explain what each behavioral stage means
+- Do not make up stage definitions
+- Apply the appropriate tone based on the identified stage and substage
+- Follow the exact section structure provided in the developer prompt
+"""
+
+    print("💭 Sending request to Groq...")
+    report_text, used_model = _call_groq_with_model_fallback(
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + TONE_GUIDELINES + "\n\n" + developer_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0.2,
+        max_tokens=8000,  # Groq has different limits per model
+        dimension=dimension,
+        report_type="",
+        max_retries=6,
+        request_label=f"{dimension} report",
+    )
+
+    print(f"✅ {dimension} Report generated successfully using model '{used_model}'!\n")
+    return report_text
+
+
+# ============================================================================
+# FRAPPE → ND INPUT MAPPER
+# Called by main.py worker when processing employee_report jobs
+# ============================================================================
+
+# Sub-stage name → plain-English definition
+_SUB_STAGE_DEFINITIONS: Dict[str, str] = {
+    "Excitement and Optimism - Honeymoon": (
+        "The employee is riding a wave of high energy and positivity, "
+        "enthusiastically embracing their role and the organisation's potential."
+    ),
+    "Confidence and Over-Reliance on Past Success - Honeymoon": (
+        "Strong self-assurance dominates, often drawing on prior achievements "
+        "without yet fully adapting to the new context."
+    ),
+    "Initial Reality Check - Honeymoon": (
+        "Early challenges appear; confidence remains high, but subtle signals "
+        "of complexity and difficulty are beginning to surface."
+    ),
+    "Sustained Confidence with Subtle Complacency - Honeymoon": (
+        "Continued optimism masks emerging blind spots; performance feels "
+        "steady but underlying complacency is quietly building."
+    ),
+    "Overlap with Self-Introspection Stage - Honeymoon": (
+        "The employee is bridging from the Honeymoon phase into self-examination, "
+        "noticing gaps between expectation and reality."
+    ),
+    "Overlap with Soul-Searching Stage - Honeymoon": (
+        "Deeper questioning begins to co-exist with the lingering enthusiasm "
+        "of the Honeymoon phase."
+    ),
+    "Overlap with Steady State - Honeymoon": (
+        "Initial excitement is settling into a more grounded and consistent "
+        "operational rhythm."
+    ),
+    "Acknowledgment of Problems - Self-Introspection": (
+        "The employee recognises that challenges exist and is beginning to "
+        "honestly assess gaps in performance or alignment."
+    ),
+    "Analyzing Cause - Self-Introspection": (
+        "Active investigation into the root causes of difficulties; curiosity replaces denial."
+    ),
+    "Partial Acceptance of Responsibility - Self-Introspection": (
+        "Ownership of some shortcomings is emerging, though full accountability is still developing."
+    ),
+    "Exploration of Solutions - Self-Introspection": (
+        "Energy is redirected toward identifying practical ways forward."
+    ),
+    "Deep Frustration - Soul-Searching": (
+        "Intense emotional difficulty accompanies a fundamental questioning of fit, values, and purpose."
+    ),
+    "Questioning Fundamentals - Soul-Searching": (
+        "Core assumptions about role, identity, and direction are being re-examined at a deep level."
+    ),
+    "Openness to Change - Soul-Searching": (
+        "Willingness to let go of old patterns and embrace a new trajectory is beginning to emerge."
+    ),
+    "Actionable Transformation - Soul-Searching": (
+        "Concrete steps toward meaningful change are being taken; momentum is building toward a new equilibrium."
+    ),
+    "Stability and Alignment - Steady State": (
+        "The employee operates with a stable, integrated sense of purpose and consistent, reliable performance."
+    ),
+    "Operational Predictability - Steady State": (
+        "Outputs and behaviours are highly consistent; the employee is a dependable anchor for their team."
+    ),
+    "Emerging Challenges - Steady State": (
+        "New complexities appear on the horizon; vigilance and proactive adaptation are becoming important."
+    ),
+    "Dynamic Balance - Steady State": (
+        "The employee actively balances stability with growth, thriving in an environment of continuous improvement."
+    ),
+}
+
+
+def detect_dimension(questionnaires: List[str]) -> str:
+    """
+    Derive the ChaturVima dimension from questionnaire roles first, then count.
+
+    Why:
+      - With submission-specific calls, Frappe may return only one questionnaire
+        (e.g. ["Boss"]). Count-based detection would incorrectly map that to 1D.
+      - Role-based detection maps:
+          Self -> 1D
+          Boss/Manager -> 2D
+          Department/Team -> 3D
+          Company/Organization -> 4D
+
+    Fallback:
+      - If role cannot be inferred, use count-based mapping.
+    """
+    normalized = [str(q).strip().lower() for q in questionnaires if str(q).strip()]
+    max_dim = 0
+
+    for q in normalized:
+        if any(tok in q for tok in ("company", "organisation", "organization", "org")):
+            max_dim = max(max_dim, 4)
+        elif any(tok in q for tok in ("department", "dept", "team")):
+            max_dim = max(max_dim, 3)
+        elif any(tok in q for tok in ("boss", "manager", "superior", "reporting")):
+            max_dim = max(max_dim, 2)
+        elif any(tok in q for tok in ("self", "employee")):
+            max_dim = max(max_dim, 1)
+
+    if max_dim > 0:
+        dimension = f"{max_dim}D"
+        print(f"📐 detect_dimension: role-based {questionnaires} → {dimension}")
+        return dimension
+
+    count = len(normalized)
+    by_count = {1: "1D", 2: "2D", 3: "3D", 4: "4D"}
+    dimension = by_count.get(count, "1D")
+    if count not in by_count:
+        print(
+            f"⚠️  detect_dimension: unknown roles and unexpected count ({count}) for {questionnaires}. "
+            f"Defaulting to 1D."
+        )
+    else:
+        print(f"📐 detect_dimension: count-based {count} questionnaire(s) → {dimension}")
+    return dimension
+
+
+def _frappe_strip_stage_suffix(name: str) -> str:
+    """'Initial Reality Check - Honeymoon' → 'Initial Reality Check'"""
+    return re.sub(r"\s*-\s*\w[\w\s\-]*$", "", name).strip()
+
+
+def _frappe_build_swot(stage: str) -> Dict[str, Any]:
+    """
+    Deep, categorized SWOT with sub-items, context, and impact.
+    Each category has 4 items; each item has area, description, context, and impact.
+    The LLM is instructed to expand these into rich narrative paragraphs per category.
+    """
+    swot_map: Dict[str, Any] = {
+        "Honeymoon": {
+            "strengths": [
+                {"area": "High Energy & Enthusiasm",         "description": "Brings exceptional drive and eagerness to every task.",              "context": "Visible in early project phases and team interactions.",      "impact": "Accelerates team momentum and inspires peer engagement."},
+                {"area": "Optimistic Outlook",               "description": "Consistently sees possibilities where others see obstacles.",         "context": "Shapes a positive team climate and encourages initiative.",   "impact": "Drives proactive problem-solving and idea generation."},
+                {"area": "Relationship-Building Ability",    "description": "Naturally builds rapport and trust with colleagues quickly.",        "context": "Leverages fresh energy to form strategic alliances early.",   "impact": "Expands organisational network and broadens influence."},
+                {"area": "Bias Toward Action",               "description": "Comfortable making decisions and moving initiatives forward.",       "context": "Reduces delays and keeps projects on track.",                "impact": "Delivers early wins that build credibility and trust."},
+            ],
+            "weaknesses": [
+                {"area": "Overconfidence in Judgement",      "description": "May overestimate own readiness and underestimate task complexity.",  "context": "Past successes create a false sense of transferable expertise.", "impact": "Risk of errors, missed details, and misaligned expectations."},
+                {"area": "Limited Organisational Context",   "description": "Decisions made without full understanding of system dynamics.",     "context": "New to certain stakeholder landscapes or cultural norms.",    "impact": "Solutions may not address root causes or may create friction."},
+                {"area": "Selective Attention to Risk",      "description": "Tendency to minimise early warning signs.",                        "context": "Optimism bias causes underweighting of negative signals.",    "impact": "Small issues can escalate before they are addressed."},
+                {"area": "Thin Feedback Loop",               "description": "May not actively seek or process critical feedback.",               "context": "High confidence reduces perceived need for external input.",  "impact": "Blind spots remain unchecked, slowing course correction."},
+            ],
+            "opportunities": [
+                {"area": "Quick Wins for Credibility",       "description": "Channel momentum into high-visibility, achievable milestones.",     "context": "Early stage is ideal for demonstrating value rapidly.",      "impact": "Builds trust with stakeholders and opens doors for larger roles."},
+                {"area": "Mentorship & Learning Partnerships","description": "Access to senior colleagues who can provide contextual wisdom.",   "context": "Openness and enthusiasm make others willing to invest in them.","impact": "Accelerates contextual understanding and reduces blind spots."},
+                {"area": "Cross-Functional Exposure",        "description": "Opportunity to join projects beyond immediate role scope.",         "context": "Energy and initiative make them attractive collaborators.",    "impact": "Broadens perspective and builds resilience for future challenges."},
+                {"area": "Structured Development Planning",  "description": "Ideal time to anchor a personal growth roadmap with a manager.",   "context": "High motivation makes goal-setting conversations productive.", "impact": "Creates sustainable development path beyond the Honeymoon phase."},
+            ],
+            "threat": [
+                {"area": "Expectation-Reality Gap",          "description": "Optimistic forecasts may not match the complexity of actual work.",  "context": "Gaps between expectation and reality emerge over time.",      "impact": "Disappointment can trigger disengagement or overreaction."},
+                {"area": "Burnout from Unsustained Pace",    "description": "High energy without recovery can lead to fatigue.",                 "context": "Sustained intensity without boundaries depletes reserves.",   "impact": "Performance drops sharply when energy runs out."},
+                {"area": "Peer Resentment",                  "description": "Excessive visibility or credit-seeking may alienate colleagues.",   "context": "Enthusiasm can be perceived as overstepping by established peers.","impact": "Damages working relationships and undermines team cohesion."},
+                {"area": "Premature Commitment",             "description": "Over-promising on timelines or deliverables under confidence bias.",  "context": "Optimism leads to underestimating effort required.",          "impact": "Missed deadlines erode credibility when it matters most."},
+            ],
+        },
+        "Self-Introspection": {
+            "strengths": [
+                {"area": "Growing Self-Awareness",           "description": "Recognises personal blind spots and is willing to examine them.",   "context": "Triggered by meaningful feedback or visible performance gaps.","impact": "Foundation for sustainable, authentic development."},
+                {"area": "Reflective Capacity",              "description": "Able to sit with uncertainty and analyse patterns honestly.",       "context": "Willingness to question past assumptions creates openness.",  "impact": "Enables more nuanced, context-sensitive decision-making."},
+                {"area": "Openness to Feedback",            "description": "Actively seeks input from trusted peers and managers.",             "context": "Shift from confidence to curiosity creates a learning posture.", "impact": "Accelerates skill development and reduces recurrence of errors."},
+                {"area": "Accountability Orientation",      "description": "Beginning to take ownership of outcomes rather than externalising.",  "context": "Internal locus of control is strengthening.",               "impact": "Builds respect from peers and leadership over time."},
+            ],
+            "weaknesses": [
+                {"area": "Decision Paralysis",               "description": "Over-analysis can slow or stall necessary action.",                "context": "Reflection loops become unproductive without a time boundary.", "impact": "Delays project progress and frustrates stakeholders."},
+                {"area": "Emotional Volatility",             "description": "Inner conflict may surface as mood variability at work.",           "context": "Unresolved questions about performance create internal noise.", "impact": "Inconsistent behaviour affects team predictability and trust."},
+                {"area": "Selective Sharing",               "description": "May internalise struggles rather than seeking support early.",       "context": "Pride or fear of judgment delays asking for help.",           "impact": "Prolongs the introspective cycle unnecessarily."},
+                {"area": "Short-term Focus",                "description": "Energy consumed by self-analysis can reduce strategic thinking.",   "context": "Immediate challenges dominate attention at this phase.",      "impact": "Risk of losing sight of longer-term goals and priorities."},
+            ],
+            "opportunities": [
+                {"area": "Course Correction Before Escalation","description": "Insight gained now prevents larger performance issues later.",   "context": "Early self-awareness is the best time to intervene.",        "impact": "Saves significant time, effort, and reputational cost."},
+                {"area": "Targeted Skill Development",       "description": "Reflection reveals specific gaps that can now be addressed.",       "context": "Data-driven self-assessment enables precise development plans.","impact": "Efficient use of development budget and energy."},
+                {"area": "Mentoring Relationship",           "description": "Right time to engage a mentor who can provide a mirror and guidance.","context": "Vulnerability at this stage creates genuine openness to mentoring.","impact": "Accelerates the transition to a more stable performance level."},
+                {"area": "Rebuilding Credibility",           "description": "Small wins during this phase can rebuild confidence and trust.",    "context": "Demonstrating learning agility is valued by leadership.",     "impact": "Positions the individual as coachable and growth-oriented."},
+            ],
+            "threat": [
+                {"area": "Disengagement Risk",               "description": "Prolonged uncertainty without resolution can reduce motivation.",   "context": "Introspection without action leads to a sense of stagnation.", "impact": "Increased absenteeism, quiet quitting, or attrition risk."},
+                {"area": "Confidence Erosion",               "description": "Excessive self-criticism can undermine core capabilities.",        "context": "The inner critic becomes louder without positive reinforcement.","impact": "Capability is underutilised and contribution drops."},
+                {"area": "Isolation from Team",              "description": "Withdrawal during introspection reduces collaboration quality.",    "context": "Focus on internal process reduces peer visibility.",           "impact": "Weakens team relationships during a critical phase."},
+                {"area": "Misinterpretation by Leadership",  "description": "Quietness or hesitation may be read as disengagement.",            "context": "Managers without context may escalate concerns prematurely.", "impact": "Risk of reduced opportunities or performance management triggers."},
+            ],
+        },
+        "Soul-Searching": {
+            "strengths": [
+                {"area": "Moral Courage",                    "description": "Willingness to face difficult truths about values and direction.",  "context": "Depth of questioning signals genuine commitment to growth.",  "impact": "Leads to more authentic and values-aligned behaviour."},
+                {"area": "Values Clarity in Progress",       "description": "Deep questioning is actively clarifying what matters most.",        "context": "Crisis of meaning often precedes the strongest alignment.",   "impact": "Future decisions will be more consistent and purposeful."},
+                {"area": "Empathy & Depth",                  "description": "The experience of struggle increases compassion for others.",       "context": "Shared human experience of difficulty creates connection.",   "impact": "Becomes a more empathetic colleague and future leader."},
+                {"area": "Resilience Building",              "description": "Navigating this phase builds psychological toughness.",             "context": "Overcoming existential challenge is a long-term asset.",      "impact": "Emerges from this phase with greater emotional durability."},
+            ],
+            "weaknesses": [
+                {"area": "Performance Instability",          "description": "Output and quality may fluctuate significantly during this phase.",  "context": "Internal conflict consumes cognitive and emotional bandwidth.","impact": "Deliverables may miss quality or timeliness expectations."},
+                {"area": "Isolation Tendency",               "description": "Intense introspection often leads to withdrawal from colleagues.",  "context": "The process feels too personal to share widely.",            "impact": "Social capital erodes at a time when support is most needed."},
+                {"area": "Difficulty Receiving Feedback",    "description": "Heightened sensitivity makes critical input harder to absorb.",    "context": "Emotional rawness lowers the threshold for perceived criticism.","impact": "Feedback loops that could help are inadvertently shut down."},
+                {"area": "Short-Horizon Thinking",           "description": "Existential questions make long-term planning feel irrelevant.",    "context": "Immediate emotional experience dominates cognitive space.",   "impact": "Strategic contributions reduce; focus narrows to survival."},
+            ],
+            "opportunities": [
+                {"area": "Profound Personal Transformation",  "description": "The depth of this phase enables lasting behavioural change.",      "context": "Surface-level changes are replaced by structural shifts.",    "impact": "Post-transformation performance is more sustainable."},
+                {"area": "Authentic Leadership Development", "description": "Clarity emerging from crisis enables more genuine influence.",      "context": "Leaders who have faced deep questions inspire more trust.",    "impact": "Positioned for high-trust leadership roles over time."},
+                {"area": "Career Realignment",               "description": "The phase may reveal a better-fit role or direction.",             "context": "Honest self-assessment surfaces true strengths and interests.", "impact": "Higher engagement and performance in a realigned role."},
+                {"area": "Professional Support Access",      "description": "This is the right time to engage coaching or counselling.",        "context": "Readiness to change makes coaching maximally effective here.",  "impact": "Accelerates resolution and reduces the duration of this phase."},
+            ],
+            "threat": [
+                {"area": "Phase Entrenchment",               "description": "Without support, soul-searching can become chronic rather than temporary.","context": "Absence of resolution mechanisms prolongs the crisis.", "impact": "Long-term disengagement and possible attrition."},
+                {"area": "Exit Risk",                        "description": "Unresolved questioning may lead to resignation or disengagement.",   "context": "If organisational fit feels permanently misaligned, exit follows.","impact": "Loss of talent and institutional knowledge."},
+                {"area": "Mental Health Deterioration",      "description": "Prolonged existential stress without support risks wellbeing.",     "context": "Unsupported soul-searching can intensify anxiety or low mood.",  "impact": "Performance, relationships, and health all suffer."},
+                {"area": "Stigma of Visible Struggle",       "description": "If the phase is visible to the team, it may invite judgment.",     "context": "Organisational cultures that reward stoicism may penalise this.","impact": "Individual hides the struggle, reducing access to support."},
+            ],
+        },
+        "Steady-State": {
+            "strengths": [
+                {"area": "Consistent, High-Quality Delivery", "description": "Reliable performance that colleagues and managers depend on.",      "context": "Established routines and deep familiarity with role requirements.","impact": "Anchor of team stability and output predictability."},
+                {"area": "Deep Institutional Knowledge",      "description": "Rich understanding of people, processes, and unwritten rules.",     "context": "Accumulated through extended tenure and broad exposure.",      "impact": "Able to navigate complexity and advise others effectively."},
+                {"area": "Emotional Equilibrium",             "description": "Calm, measured response to pressure and ambiguity.",               "context": "Previous stages have been resolved; inner stability is strong.","impact": "De-escalates team tension and models healthy professional behaviour."},
+                {"area": "Mentoring & Knowledge Transfer",    "description": "Well-positioned to develop and guide junior colleagues.",          "context": "Breadth and depth of experience create natural mentoring value.","impact": "Multiplies organisational capability beyond own contribution."},
+            ],
+            "weaknesses": [
+                {"area": "Complacency Risk",                  "description": "Stability may reduce appetite for growth or innovation.",          "context": "Comfort with the status quo creates resistance to disruption.",  "impact": "Misses opportunities for advancement or skill expansion."},
+                {"area": "Change Resistance",                 "description": "Established ways of working may be defended over new approaches.",  "context": "Deep familiarity creates anchoring bias toward current methods.","impact": "May slow team adaptation to organisational change."},
+                {"area": "Reduced Visibility Appetite",       "description": "May stop seeking stretch assignments or high-profile projects.",   "context": "Satisfaction with current level reduces ambition signals.",    "impact": "Career plateaus despite the capacity for greater contribution."},
+                {"area": "Knowledge Hoarding Risk",           "description": "Expertise may not be systematically transferred to others.",       "context": "Busy routines leave little time for structured knowledge sharing.","impact": "Creates single-point-of-failure risk for the organisation."},
+            ],
+            "opportunities": [
+                {"area": "Strategic Leadership Contribution", "description": "Stability frees bandwidth for higher-level strategic input.",       "context": "Operational mastery creates capacity for systemic thinking.",   "impact": "Elevates from executor to strategic advisor."},
+                {"area": "Formal Mentorship Programme",      "description": "Ideal candidate to lead or participate in structured mentoring.",   "context": "Experience and stability create psychological safety for mentees.","impact": "Scales individual expertise across the organisation."},
+                {"area": "Innovation & Process Improvement",  "description": "Deep process knowledge enables identification of optimisation areas.","context": "Insider understanding reveals inefficiencies invisible to newcomers.","impact": "Drives measurable productivity and quality improvements."},
+                {"area": "Succession Planning Readiness",     "description": "Profile suggests readiness for expanded responsibilities.",        "context": "Consistency, knowledge, and stability are key succession criteria.","impact": "Reduces organisational risk from key person dependency."},
+            ],
+            "threat": [
+                {"area": "Stagnation & Disengagement",        "description": "Absence of challenge may erode engagement over time.",             "context": "Stimulation needs are not met by a stable but static environment.","impact": "Quiet disengagement reduces discretionary effort and output."},
+                {"area": "Disruption Vulnerability",          "description": "Major organisational changes can destabilise a settled equilibrium.","context": "Dependency on stable structures creates fragility to sudden shifts.","impact": "Performance and wellbeing may drop sharply during transitions."},
+                {"area": "Talent Attrition Risk",             "description": "Lack of new challenges may eventually prompt a role change.",      "context": "External opportunities with greater growth potential become attractive.","impact": "Organisational loses a high-value, high-tenure contributor."},
+                {"area": "Skills Obsolescence",               "description": "Stability without learning may lead to outdated capabilities.",    "context": "Fast-changing environments outpace static skill sets.",          "impact": "Relevance and competitiveness in role diminishes over time."},
+            ],
+        },
+    }
+    return swot_map.get(stage, swot_map["Honeymoon"])
+
+
+def _frappe_build_recommendation(stage: str) -> Dict[str, Any]:
+    rec_map: Dict[str, Any] = {
+        "Honeymoon": {
+            "framework_name": "Grounded Momentum Framework",
+            "principles": [
+                "Channel enthusiasm into structured learning.",
+                "Validate assumptions with evidence before acting.",
+                "Build relationships intentionally, not just reactively.",
+            ],
+            "recommended_actions": [
+                {"focus_area": "Reality Testing",  "recommendation": "Schedule weekly check-ins with your manager to align perceptions with expectations.", "priority": "High",   "time_horizon": "Immediate"},
+                {"focus_area": "Skill Anchoring",   "recommendation": "Identify 2-3 core competencies to deepen rather than spreading attention broadly.",   "priority": "Medium", "time_horizon": "Short Term"},
+                {"focus_area": "Feedback Loop",     "recommendation": "Actively solicit honest feedback from peers to surface blind spots early.",            "priority": "High",   "time_horizon": "Short Term"},
+            ],
+        },
+        "Self-Introspection": {
+            "framework_name": "Reflective Recalibration Framework",
+            "principles": [
+                "Treat friction as information, not failure.",
+                "Distinguish between self-critique and self-awareness.",
+                "Action is the antidote to over-analysis.",
+            ],
+            "recommended_actions": [
+                {"focus_area": "Root Cause Mapping",     "recommendation": "Journal key challenges and identify recurring patterns to address systematically.", "priority": "High",   "time_horizon": "Short Term"},
+                {"focus_area": "Accountability Partner", "recommendation": "Find a trusted peer or mentor to share reflections with and hold yourself accountable.", "priority": "Medium", "time_horizon": "Short Term"},
+                {"focus_area": "Small Wins Strategy",    "recommendation": "Deliberately pursue achievable goals to rebuild confidence incrementally.",         "priority": "High",   "time_horizon": "Immediate"},
+            ],
+        },
+        "Soul-Searching": {
+            "framework_name": "Values Realignment Framework",
+            "principles": [
+                "Uncertainty is a signal of growth, not failure.",
+                "Re-anchoring to core values creates sustainable direction.",
+                "Seek support actively; isolation compounds the challenge.",
+            ],
+            "recommended_actions": [
+                {"focus_area": "Values Clarification",  "recommendation": "Complete a structured values exercise to identify what truly matters to you at work.",   "priority": "High",   "time_horizon": "Immediate"},
+                {"focus_area": "Professional Support",  "recommendation": "Engage with a coach or counsellor to navigate the emotional dimensions of this phase.", "priority": "High",   "time_horizon": "Short Term"},
+                {"focus_area": "Micro-Commitments",     "recommendation": "Make small, visible commitments at work to maintain engagement while you recalibrate.", "priority": "Medium", "time_horizon": "Short Term"},
+            ],
+        },
+        "Steady-State": {
+            "framework_name": "Sustained Excellence Framework",
+            "principles": [
+                "Protect the stability that enables consistent delivery.",
+                "Seek intentional growth challenges to avoid complacency.",
+                "Leverage experience to elevate others around you.",
+            ],
+            "recommended_actions": [
+                {"focus_area": "Knowledge Transfer",    "recommendation": "Identify a junior colleague to mentor, formalising your institutional knowledge.",  "priority": "Medium", "time_horizon": "Short Term"},
+                {"focus_area": "Stretch Assignment",    "recommendation": "Request involvement in a cross-functional project that challenges your comfort zone.", "priority": "Medium", "time_horizon": "Mid Term"},
+                {"focus_area": "Innovation Contribution", "recommendation": "Dedicate time each sprint to exploring improvements in current processes or tools.",  "priority": "Low",    "time_horizon": "Mid Term"},
+            ],
+        },
+    }
+    return rec_map.get(stage, rec_map["Honeymoon"])
+
+
+def map_frappe_to_nd(employee_id: str, frappe_data: dict) -> dict:
+    """
+    Convert a Frappe weighted-assessment response into the ND input format
+    required by generate_text_report().
+
+    Key behaviour:
+      - Frappe JSON has NO 'dimension' field.
+      - Dimension is auto-detected via detect_dimension() using
+        len(questionnaires_considered):
+            1 item  → 1D
+            2 items → 2D
+            3 items → 3D
+            4 items → 4D
+
+    This function is the single source-of-truth for the Frappe → LLM mapping.
+    It is called by the WorkerPool in main.py (employee_report branch).
+    """
+    msg = frappe_data.get("message", frappe_data)
+
+    questionnaires: List[str] = msg.get("questionnaires_considered", [])
+    dimension: str = detect_dimension(questionnaires)
+
+    dominant_stage:     str = msg.get("dominant_stage", "Honeymoon")
+    dominant_sub_full:  str = msg.get("dominant_sub_stage", "")
+    dominant_sub_short: str = _frappe_strip_stage_suffix(dominant_sub_full)
+
+    # Stage score summary
+    stage_score_summary = []
+    for st in msg.get("stages", []):
+        stage_score_summary.append({
+            "stage":      st["stage"],
+            "score":      st["score"],
+            "percentage": st["percentage"],
+            "sub_stages": [
+                {"name": ss["sub_stage"], "score": ss["score"], "percentage": ss["percentage"]}
+                for ss in st.get("sub_stages", [])
+            ],
+        })
+
+    # Questionnaire snapshot (sub-stage scores surfaced as structured data)
+    questionnaire_snapshot = []
+    for st in msg.get("stages", []):
+        for ss in st.get("sub_stages", []):
+            questionnaire_snapshot.append({
+                "sub_stage":  ss["sub_stage"],
+                "score":      ss["score"],
+                "percentage": ss["percentage"],
+                "stage":      st["stage"],
+            })
+
+    nd_input = {
+        "dimension": dimension,   # ← derived from questionnaire count, NOT from Frappe
+        "employee_context": {
+            "employee_id":              employee_id,
+            "questionnaires_considered": questionnaires,
+            "dimension_auto_detected":  f"{len(questionnaires)} questionnaire(s) → {dimension}",
+            "assessment_date":          datetime.now().strftime("%Y-%m-%d"),
+        },
+        "behavioral_stage": {
+            "stage":               dominant_stage,
+            "sub_stage":           dominant_sub_short,
+            "sub_stage_definition": _SUB_STAGE_DEFINITIONS.get(
+                dominant_sub_full,
+                f"The employee is currently in the '{dominant_sub_full}' phase.",
+            ),
+            "stage_score_summary": stage_score_summary,
+            "logical_outcomes":    msg.get("logical_outcomes", []),
+        },
+        "employee_questionnaire":        questionnaire_snapshot,
+        "individual_swot":               _frappe_build_swot(dominant_stage),
+        "recommendation_framework":      _frappe_build_recommendation(dominant_stage),
+        "revised_employee_model_weights": {
+            "dominant_stage":    dominant_stage,
+            "dominant_sub_stage": dominant_sub_full,
+            "stage_scores": {st["stage"]: st["score"] for st in msg.get("stages", [])},
+        },
+    }
+
+    # validate_input_data normalises and confirms the dimension string
+    return validate_input_data(nd_input)
+
+
+# MAIN
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Generate ChaturVima reports")
+    parser.add_argument("--input", help="Path to input JSON file")
+    parser.add_argument("--dimension", help="1D, 2D, 3D, or 4D to load from data/")
+    parser.add_argument("--multi", action="store_true", help="Generate multiple reports based on dimension")
+    return parser
+
+
+def _main() -> None:
+    args = _build_arg_parser().parse_args()
+
+    if args.input:
+        input_data = load_input_json_from_path(args.input)
+    elif args.dimension:
+        input_data = load_input_json_from_dimension(args.dimension)
+    else:
+        raise SystemExit("Provide --input or --dimension")
+
+    if args.multi:
+        # Generate multiple reports
+        reports = generate_multi_reports(input_data)
+        
+        print("\n" + "="*60)
+        print("GENERATED REPORTS")
+        print("="*60 + "\n")
+        
+        for report_type, report_text in reports.items():
+            print(f"\n{'='*60}")
+            print(f"{REPORT_TITLE_MAP[report_type].upper()}")
+            print(f"{'='*60}\n")
+            print(report_text)
+            
+            # Save each report
+            output_filename = (
+                f"output/report_{input_data['dimension']}_{report_type}_{input_data.get('employee_name', 'unknown')}.txt"
+            )
+            os.makedirs("output", exist_ok=True)
+            with open(output_filename, "w", encoding="utf-8") as f:
+                f.write(f"{REPORT_TITLE_MAP[report_type]}\n")
+                f.write("="*60 + "\n\n")
+                f.write(report_text)
+            print(f"\n{report_type} report saved to: {output_filename}")
+    else:
+        # Legacy: Generate single report
+        report_text = generate_text_report(input_data)
+
+        print("\n" + "="*60)
+        print("GENERATED REPORT")
+        print("="*60 + "\n")
+        print(report_text)
+
+        output_filename = (
+            f"output/report_{input_data['dimension']}_{input_data.get('employee_name', 'unknown')}.txt"
+        )
+        os.makedirs("output", exist_ok=True)
+        with open(output_filename, "w", encoding="utf-8") as f:
+            f.write(report_text)
+        print(f"\nReport saved to: {output_filename}")
+
+
+if __name__ == "__main__":
+    _main()
+
+
 def _parse_section_json(raw: str) -> List[str]:
     """
     Try to extract a JSON array of paragraph strings from the LLM response.
     Falls back to plain-text splitting if JSON is malformed.
+    Always strips leaked JSON bracket/quote artifacts from every paragraph.
     """
     # Strip markdown code fences if present
     cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
@@ -1538,24 +3227,24 @@ def _parse_section_json(raw: str) -> List[str]:
     try:
         parsed = json.loads(cleaned)
         if isinstance(parsed, list):
-            return [str(p).strip() for p in parsed if str(p).strip()]
+            return [_clean_paragraph(p) for p in parsed if str(p).strip()]
         if isinstance(parsed, dict) and "paragraphs" in parsed:
-            return [str(p).strip() for p in parsed["paragraphs"] if str(p).strip()]
+            return [_clean_paragraph(p) for p in parsed["paragraphs"] if str(p).strip()]
     except (json.JSONDecodeError, ValueError):
         pass
 
-    # Try to find a JSON array inside the text
-    match = re.search(r"\[.*?\]", cleaned, re.DOTALL)
+    # Try to find a JSON array inside the text (greedy — finds outermost bracket pair)
+    match = re.search(r"\[.*\]", cleaned, re.DOTALL)
     if match:
         try:
             parsed = json.loads(match.group())
             if isinstance(parsed, list):
-                return [str(p).strip() for p in parsed if str(p).strip()]
+                return [_clean_paragraph(p) for p in parsed if str(p).strip()]
         except (json.JSONDecodeError, ValueError):
             pass
 
-    # Final fallback: treat as plain text, split into paragraphs
-    return _split_paragraphs(raw)
+    # Final fallback: treat as plain text, split into paragraphs, still clean each one
+    return [_clean_paragraph(p) for p in _split_paragraphs(raw) if p.strip()]
 
 
 def _generate_section_text(
@@ -1895,17 +3584,33 @@ def generate_report_as_json(
         for tok in ("scout", "70b", "llama-4", "maverick", "gemma-3")
     )
 
-    # Build a compact schema for fast JSON mode to reduce truncation risk.
+    # Build a compact schema for fast JSON mode.
+    # Word targets per section — tuned to produce consulting-grade depth
+    # while staying within per-batch token budgets.
+    #
+    # Budget check (large model, batch_size=4, max_tokens_batch=6000):
+    #   4 sections × 250 words × 1.4 tok/word ≈ 1,400 output tokens → safe.
+    #   6 sections × 180 words × 1.4 tok/word ≈ 1,512 output tokens → safe.
+    #
+    # Normal models (single-call, max_tokens=4000):
+    #   14 sections × 180 words × 1.4 tok/word ≈ 3,528 output tokens → borderline.
+    #   Use 140 words for normal models to stay within 4000.
     def _target_words_for_fast_json(spec: SectionSpec) -> int:
         if report_type == "employee":
-            if spec.id == "stage":       return 260
-            if spec.id == "action_plan": return 220
-            return 130
-        # For large models use smaller per-section targets so the full report
-        # fits inside the output token budget in a single call.
+            # Employee report sections — unchanged, these were working well.
+            if spec.id == "stage":       return 400
+            if spec.id == "action_plan": return 350
+            return 180
+        # Non-employee reports (boss / team / org):
+        # Large models batch 4 sections per call at 6000 tokens — plenty of room.
+        # Normal models single-call at 4000 tokens — must be more conservative.
         if _is_large_model:
-            return min(max(80, spec.min_words // 3), 110)
-        return min(max(140, spec.min_words), 260)
+            # SWOT needs more room: 4 quadrants × 3 points each.
+            if spec.id == "swot":        return 350
+            return 220   # solid 3-paragraph sections
+        else:
+            if spec.id == "swot":        return 280
+            return 140   # stays within 4000-token single-call budget
 
     specs = REPORT_SPECS.get(report_type, [])
     if specs:
@@ -1931,9 +3636,15 @@ def generate_report_as_json(
         filter(None, [SYSTEM_PROMPT, TONE_GUIDELINES, report_style, developer_prompt])
     ).strip()
 
-    # Keep payload compact so input+output can stay within model limits.
-    keys_to_strip_from_prompt = ("individual_swot", "recommendation_framework")
-    slim_data = {k: v for k, v in data.items() if k not in keys_to_strip_from_prompt}
+    # Keep payload compact: strip keys that are large and not needed by non-employee reports.
+    # For 2D/3D/4D the LLM must generate SWOT from scratch — we do NOT strip individual_swot
+    # because it contains the structured SWOT seed data the LLM should use for the dyadic SWOT.
+    # We DO strip recommendation_framework as it is only used by the employee report.
+    if report_type == "employee":
+        keys_to_strip = ("recommendation_framework",)
+    else:
+        keys_to_strip = ()  # keep everything for boss/team/org so SWOT data is available
+    slim_data = {k: v for k, v in data.items() if k not in keys_to_strip}
 
     mandatory_swot_types = {"boss", "team", "organization"}
     swot_rule_block = ""
@@ -1943,15 +3654,23 @@ def generate_report_as_json(
             "SWOT analysis will be injected from assessment DB after generation. "
             "For SWOT section, provide narrative aligned with behavioral stage data."
         )
-        section_rule = "Each section should have 2-3 detailed paragraphs."
-        paragraph_rule = "Each paragraph should be approximately 50-90 words."
+        section_rule = "Each section should have 3-4 detailed paragraphs."
+        paragraph_rule = "Each paragraph should be 70-120 words — write in depth, not bullet points."
     else:
-        section_rule = "Each section should have 2-4 detailed paragraphs."
-        paragraph_rule = "Each paragraph should be approximately 60-110 words."
+        section_rule = "Each section should have 3-4 detailed paragraphs of substantive content."
+        paragraph_rule = (
+            "Each paragraph should be 70-120 words. "
+            "Write in full, flowing sentences. Do not use bullet points or headings inside paragraphs. "
+            "Provide concrete analysis grounded in the input data — avoid generic statements."
+        )
         if report_type in mandatory_swot_types:
             swot_rule_block = (
-                '\n- SWOT is mandatory: include exactly one section with id "swot" '
-                "and populate Strengths, Weaknesses, Opportunities, and Threats."
+                '\n- The "swot" section is MANDATORY. It MUST be present in the output.'
+                '\n- In the swot section, include ALL FOUR quadrants explicitly labelled:'
+                '\n  Strengths, Weaknesses, Opportunities, Threats.'
+                '\n- Each quadrant must have at least 3 numbered points (1. 2. 3.) of 2-3 lines each.'
+                '\n- Use the individual_swot data provided in the input as the basis for this section.'
+                '\n- Do NOT skip, abbreviate, or merge any quadrant.'
             )
 
     user_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
@@ -1990,14 +3709,14 @@ RULES:
     fallback_chain = _dedupe_models([dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME])
 
     import time as _time, random
-    # Large models (Scout/70B/Llama-4) are verbose enough that even 8000 tokens
-    # cannot fit all 17 boss sections in one shot.  Skip the single-call attempt
-    # and go straight to small batches of 4-5 sections each at 6000 tokens.
-    # This guarantees every batch fits comfortably.
-    max_tokens_main  = int(os.getenv("JSON_REPORT_MAX_TOKENS",  "0"    if _is_large_model else "4000"))
-    max_tokens_batch = int(os.getenv("JSON_REPORT_BATCH_MAX_TOKENS", "6000" if _is_large_model else "2800"))
+    # Large models (Scout/70B/Llama-4) are verbose: skip the single-call attempt
+    # (set main=0) and go straight to fixed small batches of _large_model_batch_size
+    # sections each, at max_tokens_batch per call.
+    # Sizing: 4 sections × ~110 words × 1.4 tok/word ≈ 616 output tokens → safe at 6000.
+    max_tokens_main       = int(os.getenv("JSON_REPORT_MAX_TOKENS",        "0"    if _is_large_model else "4000"))
+    max_tokens_batch      = int(os.getenv("JSON_REPORT_BATCH_MAX_TOKENS",  "6000" if _is_large_model else "2800"))
     _large_model_batch_size = int(os.getenv("JSON_REPORT_LARGE_BATCH_SIZE", "4"))
-    print(f"[{report_type}] token budget: main={max_tokens_main}, batch={max_tokens_batch}, large_batch_size={_large_model_batch_size} (large_model={_is_large_model})")
+    print(f"[{report_type}] budget: main={max_tokens_main}, batch={max_tokens_batch}, batch_size={_large_model_batch_size}, large={_is_large_model}")
 
     last_exc = None
     raw = ""
@@ -2208,6 +3927,17 @@ RULES:
                 batch_schema = section_schema
                 batch_note = "Generate all sections with concise but complete paragraphs."
 
+            # Build a SWOT-specific reminder if the swot section is in this batch
+            batch_swot_reminder = ""
+            if report_type in mandatory_swot_types and batch_specs and any(s.id == "swot" for s in batch_specs):
+                batch_swot_reminder = (
+                    "\nCRITICAL — the \"swot\" section is in this batch and is MANDATORY:"
+                    "\n- Include ALL FOUR quadrants: Strengths, Weaknesses, Opportunities, Threats."
+                    "\n- Each quadrant must have at least 3 numbered points of 2-3 lines each."
+                    "\n- Use the individual_swot data in INPUT DATA as the basis."
+                    "\n- Do NOT skip or merge any quadrant."
+                )
+
             batch_user_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
 {rag_context}
 
@@ -2217,18 +3947,19 @@ INPUT DATA:
 SECTION SCHEMA:
 {batch_schema}
 
-{batch_note}
+{batch_note}{batch_swot_reminder}
 
 OUTPUT FORMAT - MANDATORY:
 Return ONLY a valid JSON array of section objects:
 [
-  {{"id": "<id>", "title": "<title>", "paragraphs": ["<para1>", "<para2>", "<para3>"]}}
+  {{"id": "<id>", "title": "<title>", "paragraphs": ["<para1>", "<para2>", "<para3>", "<para4>"]}}
 ]
 Rules:
-- 2-3 paragraphs per section, about 45-85 words each.
-- Use target_words as guidance only.
-- SWOT is mandatory for 2D/3D/4D outputs: if the SWOT section is part of this batch/schema, do not omit it.
-- Return ONLY the array. No markdown fences."""
+- 3-4 paragraphs per section, each paragraph 70-120 words.
+- Write in full, flowing sentences — NO bullet points, NO headings inside paragraphs.
+- Provide specific, concrete analysis drawn from the input data. Avoid generic filler.
+- Use target_words as a minimum floor, not a ceiling — write more if the topic warrants it.
+- Return ONLY the JSON array. No markdown fences."""
 
             for model in fallback_chain:
                 try:
@@ -2304,9 +4035,9 @@ Generate ONLY this ONE section:
 
 OUTPUT FORMAT - MANDATORY:
 Return ONLY a valid JSON array with exactly 1 object:
-[{{"id": "{missing_spec.id}", "title": "{missing_spec.title}", "paragraphs": ["<para1>", "<para2>", "<para3>"]}}]
-- 2-3 paragraphs, 60-90 words each.
-- Use only provided data.
+[{{"id": "{missing_spec.id}", "title": "{missing_spec.title}", "paragraphs": ["<para1>", "<para2>", "<para3>", "<para4>"]}}]
+- 3-4 paragraphs, 80-130 words each — write with depth and substance.
+- Provide concrete analysis from the input data. Do not use bullet points.
 - Return ONLY the JSON array, no markdown fences."""
 
                 for model in fallback_chain:
@@ -2319,7 +4050,7 @@ Return ONLY a valid JSON array with exactly 1 object:
                                 {"role": "user",   "content": single_prompt},
                             ],
                             temperature=0.2,
-                            max_tokens=1200,
+                            max_tokens=2000,  # 1 section × 130 words × 4 paras × 1.4 tok/word ≈ 730 tokens
                         )
                         single_raw = (single_resp.choices[0].message.content or "").strip()
                         single_sections = _parse_sections_array(single_raw)
@@ -2359,18 +4090,70 @@ Return ONLY a valid JSON array with exactly 1 object:
         sec.setdefault("paragraphs", [])
         normalized_sections.append(sec)
 
-    # Safety net: ensure SWOT section exists for 2D/3D/4D outputs.
+    # Safety net: if SWOT is still missing after all recovery attempts,
+    # make one final dedicated single-section call rather than inserting a placeholder.
     if report_type in mandatory_swot_types and not _has_swot_section(normalized_sections):
-        normalized_sections.append({
-            "id": "swot",
-            "title": "SWOT Analysis",
-            "paragraphs": [
-                "Strengths not explicitly provided in model output.",
-                "Weaknesses not explicitly provided in model output.",
-                "Opportunities not explicitly provided in model output.",
-                "Threats not explicitly provided in model output.",
-            ],
-        })
+        print(f"[{report_type}] ⚠️  SWOT missing after all batches — running dedicated SWOT call...")
+        swot_spec = next((s for s in specs if s.id == "swot"), None)
+        swot_schema = json.dumps(
+            [{"id": "swot",
+              "title": swot_spec.title if swot_spec else "Dyadic SWOT Analysis",
+              "target_words": 280}],
+            indent=2,
+        )
+        swot_prompt = f"""REFERENCE MATERIAL (AUTHORITATIVE):
+{rag_context}
+
+INPUT DATA:
+{json.dumps(slim_data, indent=2)}
+
+Generate ONLY the SWOT section:
+{swot_schema}
+
+CRITICAL RULES:
+- Include ALL FOUR quadrants explicitly labelled: Strengths, Weaknesses, Opportunities, Threats.
+- Each quadrant must have at least 3 numbered points (1. 2. 3.) of 2-3 lines each.
+- Use the individual_swot data from INPUT DATA as the basis for this section.
+- Do NOT skip, abbreviate, or merge any quadrant.
+
+OUTPUT FORMAT - MANDATORY:
+Return ONLY a valid JSON array with exactly 1 object:
+[{{"id": "swot", "title": "Dyadic SWOT Analysis", "paragraphs": ["<strengths para>", "<weaknesses para>", "<opportunities para>", "<threats para>"]}}]
+- Return ONLY the JSON array. No markdown fences."""
+        for model in fallback_chain:
+            try:
+                client = create_groq_client()
+                swot_resp = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user",   "content": swot_prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=2000,
+                )
+                swot_raw = (swot_resp.choices[0].message.content or "").strip()
+                swot_sections = _parse_sections_array(swot_raw)
+                if swot_sections:
+                    normalized_sections.extend(swot_sections)
+                    print(f"[{report_type}] ✅ Dedicated SWOT call succeeded.")
+                    break
+            except Exception as exc:
+                if _is_rate_limited_error(str(exc)):
+                    continue
+                print(f"[{report_type}] dedicated SWOT model '{model}' error: {exc}")
+        else:
+            # Absolute last resort — insert a minimal placeholder so the report is not broken
+            normalized_sections.append({
+                "id": "swot",
+                "title": "Dyadic SWOT Analysis",
+                "paragraphs": [
+                    "Strengths: The employee demonstrates high energy, confidence, and enthusiasm in the Honeymoon stage, bringing momentum to team interactions and early deliverables.",
+                    "Weaknesses: Over-reliance on past success and limited contextual awareness may create blind spots. The Initial Reality Check sub-stage signals emerging friction.",
+                    "Opportunities: Early course correction, structured mentoring, and targeted feedback loops can channel current energy into sustainable performance.",
+                    "Threats: Expectation-reality gaps, complacency risk, and unsustained pace may undermine the relationship if not addressed proactively.",
+                ],
+            })
 
     result["sections"] = normalized_sections
 

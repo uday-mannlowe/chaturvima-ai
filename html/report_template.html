@@ -96,27 +96,7 @@
         }
 
         .header-actions {
-            margin-bottom: 20px;
-            padding-right: 210px;
-        }
-
-        .download-btn {
-            display: inline-block;
-            text-decoration: none;
-            color: var(--secondary);
-            background: #ffffff;
-            border: 2px solid #ffffff;
-            border-radius: 22px;
-            padding: 8px 16px;
-            font-size: 13px;
-            font-weight: 700;
-            letter-spacing: 0.3px;
-            transition: all 0.2s ease;
-        }
-
-        .download-btn:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: #ffffff;
+            display: none;
         }
 
         .employee-info {
@@ -444,11 +424,7 @@
         </div>
         <h1>{{ header.report_heading or "Employee Personal Insights" }}</h1>
         <div class="subtitle">ChaturVima {{ header.dimension_label }} Diagnostic Report</div>
-        {% if header.download_pdf_url %}
-        <div class="header-actions">
-            <a class="download-btn" href="{{ header.download_pdf_url }}">Download PDF</a>
-        </div>
-        {% endif %}
+
 
         <div class="employee-info">
             <div class="info-box">

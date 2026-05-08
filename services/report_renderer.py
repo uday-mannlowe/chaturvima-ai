@@ -24,6 +24,84 @@ except Exception as exc:
 
 # ─── Small text utilities ──────────────────────────────────────────────────────
 
+def _clean_bracket_artifacts(text: str) -> str:
+    """
+    Remove stray JSON brackets, quotes, and escape artifacts that
+    sometimes appear when LLM output is stored as raw JSON strings.
+    e.g.  '["The employee..."]'  →  'The employee...'
+          '"Some text"'         →  'Some text'
+          'Some text\\n'        →  'Some text'
+
+    NOTE: If the text is a multi-element JSON array like
+    '["para one", "para two"]', only the FIRST element is returned.
+    Use _clean_paragraphs() which splits multi-element arrays properly.
+    """
+    if not text:
+        return text
+    text = text.strip()
+
+    # If text looks like a JSON array, try to parse it and take the first element
+    if text.startswith('[') and text.endswith(']'):
+        import json as _json
+        try:
+            parsed = _json.loads(text)
+            if isinstance(parsed, list) and parsed:
+                # Return first non-empty string element
+                for item in parsed:
+                    s = str(item or "").strip()
+                    if s:
+                        text = s
+                        break
+                else:
+                    return ""
+        except (_json.JSONDecodeError, ValueError):
+            # Not valid JSON — try simple unwrap below
+            inner = text[1:-1].strip()
+            if (inner.startswith('"') and inner.endswith('"')) or \
+               (inner.startswith("'") and inner.endswith("'")):
+                text = inner[1:-1].strip()
+            elif inner and not inner.startswith('['):
+                text = inner
+
+    # Strip wrapping double or single quotes
+    if (text.startswith('"') and text.endswith('"')) or \
+       (text.startswith("'") and text.endswith("'")):
+        text = text[1:-1].strip()
+
+    # Remove escaped newlines and backslash artifacts
+    text = text.replace('\\n', ' ').replace('\\t', ' ').replace('\\"', '"')
+
+    # Collapse multiple spaces
+    text = re.sub(r' {2,}', ' ', text).strip()
+
+    return text
+
+
+def _expand_bracket_array(text: str) -> List[str]:
+    """
+    If text is a JSON array string like '["para one", "para two"]',
+    return all elements as a list of clean strings.
+    Otherwise return [text] with bracket artifacts removed.
+    """
+    if not text:
+        return []
+    text = text.strip()
+    if text.startswith('[') and text.endswith(']'):
+        import json as _json
+        try:
+            parsed = _json.loads(text)
+            if isinstance(parsed, list):
+                results = []
+                for item in parsed:
+                    s = _clean_bracket_artifacts(str(item or "").strip())
+                    if s:
+                        results.append(s)
+                return results
+        except (_json.JSONDecodeError, ValueError):
+            pass
+    return [_clean_bracket_artifacts(text)]
+
+
 def text_to_paragraphs(text: str) -> List[str]:
     if not text:
         return []
@@ -55,25 +133,149 @@ def is_swot_section(section_id: Any, section_title: Any) -> bool:
     return sec_id == "swot" or "swot" in sec_title
 
 
+# Maps keyword fragments to SWOT quadrant keys.
+# Order matters: more specific patterns first.
+_QUAD_KEYWORD_MAP = [
+    (re.compile(r'\bopportunit', re.IGNORECASE), "opportunities"),
+    (re.compile(r'\bthreat',     re.IGNORECASE), "threats"),
+    (re.compile(r'\bweakness|\bblind.?spot', re.IGNORECASE), "weaknesses"),
+    (re.compile(r'\bstrength',   re.IGNORECASE), "strengths"),
+]
+
+# Sentence starters that signal the LLM is introducing a NEW quadrant.
+# e.g. "There are several opportunities for growth"
+#      "One threat is that..."
+#      "Weaknesses include..."
+_QUAD_INTRO_PATTERNS = re.compile(
+    r'^(there are|one|another|additionally|furthermore|the|these)?\s*'
+    r'(strengths?|weaknesses?|blind.?spots?|opportunities?|threats?)'
+    r'\s*(of|for|to|include|in|is|are|:)',
+    re.IGNORECASE
+)
+
+
+def _detect_quadrant(text: str) -> Optional[str]:
+    """Return the SWOT quadrant this text most likely belongs to, or None."""
+    # First check if the text STARTS with a quadrant intro sentence
+    # e.g. "There are several opportunities for growth..."
+    m = _QUAD_INTRO_PATTERNS.match(text.strip())
+    if m:
+        word = m.group(2).lower()
+        if 'opportunit' in word: return 'opportunities'
+        if 'threat'     in word: return 'threats'
+        if 'weakness' in word or 'blind' in word: return 'weaknesses'
+        if 'strength'   in word: return 'strengths'
+    # Fall back: first keyword match anywhere in text
+    for pattern, key in _QUAD_KEYWORD_MAP:
+        if pattern.search(text):
+            return key
+    return None
+
+
 def build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str, List[str]]:
-    """Parse free-text SWOT paragraphs into structured S/W/O/T lists."""
+    """
+    Parse free-text SWOT paragraphs into structured S/W/O/T lists.
+
+    Strategy:
+    1. Split each paragraph into individual points first.
+    2. For EACH point, detect which quadrant it belongs to by scanning
+       for intro sentences and keyword signals.
+    3. Route accordingly — this handles cases where the LLM mixes
+       Opportunities content into the Strengths paragraph.
+    """
     swot: Dict[str, List[str]] = {
         "strengths": [], "weaknesses": [], "opportunities": [], "threats": []
     }
-    keyword_map = {
-        "strength": "strengths", "weakness": "weaknesses",
-        "opportunit": "opportunities", "threat": "threats",
-    }
     current_key = "strengths"
+
     for para in paragraphs:
-        lower = para.lower()
-        for kw, key in keyword_map.items():
-            if kw in lower:
-                current_key = key
-                break
-        items = split_numbered_items(para)
-        swot[current_key].extend(items)
+        # Detect quadrant from the paragraph-level header first
+        detected = _detect_quadrant(para)
+        if detected:
+            current_key = detected
+
+        # Split paragraph into individual points
+        points = _split_swot_para_into_points(para)
+
+        for point in points:
+            # Re-detect quadrant at the point level — catches misplaced content
+            point_quad = _detect_quadrant(point)
+            target_key = point_quad if point_quad else current_key
+            swot[target_key].append(point)
+
     return swot
+
+
+def _split_swot_para_into_points(text: str) -> List[str]:
+    """
+    Split a SWOT paragraph that may contain multiple numbered/bulleted points
+    into individual clean sentences.
+
+    Handles:
+      - "1. Point one. 2. Point two."     (inline numbered)
+      - "1) Point one 2) Point two"        (parens style)
+      - "• Point one • Point two"          (bullets)
+      - plain prose paragraphs             (return as-is)
+    """
+    text = text.strip()
+    if not text:
+        return []
+
+    # Remove wrapping list brackets that sometimes come from JSON parsing
+    # e.g.  '["The team..."]'  →  'The team...'
+    if text.startswith('[') and text.endswith(']'):
+        inner = text[1:-1].strip()
+        # Strip outer quotes if present
+        if (inner.startswith('"') and inner.endswith('"')) or \
+           (inner.startswith("'") and inner.endswith("'")):
+            inner = inner[1:-1].strip()
+        text = inner
+
+    # ── Step 2: Truncate at second quadrant header if blob contains multiple ──
+    # e.g. "...strengths. Threats include: 1. Risk..." → keep only pre-Threats part
+    quad_pat = re.compile(
+        r'(strengths?|weaknesses?|opportunities?|threats?)\s*[:\-]',
+        re.IGNORECASE
+    )
+    quad_matches = list(quad_pat.finditer(text))
+    if len(quad_matches) >= 2:
+        text = text[:quad_matches[1].start()].strip()
+
+    # ── Step 3: Strip leading quadrant label ──
+    text = re.sub(
+        r'^(strengths?|weaknesses?|opportunities?|threats?)\s*[:\-]\s*',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
+    if not text:
+        return []
+
+    # ── Step 4: Split on numbered list markers ──
+    # CRITICAL: do NOT split on decimal numbers like 2.67, 3.33
+    # A valid list marker: <space><digits><period><space><non-digit>
+    # An invalid split:    <digits><period><digits>  (decimal number)
+    numbered = re.split(r'(?<=\S)\s+(?=\d+\.\s+[^\d])', text)
+    if len(numbered) < 2:
+        numbered = re.split(r'(?<=\S)\s+(?=\d+\)\s)', text)  # paren style "1) "
+
+    if len(numbered) >= 2:
+        clean: List[str] = []
+        for part in numbered:
+            part = re.sub(r'^\s*\d+[.)\]]\s*', '', part).strip()
+            if part and len(part) > 15:  # skip decimal fragments like "67, indicates"
+                clean.append(part)
+        if len(clean) >= 2:
+            return clean
+
+    # ── Step 5: Split on bullet characters ──
+    if any(ch in text for ch in ('\u2022', '\u25e6', '\u25b8', '\u00b7')):
+        parts = re.split(r'\s*[\u2022\u25e6\u25b8\u00b7]\s*', text)
+        clean = [p.strip() for p in parts if p.strip() and len(p.strip()) > 15]
+        if len(clean) >= 2:
+            return clean
+
+    # ── Step 6: Plain prose — return as single item ──
+    return [text] if text else []
 
 
 _SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threats")
@@ -110,8 +312,19 @@ def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
         cleaned: List[str] = []
         for value in values:
             text = str(value or "").strip()
-            if text:
-                cleaned.append(text)
+            # Strip wrapping list brackets that appear when the LLM returns
+            # a single-element JSON array as a string, e.g. '["The team..."]'
+            if text.startswith('[') and text.endswith(']'):
+                inner = text[1:-1].strip()
+                if (inner.startswith('"') and inner.endswith('"')) or \
+                   (inner.startswith("'") and inner.endswith("'")):
+                    inner = inner[1:-1].strip()
+                text = inner
+            if not text:
+                continue
+            # If the item still looks like a multi-point blob, split it
+            sub_points = _split_swot_para_into_points(text)
+            cleaned.extend(sub_points)
         normalized[key] = cleaned
     return normalized
 
@@ -181,13 +394,29 @@ def _ensure_swot_sections_for_render(reports: List[Dict[str, Any]]) -> List[Dict
 
 # ─── Report normalization ──────────────────────────────────────────────────────
 
+def _clean_paragraphs(paragraphs: List[str]) -> List[str]:
+    """
+    Apply bracket artifact removal to every paragraph and drop blanks.
+    Handles both single-element and multi-element JSON array strings.
+    Ensures no raw JSON brackets or stray quotes appear in rendered output.
+    """
+    cleaned = []
+    for p in paragraphs:
+        # _expand_bracket_array handles '["a", "b"]' → ['a', 'b']
+        # and plain strings → [clean_string]
+        cleaned.extend(_expand_bracket_array(str(p or "")))
+    return [p for p in cleaned if p]
+
+
 def normalize_single_report(
     report: Any, report_type: str, data: dict, report_title_map: Dict[str, str]
 ) -> Dict[str, Any]:
     if isinstance(report, dict) and "sections" in report:
         sections = []
         for section in report.get("sections", []):
-            paragraphs = section.get("paragraphs") or text_to_paragraphs(section.get("text", ""))
+            raw_paragraphs = section.get("paragraphs") or text_to_paragraphs(section.get("text", ""))
+            # ✅ Strip any stray JSON brackets / quotes from every paragraph
+            paragraphs = _clean_paragraphs(raw_paragraphs)
             sections.append({
                 "id": section.get("id", ""),
                 "title": section.get("title", "Section"),
@@ -202,7 +431,7 @@ def normalize_single_report(
     return {
         "title": report_title_map.get(report_type, "Report"),
         "report_type": report_type,
-        "sections": [{"id": "", "title": "Report", "paragraphs": text_to_paragraphs(text)}],
+        "sections": [{"id": "", "title": "Report", "paragraphs": _clean_paragraphs(text_to_paragraphs(text))}],
     }
 
 
