@@ -25,6 +25,11 @@ from services.report_storage import (
     storage_backend_name,
 )
 from services.frappe_client import configured_frappe_auth_token
+from generate_groq import (
+    GLOBAL_MODEL_FALLBACKS,
+    GROQ_ALLOWED_MODELS,
+    MODEL_BY_DIMENSION,
+)
 
 from api.html_report_routes import router as html_router
 from api.json_report_routes import router as json_router
@@ -113,6 +118,10 @@ async def startup_event():
     print(f"Workers:     {Config.MAX_CONCURRENT_GENERATIONS}")
     print(f"Queue Size:  {Config.MAX_QUEUE_SIZE}")
     print(f"Rate Limit:  {Config.GROQ_RATE_LIMIT_PER_MINUTE}/min")
+    print(f"Groq throttle: in_flight={Config.GROQ_MAX_IN_FLIGHT}, spacing={Config.GROQ_REQUEST_SPACING_SECONDS}s")
+    print(f"Groq models: {MODEL_BY_DIMENSION}")
+    print(f"Groq fallback: {GLOBAL_MODEL_FALLBACKS}")
+    print(f"Groq allowed: {GROQ_ALLOWED_MODELS or 'any'}")
     print(f"Storage:     {storage_backend_name()}")
     if Config.FORCE_STATIC_FRAPPE_AUTH:
         if (Config.FRAPPE_API_KEY and Config.FRAPPE_API_SECRET) or (Config.FRAPPE_USERNAME and Config.FRAPPE_PASSWORD):

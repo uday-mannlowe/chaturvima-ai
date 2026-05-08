@@ -18,7 +18,7 @@ from langchain_community.vectorstores import FAISS
 
 # LOAD ENV
 
-load_dotenv()
+load_dotenv(override=True)
 GROQ_API_KEY = Config.GROQ_API_KEY
 
 if not GROQ_API_KEY:
@@ -29,8 +29,8 @@ def create_groq_client() -> Groq:
     return Groq(api_key=GROQ_API_KEY)
 
 # Choose your Groq model
-# Options: "llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"
-MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+# Default to Scout because the gpt-oss models have stricter Groq TPM/RPM limits.
+MODEL_NAME = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 # Optional per-dimension models. If not set, each falls back to GROQ_MODEL.
 # This allows 1D/2D/3D/4D report paths to use different models.
@@ -57,11 +57,8 @@ MODEL_BY_DIMENSION = {
 #   team report      → MODEL_NAME_3D
 #   org report       → MODEL_NAME_4D
 #
-# For a 2D request  → 2 models fire IN PARALLEL (1D model + 2D model)
-# For a 3D request  → 3 models fire IN PARALLEL (1D + 2D + 3D models)
-# For a 4D request  → 4 models fire IN PARALLEL (all 4 models)
-#
-# This gives maximum speed AND distributes rate-limit pressure across models.
+# Higher dimensions use their matching report type by default. If multiple
+# report types are requested, they are generated sequentially to avoid bursts.
 # ─────────────────────────────────────────────────────────────────────────────
 MODEL_BY_REPORT_TYPE_DEDICATED = {
     "employee":     MODEL_NAME_1D,   # always use 1D model for employee report
@@ -99,6 +96,29 @@ def _dedupe_models(models: List[str]) -> List[str]:
         unique.append(cleaned)
         seen.add(cleaned)
     return unique
+
+
+GROQ_ALLOWED_MODELS = _dedupe_models(
+    [
+        m.strip()
+        for m in os.getenv("GROQ_ALLOWED_MODELS", "").split(",")
+        if m.strip()
+    ]
+)
+_GROQ_ALLOWED_MODEL_KEYS = {model.lower() for model in GROQ_ALLOWED_MODELS}
+
+
+def _filter_allowed_models(models: List[str]) -> List[str]:
+    deduped = _dedupe_models(models)
+    if not _GROQ_ALLOWED_MODEL_KEYS:
+        return deduped
+
+    allowed = [
+        model
+        for model in deduped
+        if model.lower() in _GROQ_ALLOWED_MODEL_KEYS
+    ]
+    return allowed or GROQ_ALLOWED_MODELS.copy()
 
 
 def _resolve_model_candidates(
@@ -144,7 +164,9 @@ def _resolve_model_candidates(
     candidates.extend(GLOBAL_MODEL_FALLBACKS)
     candidates.append(MODEL_NAME)
 
-    deduped = _dedupe_models(candidates) or [MODEL_NAME]
+    deduped = _filter_allowed_models(candidates)
+    if not deduped:
+        deduped = _filter_allowed_models([MODEL_NAME]) or [MODEL_NAME]
 
     if start_offset and len(deduped) > 1:
         idx = abs(int(start_offset)) % len(deduped)
@@ -177,6 +199,74 @@ def _extract_retry_wait_seconds(err: str, attempt: int) -> float:
     return min(12 * attempt, 90)
 
 
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return max(1, int(default))
+
+
+def _non_negative_float_env(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return max(0.0, float(default))
+
+
+def _non_negative_int_env(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return max(0, int(default))
+
+
+_GROQ_MAX_IN_FLIGHT = _positive_int_env(
+    "GROQ_MAX_IN_FLIGHT",
+    getattr(Config, "GROQ_MAX_IN_FLIGHT", 1),
+)
+_GROQ_REQUEST_SPACING_SECONDS = _non_negative_float_env(
+    "GROQ_REQUEST_SPACING_SECONDS",
+    getattr(
+        Config,
+        "GROQ_REQUEST_SPACING_SECONDS",
+        60.0 / max(getattr(Config, "GROQ_RATE_LIMIT_PER_MINUTE", 30), 1),
+    ),
+)
+_GROQ_MAX_RETRIES = _positive_int_env(
+    "GROQ_MAX_RETRIES",
+    getattr(Config, "GROQ_MAX_RETRIES", 3),
+)
+_GROQ_CALL_SEMAPHORE = threading.BoundedSemaphore(_GROQ_MAX_IN_FLIGHT)
+_GROQ_PACE_LOCK = threading.Lock()
+_GROQ_LAST_REQUEST_AT = 0.0
+
+
+def _pace_groq_request(request_label: str = "request") -> None:
+    if _GROQ_REQUEST_SPACING_SECONDS <= 0:
+        return
+
+    import time as _time
+
+    global _GROQ_LAST_REQUEST_AT
+
+    while True:
+        with _GROQ_PACE_LOCK:
+            now = _time.monotonic()
+            wait = _GROQ_REQUEST_SPACING_SECONDS - (now - _GROQ_LAST_REQUEST_AT)
+            if wait <= 0:
+                _GROQ_LAST_REQUEST_AT = now
+                return
+
+        print(f"Throttling Groq {request_label}: waiting {wait:.1f}s")
+        _time.sleep(wait)
+
+
+def _create_groq_chat_completion(client: Groq, request_label: str = "request", **kwargs: Any):
+    with _GROQ_CALL_SEMAPHORE:
+        _pace_groq_request(request_label)
+        return client.chat.completions.create(**kwargs)
+
+
 def _call_groq_with_model_fallback(
     messages: List[Dict[str, str]],
     temperature: float,
@@ -184,7 +274,7 @@ def _call_groq_with_model_fallback(
     dimension: Any = None,
     report_type: str = "",
     start_offset: int = 0,
-    max_retries: int = 6,
+    max_retries: int = _GROQ_MAX_RETRIES,
     request_label: str = "request",
 ) -> Tuple[str, str]:
     import random
@@ -203,7 +293,9 @@ def _call_groq_with_model_fallback(
         for model in candidates:
             try:
                 client = create_groq_client()
-                response = client.chat.completions.create(
+                response = _create_groq_chat_completion(
+                    client,
+                    request_label=f"{request_label} [{model}]",
                     model=model,
                     messages=messages,
                     temperature=temperature,
@@ -1221,9 +1313,9 @@ REPORT_SPECS: Dict[str, List[SectionSpec]] = {
 # ✅ Map of report types for each dimension
 REPORT_TYPE_MAP = {
     "1D": ["employee"],
-    "2D": ["employee", "boss"],
-    "3D": ["employee", "boss", "team"],
-    "4D": ["employee", "boss", "team", "organization"],
+    "2D": ["boss"],
+    "3D": ["team"],
+    "4D": ["organization"],
 }
 
 # Default report type when generating a single report per dimension
@@ -1590,7 +1682,7 @@ def _generate_section_text(
     prior_sections: List[str],
     index: int,
     total: int,
-    _max_retries: int = 6,
+    _max_retries: int = _GROQ_MAX_RETRIES,
 ) -> str:
     section_data = _select_section_data(data, spec.data_keys)
 
@@ -1672,7 +1764,7 @@ def _expand_section_text(
         max_tokens=min(1200, _max_tokens_for_section(spec)),
         dimension=data.get("dimension"),
         report_type=report_type,
-        max_retries=6,
+        max_retries=_GROQ_MAX_RETRIES,
         request_label=f"Expansion '{spec.title}'",
     )
     new_paras = _parse_section_json(expanded_raw)
@@ -1708,7 +1800,7 @@ def _generate_one_section(
 
     words = _word_count(section_text)
     attempts = 0
-    while words < spec.min_words and attempts < 2:
+    while words < spec.min_words and attempts < _SECTION_EXPANSION_MAX_ATTEMPTS:
         shortfall = max(120, spec.min_words - words)
         section_text = _expand_section_text(
             data=data,
@@ -1733,18 +1825,17 @@ def _generate_one_section(
 
 
 # Max parallel LLM threads per report.
-# Groq free tier: 30 req/min → keep ≤10 so we don't hit rate limits.
-# Lower default to 3 workers to stay within free-tier TPM limits.
-# With retry logic in place, sections that hit 429 will wait and retry
-# rather than fail, so fewer parallel workers means fewer wasted tokens.
-# Override with SECTION_PARALLEL_WORKERS env var if you have a paid tier.
-_SECTION_WORKERS = int(os.getenv("SECTION_PARALLEL_WORKERS", "3"))
+# Default to 1 because report sections already consume large prompts/tokens.
+# Override with SECTION_PARALLEL_WORKERS env var only when the Groq tier can
+# absorb the extra RPM and TPM.
+_SECTION_WORKERS = _positive_int_env("SECTION_PARALLEL_WORKERS", 1)
+_SECTION_EXPANSION_MAX_ATTEMPTS = _non_negative_int_env("SECTION_EXPANSION_MAX_ATTEMPTS", 0)
 
 
 def generate_structured_report(data: dict, report_type: str, rag_context: str) -> Dict[str, Any]:
     """
     Generate a structured report with section-wise content.
-    All sections are generated IN PARALLEL (ThreadPoolExecutor).
+    Sections are generated with a bounded worker count.
     """
     if report_type not in PROMPT_MAP:
         raise ValueError(f"Invalid report type: {report_type}. Valid types: {list(PROMPT_MAP.keys())}")
@@ -1772,7 +1863,7 @@ def generate_structured_report(data: dict, report_type: str, rag_context: str) -
     total_specs = len(specs)
     all_titles = [spec.title for spec in specs]
 
-    print(f"⚡ Generating {total_specs} sections in parallel (workers={_SECTION_WORKERS}) for '{report_type}'")
+    print(f"Generating {total_specs} sections (workers={_SECTION_WORKERS}) for '{report_type}'")
 
     results: List[Dict[str, Any]] = [None] * total_specs  # pre-allocate
 
@@ -1844,9 +1935,8 @@ def generate_structured_report_by_dimension(data: dict) -> Dict[str, Any]:
 
 def generate_multi_reports_structured(data: dict) -> Dict[str, Dict[str, Any]]:
     """
-    Generate multiple structured reports based on dimension.
-    Both report types (employee, boss, ...) AND their internal sections
-    run in parallel using ThreadPoolExecutor for maximum speed.
+    Generate structured reports for the requested dimension.
+    Runs report types sequentially to avoid Groq RPM/TPM bursts.
     """
     data = validate_input_data(data)
     dimension = data["dimension"]
@@ -1858,30 +1948,24 @@ def generate_multi_reports_structured(data: dict) -> Dict[str, Dict[str, Any]]:
         rag_context = retrieve_rag_context(data)
 
     report_types = REPORT_TYPE_MAP[dimension]
-    print(f"\u26a1 Generating {len(report_types)} report type(s) in parallel: {report_types}")
+    print(f"\u26a1 Generating {len(report_types)} report type(s) sequentially: {report_types}")
 
     reports: Dict[str, Dict[str, Any]] = {}
 
-    with ThreadPoolExecutor(max_workers=max(len(report_types), 1)) as executor:
-        future_to_type = {
-            executor.submit(generate_structured_report, data, rtype, rag_context): rtype
-            for rtype in report_types
-        }
-        for future in as_completed(future_to_type):
-            rtype = future_to_type[future]
-            try:
-                reports[rtype] = future.result()
-                print(f"\u2705 Report '{rtype}' completed")
-            except Exception as exc:
-                print(f"\u274c Report '{rtype}' failed: {exc}")
-                reports[rtype] = {
-                    "title": REPORT_TITLE_MAP.get(rtype, rtype),
-                    "report_type": rtype,
-                    "dimension": dimension,
-                    "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
-                    "word_count": 0,
-                    "generated_at": datetime.now().isoformat(),
-                }
+    for rtype in report_types:
+        try:
+            reports[rtype] = generate_structured_report(data, rtype, rag_context)
+            print(f"\u2705 Report '{rtype}' completed")
+        except Exception as exc:
+            print(f"\u274c Report '{rtype}' failed: {exc}")
+            reports[rtype] = {
+                "title": REPORT_TITLE_MAP.get(rtype, rtype),
+                "report_type": rtype,
+                "dimension": dimension,
+                "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
+                "word_count": 0,
+                "generated_at": datetime.now().isoformat(),
+            }
 
     return reports
 
@@ -1889,7 +1973,7 @@ def generate_multi_reports_structured(data: dict) -> Dict[str, Dict[str, Any]]:
 # ===================================================
 # FAST JSON GENERATION — ONE CALL PER REPORT TYPE
 # Each report type uses its dedicated model.
-# Multiple report types run fully in parallel.
+# Multiple report types are generated sequentially.
 # ===================================================
 
 def generate_report_as_json(
@@ -2041,52 +2125,76 @@ RULES:
 - Do NOT use markdown code fences."""
 
     # Use dedicated model first. If rate-limited, fall back to global chain.
-    fallback_chain = _dedupe_models([dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME])
+    fallback_chain = _filter_allowed_models([dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME])
 
     import time as _time, random
     # Large models (Scout/70B/Llama-4) are verbose: skip the single-call attempt
     # (set main=0) and go straight to fixed small batches of _large_model_batch_size
     # sections each, at max_tokens_batch per call.
     # Sizing: 4 sections × ~110 words × 1.4 tok/word ≈ 616 output tokens → safe at 6000.
-    max_tokens_main       = int(os.getenv("JSON_REPORT_MAX_TOKENS",        "0"    if _is_large_model else "4000"))
-    max_tokens_batch      = int(os.getenv("JSON_REPORT_BATCH_MAX_TOKENS",  "6000" if _is_large_model else "2800"))
-    _large_model_batch_size = int(os.getenv("JSON_REPORT_LARGE_BATCH_SIZE", "4"))
+    configured_main_tokens = _positive_int_env(
+        "JSON_REPORT_MAX_TOKENS",
+        4000,
+    )
+    main_token_cap = _positive_int_env(
+        "JSON_REPORT_MAX_TOKENS_CAP",
+        configured_main_tokens if _is_large_model else 4000,
+    )
+    configured_batch_tokens = _positive_int_env(
+        "JSON_REPORT_BATCH_MAX_TOKENS",
+        6000 if _is_large_model else 2800,
+    )
+    batch_token_cap = _positive_int_env(
+        "JSON_REPORT_BATCH_MAX_TOKENS_CAP",
+        6000 if _is_large_model else configured_batch_tokens,
+    )
+    allow_large_single_call = os.getenv("JSON_REPORT_ALLOW_LARGE_SINGLE_CALL", "false").lower() in {
+        "1", "true", "yes", "on",
+    }
+    max_tokens_main = 0 if _is_large_model and not allow_large_single_call else min(configured_main_tokens, main_token_cap)
+    max_tokens_batch = min(configured_batch_tokens, batch_token_cap)
+    _large_model_batch_size = _positive_int_env("JSON_REPORT_LARGE_BATCH_SIZE", 4)
     print(f"[{report_type}] budget: main={max_tokens_main}, batch={max_tokens_batch}, batch_size={_large_model_batch_size}, large={_is_large_model}")
 
     last_exc = None
     raw = ""
     primary_finish_reason = ""
-    for attempt in range(1, 7):
-        for model in fallback_chain:
-            try:
-                client = create_groq_client()
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=0.2,
-                    max_tokens=max_tokens_main,
-                )
-                primary_finish_reason = getattr(response.choices[0], "finish_reason", "") or ""
-                raw = (response.choices[0].message.content or "").strip()
-                break
-            except Exception as exc:
-                last_exc = exc
-                err = str(exc)
-                if _is_rate_limited_error(err):
-                    print(f"[{report_type}] model '{model}' rate-limited; trying next.")
-                    continue
-                print(f"[{report_type}] model '{model}' error: {err}; trying next.")
+    if max_tokens_main > 0:
+        for attempt in range(1, _GROQ_MAX_RETRIES + 1):
+            for model in fallback_chain:
+                try:
+                    client = create_groq_client()
+                    response = _create_groq_chat_completion(
+                        client,
+                        request_label=f"{report_type}:json-primary [{model}]",
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.2,
+                        max_tokens=max_tokens_main,
+                    )
+                    primary_finish_reason = getattr(response.choices[0], "finish_reason", "") or ""
+                    raw = (response.choices[0].message.content or "").strip()
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    err = str(exc)
+                    if _is_rate_limited_error(err):
+                        print(f"[{report_type}] model '{model}' rate-limited; trying next.")
+                        continue
+                    print(f"[{report_type}] model '{model}' error: {err}; trying next.")
+            else:
+                wait = _extract_retry_wait_seconds(str(last_exc), attempt) + random.uniform(1, 3)
+                print(f"[{report_type}] all models exhausted (attempt {attempt}/{_GROQ_MAX_RETRIES}), waiting {wait:.1f}s")
+                _time.sleep(wait)
+                continue
+            break
         else:
-            wait = _extract_retry_wait_seconds(str(last_exc), attempt) + random.uniform(1, 3)
-            print(f"[{report_type}] all models exhausted (attempt {attempt}/6), waiting {wait:.1f}s")
-            _time.sleep(wait)
-            continue
-        break
+            raise RuntimeError(f"[{report_type}] JSON generation failed after {_GROQ_MAX_RETRIES} attempts. Last: {last_exc}")
     else:
-        raise RuntimeError(f"[{report_type}] JSON generation failed after 6 attempts. Last: {last_exc}")
+        print(f"[{report_type}] skipping single-call JSON attempt for large model; using batches.")
 
     if primary_finish_reason == "length":
         print(f"[{report_type}] primary response hit max token limit (finish_reason=length).")
@@ -2299,7 +2407,9 @@ Rules:
             for model in fallback_chain:
                 try:
                     client = create_groq_client()
-                    resp = client.chat.completions.create(
+                    resp = _create_groq_chat_completion(
+                        client,
+                        request_label=f"{report_type}:json-batch-{batch_idx + 1} [{model}]",
                         model=model,
                         messages=[
                             {"role": "system", "content": system_prompt},
@@ -2378,7 +2488,9 @@ Return ONLY a valid JSON array with exactly 1 object:
                 for model in fallback_chain:
                     try:
                         client = create_groq_client()
-                        single_resp = client.chat.completions.create(
+                        single_resp = _create_groq_chat_completion(
+                            client,
+                            request_label=f"{report_type}:json-refill-{missing_spec.id} [{model}]",
                             model=model,
                             messages=[
                                 {"role": "system", "content": system_prompt},
@@ -2458,7 +2570,9 @@ Return ONLY a valid JSON array with exactly 1 object:
         for model in fallback_chain:
             try:
                 client = create_groq_client()
-                swot_resp = client.chat.completions.create(
+                swot_resp = _create_groq_chat_completion(
+                    client,
+                    request_label=f"{report_type}:json-swot [{model}]",
                     model=model,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -2538,13 +2652,8 @@ def generate_multi_reports_json(data: dict) -> Dict[str, Any]:
     """
     Main fast-path entry point.
 
-    Fires one dedicated LLM model per report type, ALL IN PARALLEL.
-
-    Dimension → models fired simultaneously:
-      1D  →  MODEL_1D
-      2D  →  MODEL_1D  +  MODEL_2D
-      3D  →  MODEL_1D  +  MODEL_2D  +  MODEL_3D
-      4D  →  MODEL_1D  +  MODEL_2D  +  MODEL_3D  +  MODEL_4D
+    Generates the requested report types sequentially to stay within Groq
+    RPM and TPM limits.
 
     Returns a combined JSON dict:
     {
@@ -2563,38 +2672,31 @@ def generate_multi_reports_json(data: dict) -> Dict[str, Any]:
         raise ValueError(f"Unsupported dimension: {dimension}")
 
     print(f"\n{'='*60}")
-    print(f"⚡ PARALLEL JSON GENERATION — {dimension}")
+    print(f"SEQUENTIAL JSON GENERATION -- {dimension}")
     print(f"   Report types : {report_types}")
     print(f"   Models used  : {[MODEL_BY_REPORT_TYPE_DEDICATED.get(rt, MODEL_NAME) for rt in report_types]}")
     print(f"{'='*60}\n")
 
-    # Retrieve RAG context once — shared across all parallel calls
+    # Retrieve RAG context once and share it across report-type calls.
     with rag_lock:
         rag_context = retrieve_rag_context(data)
 
     reports: Dict[str, Any] = {}
 
-    # Fire all report-type generations simultaneously
-    with ThreadPoolExecutor(max_workers=len(report_types)) as executor:
-        future_to_type = {
-            executor.submit(generate_report_as_json, data, rtype, rag_context): rtype
-            for rtype in report_types
-        }
-        for future in as_completed(future_to_type):
-            rtype = future_to_type[future]
-            try:
-                reports[rtype] = future.result()
-                print(f"✅ '{rtype}' report collected")
-            except Exception as exc:
-                print(f"❌ '{rtype}' report FAILED: {exc}")
-                reports[rtype] = {
-                    "title": REPORT_TITLE_MAP.get(rtype, rtype),
-                    "report_type": rtype,
-                    "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
-                    "word_count": 0,
-                    "error": str(exc),
-                    "generated_at": datetime.now().isoformat(),
-                }
+    for rtype in report_types:
+        try:
+            reports[rtype] = generate_report_as_json(data, rtype, rag_context)
+            print(f"[OK] '{rtype}' report collected")
+        except Exception as exc:
+            print(f"[ERROR] '{rtype}' report FAILED: {exc}")
+            reports[rtype] = {
+                "title": REPORT_TITLE_MAP.get(rtype, rtype),
+                "report_type": rtype,
+                "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
+                "word_count": 0,
+                "error": str(exc),
+                "generated_at": datetime.now().isoformat(),
+            }
 
     return {
         "dimension": dimension,
@@ -2649,7 +2751,7 @@ IMPORTANT:
         max_tokens=8000,
         dimension=data.get("dimension"),
         report_type=report_type,
-        max_retries=6,
+        max_retries=_GROQ_MAX_RETRIES,
         request_label=f"{report_title} report",
     )
 
@@ -2758,7 +2860,7 @@ IMPORTANT:
         max_tokens=8000,  # Groq has different limits per model
         dimension=dimension,
         report_type="",
-        max_retries=6,
+        max_retries=_GROQ_MAX_RETRIES,
         request_label=f"{dimension} report",
     )
 
@@ -3255,7 +3357,7 @@ def _generate_section_text(
     prior_sections: List[str],
     index: int,
     total: int,
-    _max_retries: int = 6,
+    _max_retries: int = _GROQ_MAX_RETRIES,
 ) -> str:
     section_data = _select_section_data(data, spec.data_keys)
 
@@ -3337,7 +3439,7 @@ def _expand_section_text(
         max_tokens=min(1200, _max_tokens_for_section(spec)),
         dimension=data.get("dimension"),
         report_type=report_type,
-        max_retries=6,
+        max_retries=_GROQ_MAX_RETRIES,
         request_label=f"Expansion '{spec.title}'",
     )
     new_paras = _parse_section_json(expanded_raw)
@@ -3373,7 +3475,7 @@ def _generate_one_section(
 
     words = _word_count(section_text)
     attempts = 0
-    while words < spec.min_words and attempts < 2:
+    while words < spec.min_words and attempts < _SECTION_EXPANSION_MAX_ATTEMPTS:
         shortfall = max(120, spec.min_words - words)
         section_text = _expand_section_text(
             data=data,
@@ -3398,18 +3500,17 @@ def _generate_one_section(
 
 
 # Max parallel LLM threads per report.
-# Groq free tier: 30 req/min → keep ≤10 so we don't hit rate limits.
-# Lower default to 3 workers to stay within free-tier TPM limits.
-# With retry logic in place, sections that hit 429 will wait and retry
-# rather than fail, so fewer parallel workers means fewer wasted tokens.
-# Override with SECTION_PARALLEL_WORKERS env var if you have a paid tier.
-_SECTION_WORKERS = int(os.getenv("SECTION_PARALLEL_WORKERS", "3"))
+# Default to 1 because report sections already consume large prompts/tokens.
+# Override with SECTION_PARALLEL_WORKERS env var only when the Groq tier can
+# absorb the extra RPM and TPM.
+_SECTION_WORKERS = _positive_int_env("SECTION_PARALLEL_WORKERS", 1)
+_SECTION_EXPANSION_MAX_ATTEMPTS = _non_negative_int_env("SECTION_EXPANSION_MAX_ATTEMPTS", 0)
 
 
 def generate_structured_report(data: dict, report_type: str, rag_context: str) -> Dict[str, Any]:
     """
     Generate a structured report with section-wise content.
-    All sections are generated IN PARALLEL (ThreadPoolExecutor).
+    Sections are generated with a bounded worker count.
     """
     if report_type not in PROMPT_MAP:
         raise ValueError(f"Invalid report type: {report_type}. Valid types: {list(PROMPT_MAP.keys())}")
@@ -3437,7 +3538,7 @@ def generate_structured_report(data: dict, report_type: str, rag_context: str) -
     total_specs = len(specs)
     all_titles = [spec.title for spec in specs]
 
-    print(f"⚡ Generating {total_specs} sections in parallel (workers={_SECTION_WORKERS}) for '{report_type}'")
+    print(f"Generating {total_specs} sections (workers={_SECTION_WORKERS}) for '{report_type}'")
 
     results: List[Dict[str, Any]] = [None] * total_specs  # pre-allocate
 
@@ -3509,9 +3610,8 @@ def generate_structured_report_by_dimension(data: dict) -> Dict[str, Any]:
 
 def generate_multi_reports_structured(data: dict) -> Dict[str, Dict[str, Any]]:
     """
-    Generate multiple structured reports based on dimension.
-    Both report types (employee, boss, ...) AND their internal sections
-    run in parallel using ThreadPoolExecutor for maximum speed.
+    Generate structured reports for the requested dimension.
+    Runs report types sequentially to avoid Groq RPM/TPM bursts.
     """
     data = validate_input_data(data)
     dimension = data["dimension"]
@@ -3523,30 +3623,24 @@ def generate_multi_reports_structured(data: dict) -> Dict[str, Dict[str, Any]]:
         rag_context = retrieve_rag_context(data)
 
     report_types = REPORT_TYPE_MAP[dimension]
-    print(f"\u26a1 Generating {len(report_types)} report type(s) in parallel: {report_types}")
+    print(f"\u26a1 Generating {len(report_types)} report type(s) sequentially: {report_types}")
 
     reports: Dict[str, Dict[str, Any]] = {}
 
-    with ThreadPoolExecutor(max_workers=max(len(report_types), 1)) as executor:
-        future_to_type = {
-            executor.submit(generate_structured_report, data, rtype, rag_context): rtype
-            for rtype in report_types
-        }
-        for future in as_completed(future_to_type):
-            rtype = future_to_type[future]
-            try:
-                reports[rtype] = future.result()
-                print(f"\u2705 Report '{rtype}' completed")
-            except Exception as exc:
-                print(f"\u274c Report '{rtype}' failed: {exc}")
-                reports[rtype] = {
-                    "title": REPORT_TITLE_MAP.get(rtype, rtype),
-                    "report_type": rtype,
-                    "dimension": dimension,
-                    "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
-                    "word_count": 0,
-                    "generated_at": datetime.now().isoformat(),
-                }
+    for rtype in report_types:
+        try:
+            reports[rtype] = generate_structured_report(data, rtype, rag_context)
+            print(f"\u2705 Report '{rtype}' completed")
+        except Exception as exc:
+            print(f"\u274c Report '{rtype}' failed: {exc}")
+            reports[rtype] = {
+                "title": REPORT_TITLE_MAP.get(rtype, rtype),
+                "report_type": rtype,
+                "dimension": dimension,
+                "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
+                "word_count": 0,
+                "generated_at": datetime.now().isoformat(),
+            }
 
     return reports
 
@@ -3554,7 +3648,7 @@ def generate_multi_reports_structured(data: dict) -> Dict[str, Dict[str, Any]]:
 # ===================================================
 # FAST JSON GENERATION — ONE CALL PER REPORT TYPE
 # Each report type uses its dedicated model.
-# Multiple report types run fully in parallel.
+# Multiple report types are generated sequentially.
 # ===================================================
 
 def generate_report_as_json(
@@ -3706,52 +3800,76 @@ RULES:
 - Do NOT use markdown code fences."""
 
     # Use dedicated model first. If rate-limited, fall back to global chain.
-    fallback_chain = _dedupe_models([dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME])
+    fallback_chain = _filter_allowed_models([dedicated_model] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME])
 
     import time as _time, random
     # Large models (Scout/70B/Llama-4) are verbose: skip the single-call attempt
     # (set main=0) and go straight to fixed small batches of _large_model_batch_size
     # sections each, at max_tokens_batch per call.
     # Sizing: 4 sections × ~110 words × 1.4 tok/word ≈ 616 output tokens → safe at 6000.
-    max_tokens_main       = int(os.getenv("JSON_REPORT_MAX_TOKENS",        "0"    if _is_large_model else "4000"))
-    max_tokens_batch      = int(os.getenv("JSON_REPORT_BATCH_MAX_TOKENS",  "6000" if _is_large_model else "2800"))
-    _large_model_batch_size = int(os.getenv("JSON_REPORT_LARGE_BATCH_SIZE", "4"))
+    configured_main_tokens = _positive_int_env(
+        "JSON_REPORT_MAX_TOKENS",
+        4000,
+    )
+    main_token_cap = _positive_int_env(
+        "JSON_REPORT_MAX_TOKENS_CAP",
+        configured_main_tokens if _is_large_model else 4000,
+    )
+    configured_batch_tokens = _positive_int_env(
+        "JSON_REPORT_BATCH_MAX_TOKENS",
+        6000 if _is_large_model else 2800,
+    )
+    batch_token_cap = _positive_int_env(
+        "JSON_REPORT_BATCH_MAX_TOKENS_CAP",
+        6000 if _is_large_model else configured_batch_tokens,
+    )
+    allow_large_single_call = os.getenv("JSON_REPORT_ALLOW_LARGE_SINGLE_CALL", "false").lower() in {
+        "1", "true", "yes", "on",
+    }
+    max_tokens_main = 0 if _is_large_model and not allow_large_single_call else min(configured_main_tokens, main_token_cap)
+    max_tokens_batch = min(configured_batch_tokens, batch_token_cap)
+    _large_model_batch_size = _positive_int_env("JSON_REPORT_LARGE_BATCH_SIZE", 4)
     print(f"[{report_type}] budget: main={max_tokens_main}, batch={max_tokens_batch}, batch_size={_large_model_batch_size}, large={_is_large_model}")
 
     last_exc = None
     raw = ""
     primary_finish_reason = ""
-    for attempt in range(1, 7):
-        for model in fallback_chain:
-            try:
-                client = create_groq_client()
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=0.2,
-                    max_tokens=max_tokens_main,
-                )
-                primary_finish_reason = getattr(response.choices[0], "finish_reason", "") or ""
-                raw = (response.choices[0].message.content or "").strip()
-                break
-            except Exception as exc:
-                last_exc = exc
-                err = str(exc)
-                if _is_rate_limited_error(err):
-                    print(f"[{report_type}] model '{model}' rate-limited; trying next.")
-                    continue
-                print(f"[{report_type}] model '{model}' error: {err}; trying next.")
+    if max_tokens_main > 0:
+        for attempt in range(1, _GROQ_MAX_RETRIES + 1):
+            for model in fallback_chain:
+                try:
+                    client = create_groq_client()
+                    response = _create_groq_chat_completion(
+                        client,
+                        request_label=f"{report_type}:json-primary [{model}]",
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.2,
+                        max_tokens=max_tokens_main,
+                    )
+                    primary_finish_reason = getattr(response.choices[0], "finish_reason", "") or ""
+                    raw = (response.choices[0].message.content or "").strip()
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    err = str(exc)
+                    if _is_rate_limited_error(err):
+                        print(f"[{report_type}] model '{model}' rate-limited; trying next.")
+                        continue
+                    print(f"[{report_type}] model '{model}' error: {err}; trying next.")
+            else:
+                wait = _extract_retry_wait_seconds(str(last_exc), attempt) + random.uniform(1, 3)
+                print(f"[{report_type}] all models exhausted (attempt {attempt}/{_GROQ_MAX_RETRIES}), waiting {wait:.1f}s")
+                _time.sleep(wait)
+                continue
+            break
         else:
-            wait = _extract_retry_wait_seconds(str(last_exc), attempt) + random.uniform(1, 3)
-            print(f"[{report_type}] all models exhausted (attempt {attempt}/6), waiting {wait:.1f}s")
-            _time.sleep(wait)
-            continue
-        break
+            raise RuntimeError(f"[{report_type}] JSON generation failed after {_GROQ_MAX_RETRIES} attempts. Last: {last_exc}")
     else:
-        raise RuntimeError(f"[{report_type}] JSON generation failed after 6 attempts. Last: {last_exc}")
+        print(f"[{report_type}] skipping single-call JSON attempt for large model; using batches.")
 
     if primary_finish_reason == "length":
         print(f"[{report_type}] primary response hit max token limit (finish_reason=length).")
@@ -3964,7 +4082,9 @@ Rules:
             for model in fallback_chain:
                 try:
                     client = create_groq_client()
-                    resp = client.chat.completions.create(
+                    resp = _create_groq_chat_completion(
+                        client,
+                        request_label=f"{report_type}:json-batch-{batch_idx + 1} [{model}]",
                         model=model,
                         messages=[
                             {"role": "system", "content": system_prompt},
@@ -4043,7 +4163,9 @@ Return ONLY a valid JSON array with exactly 1 object:
                 for model in fallback_chain:
                     try:
                         client = create_groq_client()
-                        single_resp = client.chat.completions.create(
+                        single_resp = _create_groq_chat_completion(
+                            client,
+                            request_label=f"{report_type}:json-refill-{missing_spec.id} [{model}]",
                             model=model,
                             messages=[
                                 {"role": "system", "content": system_prompt},
@@ -4123,7 +4245,9 @@ Return ONLY a valid JSON array with exactly 1 object:
         for model in fallback_chain:
             try:
                 client = create_groq_client()
-                swot_resp = client.chat.completions.create(
+                swot_resp = _create_groq_chat_completion(
+                    client,
+                    request_label=f"{report_type}:json-swot [{model}]",
                     model=model,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -4203,13 +4327,8 @@ def generate_multi_reports_json(data: dict) -> Dict[str, Any]:
     """
     Main fast-path entry point.
 
-    Fires one dedicated LLM model per report type, ALL IN PARALLEL.
-
-    Dimension → models fired simultaneously:
-      1D  →  MODEL_1D
-      2D  →  MODEL_1D  +  MODEL_2D
-      3D  →  MODEL_1D  +  MODEL_2D  +  MODEL_3D
-      4D  →  MODEL_1D  +  MODEL_2D  +  MODEL_3D  +  MODEL_4D
+    Generates the requested report types sequentially to stay within Groq
+    RPM and TPM limits.
 
     Returns a combined JSON dict:
     {
@@ -4228,38 +4347,31 @@ def generate_multi_reports_json(data: dict) -> Dict[str, Any]:
         raise ValueError(f"Unsupported dimension: {dimension}")
 
     print(f"\n{'='*60}")
-    print(f"⚡ PARALLEL JSON GENERATION — {dimension}")
+    print(f"SEQUENTIAL JSON GENERATION -- {dimension}")
     print(f"   Report types : {report_types}")
     print(f"   Models used  : {[MODEL_BY_REPORT_TYPE_DEDICATED.get(rt, MODEL_NAME) for rt in report_types]}")
     print(f"{'='*60}\n")
 
-    # Retrieve RAG context once — shared across all parallel calls
+    # Retrieve RAG context once and share it across report-type calls.
     with rag_lock:
         rag_context = retrieve_rag_context(data)
 
     reports: Dict[str, Any] = {}
 
-    # Fire all report-type generations simultaneously
-    with ThreadPoolExecutor(max_workers=len(report_types)) as executor:
-        future_to_type = {
-            executor.submit(generate_report_as_json, data, rtype, rag_context): rtype
-            for rtype in report_types
-        }
-        for future in as_completed(future_to_type):
-            rtype = future_to_type[future]
-            try:
-                reports[rtype] = future.result()
-                print(f"✅ '{rtype}' report collected")
-            except Exception as exc:
-                print(f"❌ '{rtype}' report FAILED: {exc}")
-                reports[rtype] = {
-                    "title": REPORT_TITLE_MAP.get(rtype, rtype),
-                    "report_type": rtype,
-                    "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
-                    "word_count": 0,
-                    "error": str(exc),
-                    "generated_at": datetime.now().isoformat(),
-                }
+    for rtype in report_types:
+        try:
+            reports[rtype] = generate_report_as_json(data, rtype, rag_context)
+            print(f"[OK] '{rtype}' report collected")
+        except Exception as exc:
+            print(f"[ERROR] '{rtype}' report FAILED: {exc}")
+            reports[rtype] = {
+                "title": REPORT_TITLE_MAP.get(rtype, rtype),
+                "report_type": rtype,
+                "sections": [{"id": "error", "title": "Error", "paragraphs": [str(exc)], "word_count": 0}],
+                "word_count": 0,
+                "error": str(exc),
+                "generated_at": datetime.now().isoformat(),
+            }
 
     return {
         "dimension": dimension,
@@ -4314,7 +4426,7 @@ IMPORTANT:
         max_tokens=8000,
         dimension=data.get("dimension"),
         report_type=report_type,
-        max_retries=6,
+        max_retries=_GROQ_MAX_RETRIES,
         request_label=f"{report_title} report",
     )
 
@@ -4423,7 +4535,7 @@ IMPORTANT:
         max_tokens=8000,  # Groq has different limits per model
         dimension=dimension,
         report_type="",
-        max_retries=6,
+        max_retries=_GROQ_MAX_RETRIES,
         request_label=f"{dimension} report",
     )
 
@@ -4877,4 +4989,3 @@ def _main() -> None:
 
 if __name__ == "__main__":
     _main()
-

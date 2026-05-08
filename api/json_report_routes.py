@@ -222,12 +222,12 @@ def _inject_recommendations_section(sections: List[Dict[str, Any]], swot_payload
     return True
 
 
-@router.post("/generate/json", summary="Fastest JSON report endpoint (parallel LLMs)")
+@router.post("/generate/json", summary="JSON report endpoint")
 async def generate_json_reports(
     request: Request,
     payload: Dict[str, Any] = Body(...),
 ) -> Dict[str, Any]:
-    """Fires one dedicated LLM per report type, all in parallel."""
+    """Generates the requested report JSON with bounded Groq concurrency."""
     start = _time.time()
     try:
         if "employee" in payload and "dimension" not in payload:

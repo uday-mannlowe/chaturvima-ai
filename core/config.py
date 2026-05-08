@@ -5,18 +5,26 @@ Centralized configuration loaded from environment variables.
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class Config:
     """Centralized configuration with environment variable support"""
 
-    MAX_CONCURRENT_GENERATIONS = int(os.getenv("MAX_CONCURRENT_GENERATIONS", "5"))
+    MAX_CONCURRENT_GENERATIONS = max(1, int(os.getenv("MAX_CONCURRENT_GENERATIONS", "1")))
     MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE", "100"))
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
     GROQ_RATE_LIMIT_PER_MINUTE = int(os.getenv("GROQ_RATE_LIMIT_PER_MINUTE", "30"))
     GROQ_TIMEOUT_SECONDS = int(os.getenv("GROQ_TIMEOUT_SECONDS", "120"))
+    GROQ_MAX_IN_FLIGHT = max(1, int(os.getenv("GROQ_MAX_IN_FLIGHT", "1")))
+    GROQ_REQUEST_SPACING_SECONDS = float(
+        os.getenv(
+            "GROQ_REQUEST_SPACING_SECONDS",
+            str(60.0 / max(GROQ_RATE_LIMIT_PER_MINUTE, 1)),
+        )
+    )
+    GROQ_MAX_RETRIES = max(1, int(os.getenv("GROQ_MAX_RETRIES", "3")))
 
     TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "..", "html")
     DEFAULT_TEMPLATE_NAME = os.getenv("REPORT_TEMPLATE", "report_wrapper.html")

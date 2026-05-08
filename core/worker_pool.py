@@ -31,10 +31,6 @@ from generate_groq import (
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     MODEL_BY_REPORT_TYPE_DEDICATED,
     REPORT_TITLE_MAP,
-    generate_multi_reports,
-    generate_multi_reports_json,
-    generate_multi_reports_structured,
-    generate_primary_report_json,
     generate_structured_report,
     generate_structured_report_by_dimension,
     generate_text_report,
@@ -102,9 +98,15 @@ RULES:
 - Ground all points in the specific stage and sub-stage characteristics.
 - Do NOT wrap in markdown code fences."""
 
-    from generate_groq import GLOBAL_MODEL_FALLBACKS, MODEL_NAME, _dedupe_models, _is_rate_limited_error
+    from generate_groq import (
+        GLOBAL_MODEL_FALLBACKS,
+        MODEL_NAME,
+        _create_groq_chat_completion,
+        _filter_allowed_models,
+        _is_rate_limited_error,
+    )
     groq_key = Config.GROQ_API_KEY
-    fallback_chain = _dedupe_models(
+    fallback_chain = _filter_allowed_models(
         [os.getenv("GROQ_MODEL_1D", MODEL_NAME)] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME]
     )
 
@@ -112,7 +114,9 @@ RULES:
     for model in fallback_chain:
         try:
             client = Groq(api_key=groq_key)
-            resp = client.chat.completions.create(
+            resp = _create_groq_chat_completion(
+                client,
+                request_label=f"swot:{report_type} [{model}]",
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
@@ -553,7 +557,7 @@ def _inject_recommendations_section(clean_sections: List[Dict[str, Any]], swot_p
 
 
 class WorkerPool:
-    def __init__(self, queue: ReportQueue, rate_limiter: RateLimiter, num_workers: int = 5):
+    def __init__(self, queue: ReportQueue, rate_limiter: RateLimiter, num_workers: int = 1):
         self.queue        = queue
         self.rate_limiter = rate_limiter
         self.num_workers  = num_workers
@@ -575,10 +579,18 @@ class WorkerPool:
                         await self._process_employee_report(job, worker_id)
                     elif job.multi_report:
                         data = resolve_input_data(job.payload)
+
                         if job.structured:
-                            result = await asyncio.wait_for(asyncio.to_thread(generate_multi_reports_structured, data), timeout=Config.GROQ_TIMEOUT_SECONDS * 5)
+                            result = await asyncio.wait_for(
+                                asyncio.to_thread(generate_structured_report_by_dimension, data),
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
+                            )
                         else:
-                            result = await asyncio.wait_for(asyncio.to_thread(generate_multi_reports, data), timeout=Config.GROQ_TIMEOUT_SECONDS * 3)
+                            result = await asyncio.wait_for(
+                                asyncio.to_thread(generate_text_report, data),
+                                timeout=Config.GROQ_TIMEOUT_SECONDS * 3,
+                            )
+
                         job.result = result
                     else:
                         data = resolve_input_data(job.payload)
@@ -698,16 +710,17 @@ class WorkerPool:
             )
             reports_payload = {primary_report_type: result_report}
         else:
-            print(f"MULTI REPORT GENERATION -- {dimension} [structured]")
-            with rag_lock:
-                rag_context = retrieve_rag_context(nd_data)
+            print(f"SINGLE REPORT GENERATION -- {dimension} [structured]")
             result = await asyncio.wait_for(
-                asyncio.to_thread(generate_multi_reports_structured, nd_data),
+                asyncio.to_thread(generate_structured_report_by_dimension, nd_data),
                 timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
             )
-            reports_payload = result if isinstance(result, dict) and all(
-                isinstance(v, dict) and "sections" in v for v in result.values()
-            ) else result.get("reports", result)
+            result_report_type = (
+                result.get("report_type")
+                if isinstance(result, dict)
+                else primary_report_type
+            ) or primary_report_type or dimension.lower()
+            reports_payload = {result_report_type: result}
 
         submission_id   = _extract_submission_id(msg, requested_submission)
         cycle_name      = _extract_cycle_name(msg, requested_cycle)
