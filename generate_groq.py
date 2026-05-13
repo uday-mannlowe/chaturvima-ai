@@ -2404,32 +2404,42 @@ Rules:
 - Use target_words as a minimum floor, not a ceiling — write more if the topic warrants it.
 - Return ONLY the JSON array. No markdown fences."""
 
-            for model in fallback_chain:
-                try:
-                    client = create_groq_client()
-                    resp = _create_groq_chat_completion(
-                        client,
-                        request_label=f"{report_type}:json-batch-{batch_idx + 1} [{model}]",
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": batch_user_prompt},
-                        ],
-                        temperature=0.2,
-                        max_tokens=max_tokens_batch,
-                    )
-                    batch_finish_reason = getattr(resp.choices[0], "finish_reason", "") or ""
-                    batch_raw = (resp.choices[0].message.content or "").strip()
-                    if batch_finish_reason == "length":
-                        print(f"[{report_type}] batch {batch_idx + 1} hit max token limit (finish_reason=length).")
+            _batch_max_retries = _positive_int_env("JSON_REPORT_BATCH_MAX_RETRIES", 3)
+            _batch_retry_wait = _non_negative_float_env("JSON_REPORT_BATCH_RETRY_WAIT", 8.0)
+            batch_raw = "[]"
+            for _batch_attempt in range(1, _batch_max_retries + 1):
+                _batch_succeeded = False
+                for model in fallback_chain:
+                    try:
+                        client = create_groq_client()
+                        resp = _create_groq_chat_completion(
+                            client,
+                            request_label=f"{report_type}:json-batch-{batch_idx + 1} [{model}]",
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": batch_user_prompt},
+                            ],
+                            temperature=0.2,
+                            max_tokens=max_tokens_batch,
+                        )
+                        batch_finish_reason = getattr(resp.choices[0], "finish_reason", "") or ""
+                        batch_raw = (resp.choices[0].message.content or "").strip()
+                        if batch_finish_reason == "length":
+                            print(f"[{report_type}] batch {batch_idx + 1} hit max token limit (finish_reason=length).")
+                        _batch_succeeded = True
+                        break
+                    except Exception as exc:
+                        if _is_rate_limited_error(str(exc)):
+                            print(f"[{report_type}] batch {batch_idx + 1} model '{model}' rate-limited; trying next.")
+                            continue
+                        print(f"[{report_type}] batch {batch_idx + 1} model '{model}' error: {exc}")
+                if _batch_succeeded:
                     break
-                except Exception as exc:
-                    if _is_rate_limited_error(str(exc)):
-                        print(f"[{report_type}] batch {batch_idx + 1} model '{model}' rate-limited; trying next.")
-                        continue
-                    print(f"[{report_type}] batch {batch_idx + 1} model '{model}' error: {exc}")
-            else:
-                batch_raw = "[]"
+                # All models rate-limited — wait and retry the whole batch
+                _bwait = _batch_retry_wait + random.uniform(1, 4)
+                print(f"[{report_type}] batch {batch_idx + 1}: all models rate-limited (attempt {_batch_attempt}/{_batch_max_retries}), waiting {_bwait:.1f}s...")
+                _time.sleep(_bwait)
 
             batch_sections = _parse_sections_array(batch_raw)
             if batch_sections:
@@ -2463,6 +2473,8 @@ Rules:
 
             # Refill each missing section INDIVIDUALLY — one LLM call per section.
             # This is the most reliable recovery: tiny prompt, no truncation risk.
+            _refill_max_retries = _positive_int_env("JSON_REPORT_REFILL_MAX_RETRIES", 3)
+            _refill_retry_wait = _non_negative_float_env("JSON_REPORT_REFILL_RETRY_WAIT", 8.0)
             for missing_spec in missing_specs:
                 single_schema = json.dumps(
                     [{"id": missing_spec.id, "title": missing_spec.title,
@@ -2485,32 +2497,46 @@ Return ONLY a valid JSON array with exactly 1 object:
 - Provide concrete analysis from the input data. Do not use bullet points.
 - Return ONLY the JSON array, no markdown fences."""
 
-                for model in fallback_chain:
-                    try:
-                        client = create_groq_client()
-                        single_resp = _create_groq_chat_completion(
-                            client,
-                            request_label=f"{report_type}:json-refill-{missing_spec.id} [{model}]",
-                            model=model,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user",   "content": single_prompt},
-                            ],
-                            temperature=0.2,
-                            max_tokens=2000,  # 1 section × 130 words × 4 paras × 1.4 tok/word ≈ 730 tokens
-                        )
-                        single_raw = (single_resp.choices[0].message.content or "").strip()
-                        single_sections = _parse_sections_array(single_raw)
-                        for sec in single_sections:
-                            sid = _section_id(sec)
-                            if sid and sid not in existing_by_id:
-                                existing_by_id[sid] = sec
-                                print(f"[{report_type}] ✅ Refilled section '{missing_spec.id}'")
+                _refill_done = False
+                for _refill_attempt in range(1, _refill_max_retries + 1):
+                    for model in fallback_chain:
+                        try:
+                            client = create_groq_client()
+                            single_resp = _create_groq_chat_completion(
+                                client,
+                                request_label=f"{report_type}:json-refill-{missing_spec.id} [{model}]",
+                                model=model,
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user",   "content": single_prompt},
+                                ],
+                                temperature=0.2,
+                                max_tokens=2000,
+                            )
+                            single_raw = (single_resp.choices[0].message.content or "").strip()
+                            single_sections = _parse_sections_array(single_raw)
+                            for sec in single_sections:
+                                sid = _section_id(sec)
+                                if sid and sid not in existing_by_id:
+                                    existing_by_id[sid] = sec
+                                    print(f"[{report_type}] ✅ Refilled section '{missing_spec.id}'")
+                                    _refill_done = True
+                            if _refill_done:
+                                break
+                            break  # Got a response but parse yielded nothing useful — don't retry
+                        except Exception as exc:
+                            if _is_rate_limited_error(str(exc)):
+                                continue
+                            print(f"[{report_type}] refill '{missing_spec.id}' model '{model}' error: {exc}")
+                            break  # Non-rate-limit error — don't retry
+                    if _refill_done:
                         break
-                    except Exception as exc:
-                        if _is_rate_limited_error(str(exc)):
-                            continue
-                        print(f"[{report_type}] refill '{missing_spec.id}' model '{model}' error: {exc}")
+                    # All models rate-limited for this section — wait and retry
+                    _rwait = _refill_retry_wait + random.uniform(1, 3)
+                    print(f"[{report_type}] refill '{missing_spec.id}': rate-limited (attempt {_refill_attempt}/{_refill_max_retries}), waiting {_rwait:.1f}s...")
+                    _time.sleep(_rwait)
+                if not _refill_done:
+                    print(f"[{report_type}] ⚠️ refill '{missing_spec.id}' FAILED after {_refill_max_retries} attempts.")
 
             # Rebuild in spec order for consistency
             rebuilt: List[Dict[str, Any]] = []
@@ -4079,32 +4105,42 @@ Rules:
 - Use target_words as a minimum floor, not a ceiling — write more if the topic warrants it.
 - Return ONLY the JSON array. No markdown fences."""
 
-            for model in fallback_chain:
-                try:
-                    client = create_groq_client()
-                    resp = _create_groq_chat_completion(
-                        client,
-                        request_label=f"{report_type}:json-batch-{batch_idx + 1} [{model}]",
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": batch_user_prompt},
-                        ],
-                        temperature=0.2,
-                        max_tokens=max_tokens_batch,
-                    )
-                    batch_finish_reason = getattr(resp.choices[0], "finish_reason", "") or ""
-                    batch_raw = (resp.choices[0].message.content or "").strip()
-                    if batch_finish_reason == "length":
-                        print(f"[{report_type}] batch {batch_idx + 1} hit max token limit (finish_reason=length).")
+            _batch_max_retries = _positive_int_env("JSON_REPORT_BATCH_MAX_RETRIES", 3)
+            _batch_retry_wait = _non_negative_float_env("JSON_REPORT_BATCH_RETRY_WAIT", 8.0)
+            batch_raw = "[]"
+            for _batch_attempt in range(1, _batch_max_retries + 1):
+                _batch_succeeded = False
+                for model in fallback_chain:
+                    try:
+                        client = create_groq_client()
+                        resp = _create_groq_chat_completion(
+                            client,
+                            request_label=f"{report_type}:json-batch-{batch_idx + 1} [{model}]",
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": batch_user_prompt},
+                            ],
+                            temperature=0.2,
+                            max_tokens=max_tokens_batch,
+                        )
+                        batch_finish_reason = getattr(resp.choices[0], "finish_reason", "") or ""
+                        batch_raw = (resp.choices[0].message.content or "").strip()
+                        if batch_finish_reason == "length":
+                            print(f"[{report_type}] batch {batch_idx + 1} hit max token limit (finish_reason=length).")
+                        _batch_succeeded = True
+                        break
+                    except Exception as exc:
+                        if _is_rate_limited_error(str(exc)):
+                            print(f"[{report_type}] batch {batch_idx + 1} model '{model}' rate-limited; trying next.")
+                            continue
+                        print(f"[{report_type}] batch {batch_idx + 1} model '{model}' error: {exc}")
+                if _batch_succeeded:
                     break
-                except Exception as exc:
-                    if _is_rate_limited_error(str(exc)):
-                        print(f"[{report_type}] batch {batch_idx + 1} model '{model}' rate-limited; trying next.")
-                        continue
-                    print(f"[{report_type}] batch {batch_idx + 1} model '{model}' error: {exc}")
-            else:
-                batch_raw = "[]"
+                # All models rate-limited — wait and retry the whole batch
+                _bwait = _batch_retry_wait + random.uniform(1, 4)
+                print(f"[{report_type}] batch {batch_idx + 1}: all models rate-limited (attempt {_batch_attempt}/{_batch_max_retries}), waiting {_bwait:.1f}s...")
+                _time.sleep(_bwait)
 
             batch_sections = _parse_sections_array(batch_raw)
             if batch_sections:
@@ -4138,6 +4174,8 @@ Rules:
 
             # Refill each missing section INDIVIDUALLY — one LLM call per section.
             # This is the most reliable recovery: tiny prompt, no truncation risk.
+            _refill_max_retries = _positive_int_env("JSON_REPORT_REFILL_MAX_RETRIES", 3)
+            _refill_retry_wait = _non_negative_float_env("JSON_REPORT_REFILL_RETRY_WAIT", 8.0)
             for missing_spec in missing_specs:
                 single_schema = json.dumps(
                     [{"id": missing_spec.id, "title": missing_spec.title,
@@ -4160,32 +4198,46 @@ Return ONLY a valid JSON array with exactly 1 object:
 - Provide concrete analysis from the input data. Do not use bullet points.
 - Return ONLY the JSON array, no markdown fences."""
 
-                for model in fallback_chain:
-                    try:
-                        client = create_groq_client()
-                        single_resp = _create_groq_chat_completion(
-                            client,
-                            request_label=f"{report_type}:json-refill-{missing_spec.id} [{model}]",
-                            model=model,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user",   "content": single_prompt},
-                            ],
-                            temperature=0.2,
-                            max_tokens=2000,  # 1 section × 130 words × 4 paras × 1.4 tok/word ≈ 730 tokens
-                        )
-                        single_raw = (single_resp.choices[0].message.content or "").strip()
-                        single_sections = _parse_sections_array(single_raw)
-                        for sec in single_sections:
-                            sid = _section_id(sec)
-                            if sid and sid not in existing_by_id:
-                                existing_by_id[sid] = sec
-                                print(f"[{report_type}] ✅ Refilled section '{missing_spec.id}'")
+                _refill_done = False
+                for _refill_attempt in range(1, _refill_max_retries + 1):
+                    for model in fallback_chain:
+                        try:
+                            client = create_groq_client()
+                            single_resp = _create_groq_chat_completion(
+                                client,
+                                request_label=f"{report_type}:json-refill-{missing_spec.id} [{model}]",
+                                model=model,
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user",   "content": single_prompt},
+                                ],
+                                temperature=0.2,
+                                max_tokens=2000,
+                            )
+                            single_raw = (single_resp.choices[0].message.content or "").strip()
+                            single_sections = _parse_sections_array(single_raw)
+                            for sec in single_sections:
+                                sid = _section_id(sec)
+                                if sid and sid not in existing_by_id:
+                                    existing_by_id[sid] = sec
+                                    print(f"[{report_type}] ✅ Refilled section '{missing_spec.id}'")
+                                    _refill_done = True
+                            if _refill_done:
+                                break
+                            break  # Got a response but parse yielded nothing useful — don't retry
+                        except Exception as exc:
+                            if _is_rate_limited_error(str(exc)):
+                                continue
+                            print(f"[{report_type}] refill '{missing_spec.id}' model '{model}' error: {exc}")
+                            break  # Non-rate-limit error — don't retry
+                    if _refill_done:
                         break
-                    except Exception as exc:
-                        if _is_rate_limited_error(str(exc)):
-                            continue
-                        print(f"[{report_type}] refill '{missing_spec.id}' model '{model}' error: {exc}")
+                    # All models rate-limited for this section — wait and retry
+                    _rwait = _refill_retry_wait + random.uniform(1, 3)
+                    print(f"[{report_type}] refill '{missing_spec.id}': rate-limited (attempt {_refill_attempt}/{_refill_max_retries}), waiting {_rwait:.1f}s...")
+                    _time.sleep(_rwait)
+                if not _refill_done:
+                    print(f"[{report_type}] ⚠️ refill '{missing_spec.id}' FAILED after {_refill_max_retries} attempts.")
 
             # Rebuild in spec order for consistency
             rebuilt: List[Dict[str, Any]] = []
