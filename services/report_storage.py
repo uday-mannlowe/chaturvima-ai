@@ -80,6 +80,21 @@ def build_auto_download_pdf_url(
     submission_id: Optional[str] = None,
     cycle_name: Optional[str] = None,
 ) -> str:
+    # When PUBLIC_DOWNLOAD_URL_BASE is set, build an absolute URL pointing at
+    # the Frappe download_pdf_report proxy. The browser hits Frappe over HTTPS,
+    # Frappe authenticates the user, then proxies back to this AI server to
+    # fetch the PDF. Required for the production deployment (mixed-content +
+    # auth concerns). Empty value falls back to the relative AI-server path
+    # which is correct for local development.
+    public_base = os.getenv("PUBLIC_DOWNLOAD_URL_BASE", "").strip()
+    if public_base:
+        params = [f"employee={quote(employee_id, safe='')}"]
+        if submission_id:
+            params.append(f"submission_id={quote(submission_id, safe='')}")
+        if cycle_name:
+            params.append(f"cycle_name={quote(cycle_name, safe='')}")
+        return f"{public_base}?{'&'.join(params)}"
+
     return append_identity_query(
         f"/api/html-report/{employee_id}/pdf",
         submission_id=submission_id,
