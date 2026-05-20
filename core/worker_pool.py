@@ -31,6 +31,7 @@ from generate_groq import (
     DEFAULT_REPORT_TYPE_BY_DIMENSION,
     MODEL_BY_REPORT_TYPE_DEDICATED,
     REPORT_TITLE_MAP,
+    _rename_stage_for_display,
     generate_report_as_json,
     generate_structured_report_by_dimension,
     generate_text_report,
@@ -748,7 +749,7 @@ class WorkerPool:
             try:    final_pct   = float(st.get("final_percentage", pct))
             except: final_pct   = pct
             stage_scores.append({
-                "stage":            str(st.get("stage", "-")),
+                "stage":            _rename_stage_for_display(str(st.get("stage", "-"))),
                 "score":            f"{final_value:.2f}",
                 "percentage":       f"{final_pct:.1f}",
                 "final_value":      f"{final_value:.2f}",
@@ -860,8 +861,8 @@ class WorkerPool:
                 "designation":        designation,
                 "report_type":        f"{dimension_label} Growth Report",
                 "dimension_label":    dimension_label,
-                "dominant_stage":     str(msg.get("dominant_stage",     "-")),
-                "dominant_sub_stage": str(msg.get("dominant_sub_stage", "-")),
+                "dominant_stage":     _rename_stage_for_display(str(msg.get("dominant_stage",     "-"))),
+                "dominant_sub_stage": _rename_stage_for_display(str(msg.get("dominant_sub_stage", "-"))),
                 "questionnaire_text": ", ".join(str(q) for q in questionnaires) if questionnaires else "-",
                 "generated_date":     _dt.now().strftime("%d %B %Y"),
                 "stage_scores":       stage_scores,
