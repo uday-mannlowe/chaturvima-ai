@@ -30,7 +30,7 @@ def create_groq_client() -> OpenAI:
 
 # Choose your Groq model
 # Default to Scout because the gpt-oss models have stricter Groq TPM/RPM limits.
-MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
 # Optional per-dimension models. If not set, each falls back to GROQ_MODEL.
 # This allows 1D/2D/3D/4D report paths to use different models.
@@ -753,6 +753,7 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
 
 Write in full, detailed paragraphs with concrete examples from the data.
 Do NOT use bullet points. Use flowing narrative structure.
+EXCEPTION: Section 10 (Cumulative SWOT Overlay) MUST use numbered points (1. 2. 3.) under each of the four quadrant headings — do NOT write it as paragraphs.
 """
 
 # ===================================================
@@ -1272,8 +1273,9 @@ SECTION_SPECS_ORGANIZATION: List[SectionSpec] = [
         min_words=300, max_words=420,
         guidance=(
             "Provide a cumulative SWOT across Employee, Boss, Dept, and Company. "
-            "Include ALL four quadrants with at least 3 numbered points each: "
-            "Strengths, Weaknesses, Opportunities, and Threats. This section is MANDATORY."
+            "Include ALL four quadrants: Strengths, Weaknesses, Opportunities, and Threats. "
+            "IMPORTANT: Each quadrant MUST be written as numbered points (1. 2. 3.) — NOT as paragraphs. "
+            "Provide at least 3 numbered points per quadrant. This section is MANDATORY."
         ),
         data_keys=("behavioral_stage", "employee_questionnaire", "revised_employee_model_weights"),
     ),
