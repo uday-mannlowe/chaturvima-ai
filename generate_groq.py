@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from dotenv import load_dotenv
-from groq import Groq
+from openai import OpenAI
 from typing import List, Dict, Any, Tuple
 from core.config import Config
 
@@ -19,18 +19,18 @@ from langchain_community.vectorstores import FAISS
 # LOAD ENV
 
 load_dotenv(override=True)
-GROQ_API_KEY = Config.GROQ_API_KEY
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 
-if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY not configured")
+if not DEEPSEEK_API_KEY:
+    raise ValueError("DEEPSEEK_API_KEY not configured")
 
-# INIT GROQ CLIENT
-def create_groq_client() -> Groq:
-    return Groq(api_key=GROQ_API_KEY)
+# INIT DEEPSEEK CLIENT
+def create_groq_client() -> OpenAI:
+    return OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 
 # Choose your Groq model
 # Default to Scout because the gpt-oss models have stricter Groq TPM/RPM limits.
-MODEL_NAME = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 # Optional per-dimension models. If not set, each falls back to GROQ_MODEL.
 # This allows 1D/2D/3D/4D report paths to use different models.
@@ -261,7 +261,7 @@ def _pace_groq_request(request_label: str = "request") -> None:
         _time.sleep(wait)
 
 
-def _create_groq_chat_completion(client: Groq, request_label: str = "request", **kwargs: Any):
+def _create_groq_chat_completion(client: OpenAI, request_label: str = "request", **kwargs: Any):
     with _GROQ_CALL_SEMAPHORE:
         _pace_groq_request(request_label)
         return client.chat.completions.create(**kwargs)
