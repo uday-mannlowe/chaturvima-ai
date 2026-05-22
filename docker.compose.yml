@@ -10,7 +10,9 @@ services:
     ports:
       - "5000:5000"
     environment:
-      # Groq API
+      # DeepSeek API
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      # Groq API (kept for fallback/SWOT throttle config)
       - GROQ_API_KEY=${GROQ_API_KEY}
       # Concurrency settings
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-1}
@@ -22,13 +24,7 @@ services:
       - GROQ_MAX_RETRIES=${GROQ_MAX_RETRIES:-3}
       - SECTION_PARALLEL_WORKERS=${SECTION_PARALLEL_WORKERS:-1}
       - SECTION_EXPANSION_MAX_ATTEMPTS=${SECTION_EXPANSION_MAX_ATTEMPTS:-0}
-      - GROQ_MODEL=${GROQ_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}
-      - GROQ_MODEL_1D=${GROQ_MODEL_1D:-meta-llama/llama-4-scout-17b-16e-instruct}
-      - GROQ_MODEL_2D=${GROQ_MODEL_2D:-meta-llama/llama-4-scout-17b-16e-instruct}
-      - GROQ_MODEL_3D=${GROQ_MODEL_3D:-meta-llama/llama-4-scout-17b-16e-instruct}
-      - GROQ_MODEL_4D=${GROQ_MODEL_4D:-meta-llama/llama-4-scout-17b-16e-instruct}
-      - GROQ_MODEL_FALLBACKS=${GROQ_MODEL_FALLBACKS:-meta-llama/llama-4-scout-17b-16e-instruct}
-      - GROQ_ALLOWED_MODELS=${GROQ_ALLOWED_MODELS:-meta-llama/llama-4-scout-17b-16e-instruct}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-v4-flash}
       - JSON_REPORT_MAX_TOKENS=${JSON_REPORT_MAX_TOKENS:-8000}
       - JSON_REPORT_BATCH_MAX_TOKENS=${JSON_REPORT_BATCH_MAX_TOKENS:-8000}
       - JSON_REPORT_MAX_TOKENS_CAP=${JSON_REPORT_MAX_TOKENS_CAP:-4000}
