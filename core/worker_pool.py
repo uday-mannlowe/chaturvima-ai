@@ -48,7 +48,6 @@ def _normalize_optional_str(value: Any) -> Optional[str]:
 
 
 def _generate_swot_via_llm(behavioral_stage: Dict[str, Any], report_type: str = "employee") -> Dict[str, Any]:
-    from groq import Groq
     import os, json as _json, re as _re
 
     stage      = behavioral_stage.get("stage", "")
@@ -105,8 +104,8 @@ RULES:
         _create_groq_chat_completion,
         _filter_allowed_models,
         _is_rate_limited_error,
+        create_groq_client,
     )
-    groq_key = Config.GROQ_API_KEY
     fallback_chain = _filter_allowed_models(
         [os.getenv("GROQ_MODEL_1D", MODEL_NAME)] + GLOBAL_MODEL_FALLBACKS + [MODEL_NAME]
     )
@@ -114,7 +113,7 @@ RULES:
     raw = ""
     for model in fallback_chain:
         try:
-            client = Groq(api_key=groq_key)
+            client = create_groq_client()
             resp = _create_groq_chat_completion(
                 client,
                 request_label=f"swot:{report_type} [{model}]",
