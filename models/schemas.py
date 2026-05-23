@@ -40,6 +40,7 @@ class ReportQueue:
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=max_size)
         self.jobs: Dict[str, ReportJob] = {}
         self.job_counter = 0
+        self.rejected_jobs = 0
         self._lock = asyncio.Lock()
 
     async def add_job(
@@ -59,14 +60,17 @@ class ReportQueue:
                 structured=structured,
                 employee_report=employee_report,
             )
-            self.jobs[job_id] = job
+
             try:
-                await self.queue.put(job)
-                return job_id
+                self.queue.put_nowait(job)
             except asyncio.QueueFull:
+                self.rejected_jobs += 1
                 job.status = JobStatus.FAILED
                 job.error = "Queue is full. Please try again later."
                 raise HTTPException(status_code=503, detail=job.error)
+
+            self.jobs[job_id] = job
+            return job_id
 
     async def get_job(self) -> ReportJob:
         return await self.queue.get()
@@ -77,6 +81,9 @@ class ReportQueue:
             statuses[job.status.value] = statuses.get(job.status.value, 0) + 1
         return {
             "queue_size": self.queue.qsize(),
+            "queue_limit": self.queue.maxsize,
+            "queue_available": max(self.queue.maxsize - self.queue.qsize(), 0),
             "total_jobs": len(self.jobs),
+            "rejected_jobs": self.rejected_jobs,
             "status_breakdown": statuses,
         }
