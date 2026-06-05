@@ -799,6 +799,106 @@ REPORT_STYLE = {
 }
 
 
+# First 3 employee sections are served verbatim — no LLM call needed.
+_HARDCODED_EMPLOYEE_SECTIONS: Dict[str, List[str]] = {
+    "purpose": [
+        (
+            "This assessment was created to help you understand your internal behavioral patterns "
+            "and emotional stage as an individual. It is a self-reflection tool designed within the "
+            "ChaturVima framework to reveal how you approach work, handle responsibilities, and "
+            "maintain consistency in your daily life. The focus is on your personal dimension — the "
+            "one that shapes your reliability, sense of purpose, and ability to deliver on "
+            "commitments. By exploring these aspects, you can identify areas where you are already "
+            "strong and uncover opportunities for continued growth. The goal is not to label you, "
+            "but to provide a clear mirror that supports your professional and personal development."
+        ),
+        (
+            "Conducting this assessment at this point in your journey allows you to pause and "
+            "recognize the patterns that define your current effectiveness. It is especially "
+            "valuable when you are performing well but want to ensure that your stability does not "
+            "lead to complacency. The assessment helps you see where you stand emotionally and "
+            "behaviorally, giving you a foundation to build upon. For you, this is a chance to "
+            "affirm your strengths while gently exploring how you can stay adaptable and open to "
+            "new challenges. The insights here are meant to inspire confidence and encourage "
+            "intentional self-awareness."
+        ),
+        (
+            "Understanding your own emotional stage is the first step toward sustaining high "
+            "performance and well-being. This report will clarify your dominant behavioral stage "
+            "and substage, explain what that means in practical terms, and connect it to your "
+            "day-to-day actions. It is designed to be a constructive and empowering guide, not a "
+            "critique. As you read through the findings, consider how they resonate with your "
+            "experience and how you can use this awareness to keep growing. The ultimate purpose "
+            "is to support you in becoming an even more grounded and forward-looking professional."
+        ),
+    ],
+    "overview": [
+        (
+            "The 1D dimension, also called the Individual Dimension, focuses entirely on your "
+            "personal behavioral patterns and emotional state as a single person. It examines how "
+            "you navigate your own work life, meet goals, handle pressure, and maintain a sense of "
+            "inner alignment. This dimension does not look at your relationships with others or "
+            "team dynamics — it is strictly about you as an individual. The scope includes your "
+            "internal drivers, your typical responses to success and challenge, and the stability "
+            "with which you operate. By understanding this dimension, you gain clarity on what "
+            "fuels your reliability and where you might need to refresh your approach."
+        ),
+        (
+            "This assessment covers four main behavioral stages: Sunshine, Self-Introspection, "
+            "Soul-Searching, and Steady State. Each stage represents a different emotional and "
+            "behavioral phase that individuals can move through over time. The current report "
+            "identifies your dominant stage and substage based on your self-reported responses. "
+            "While the framework acknowledges that people can show traits from multiple stages, "
+            "the analysis highlights the most prominent pattern in your behavior. The scope is "
+            "limited to your own perspective, which makes it a powerful tool for self-awareness "
+            "but also means it reflects your personal views rather than external observations."
+        ),
+        (
+            "It is important to remember that this assessment provides a snapshot of your current "
+            "state, not a permanent label. People evolve, and stages can shift as circumstances "
+            "change or as you develop new coping strategies. The scope of this report is to give "
+            "you a clear sense of where you are today, so you can make informed choices moving "
+            "forward. The findings are drawn from your questionnaire responses, which are mapped "
+            "to specific behavioral indicators. By focusing on the 1D dimension, you can "
+            "strengthen your personal foundation, which in turn supports every other dimension "
+            "of your professional life."
+        ),
+    ],
+    "inputs": [
+        (
+            "The primary input for this assessment is the self-report questionnaire you completed "
+            "as part of the ChaturVima framework. This questionnaire contains carefully designed "
+            "statements that reflect different behavioral sub-stages across the four main stages. "
+            "Your responses were scored and analyzed to determine which stage and substage best "
+            "describe your current emotional and behavioral patterns. The questionnaire is the "
+            "only instrument used for your 1D assessment, which means the findings are based "
+            "entirely on your own honest self-reflection. This makes your active participation "
+            "and candor essential for accurate results."
+        ),
+        (
+            "The assessment approach is systematic and non-judgmental. Each question is linked to "
+            "a specific sub-stage, and your scores indicate how strongly you exhibit the behaviors "
+            "associated with that sub-stage. For example, a high score in Stability and Alignment "
+            "suggests you consistently operate with reliability and a clear sense of purpose. The "
+            "scores are then aggregated to identify your dominant stage and substage. In your "
+            "case, the data clearly points to the Steady State stage, with the Stability and "
+            "Alignment substage being the most prominent. The methodology ensures that the "
+            "interpretation is grounded in your actual responses."
+        ),
+        (
+            "In addition to the questionnaire, the system also accounts for overlapping scores "
+            "between stages. You may notice that some sub-stages from Self-Introspection, "
+            "Soul-Searching, and Sunshine also received relatively high scores. This is normal "
+            "and shows that you carry qualities from multiple phases. The instrument is designed "
+            "to capture these nuances, providing a richer picture than a simple label. The final "
+            "analysis weighs all your responses to present a balanced view. By using this "
+            "structured input, the report can offer specific, actionable insights that are "
+            "tailored to your personal behavioral landscape."
+        ),
+    ],
+}
+
+
 SECTION_SPECS_EMPLOYEE: List[SectionSpec] = [
     SectionSpec(
         id="purpose",
@@ -1871,6 +1971,24 @@ def generate_structured_report(data: dict, report_type: str, rag_context: str) -
 
     results: List[Dict[str, Any]] = [None] * total_specs  # pre-allocate
 
+    # Pre-fill hardcoded sections so they never reach the LLM.
+    hardcoded_map = _HARDCODED_EMPLOYEE_SECTIONS if report_type == "employee" else {}
+    llm_specs = {}
+    for idx, spec in enumerate(specs, start=1):
+        paragraphs = hardcoded_map.get(spec.id)
+        if paragraphs is not None:
+            results[idx - 1] = {
+                "_order": idx,
+                "id": spec.id,
+                "title": spec.title,
+                "text": "\n\n".join(paragraphs),
+                "paragraphs": paragraphs,
+                "word_count": _word_count("\n\n".join(paragraphs)),
+            }
+            print(f"📌 Section '{spec.title}' served from hardcoded content")
+        else:
+            llm_specs[idx] = spec
+
     with ThreadPoolExecutor(max_workers=_SECTION_WORKERS) as executor:
         future_to_idx = {
             executor.submit(
@@ -1883,7 +2001,7 @@ def generate_structured_report(data: dict, report_type: str, rag_context: str) -
                 rag_context,
                 all_titles,
             ): idx - 1   # 0-based position in results list
-            for idx, spec in enumerate(specs, start=1)
+            for idx, spec in llm_specs.items()
         }
 
         for future in as_completed(future_to_idx):

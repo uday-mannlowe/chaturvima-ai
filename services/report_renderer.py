@@ -464,6 +464,36 @@ def _load_logo_data_uri() -> Optional[str]:
         return None
     return f"data:image/png;base64,{encoded}"
 
+
+@lru_cache(maxsize=8)
+def _load_stage_image_data_uri(stage_name: str) -> Optional[str]:
+    """Load a stage-specific illustration as a base64 data URI.
+
+    Image file naming convention (place in the html/ template dir):
+      sunshine_stage.png   — for the Sunshine / Honeymoon stage
+      self_introspection_stage.png
+      soul_searching_stage.png
+      steady_state_stage.png
+    """
+    safe_name = re.sub(r"[\s\-]+", "_", stage_name.lower().strip())
+    candidates = [
+        f"{safe_name}_stage",
+        safe_name,
+    ]
+    for stem in candidates:
+        for ext in ("png", "jpg", "jpeg", "webp"):
+            image_path = os.path.join(Config.TEMPLATE_DIR, f"{stem}.{ext}")
+            if os.path.exists(image_path):
+                try:
+                    with open(image_path, "rb") as handle:
+                        encoded = base64.b64encode(handle.read()).decode("ascii")
+                    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                    return f"data:{mime};base64,{encoded}"
+                except OSError:
+                    pass
+    return None
+
+
 def render_html_report(json_payload: Dict[str, Any]) -> str:
     """
     Render stored JSON payload → HTML using the unified Jinja2 template.
@@ -480,6 +510,12 @@ def render_html_report(json_payload: Dict[str, Any]) -> str:
             logo_data_uri = _load_logo_data_uri()
             if logo_data_uri:
                 header["logo_data_uri"] = logo_data_uri
+        if not str(header.get("stage_image_data_uri") or "").strip():
+            dominant_stage = str(header.get("dominant_stage") or "").strip()
+            if dominant_stage:
+                stage_img_uri = _load_stage_image_data_uri(dominant_stage)
+                if stage_img_uri:
+                    header["stage_image_data_uri"] = stage_img_uri
         reports = _ensure_swot_sections_for_render(
             list(json_payload.get("reports", []) or [])
         )
