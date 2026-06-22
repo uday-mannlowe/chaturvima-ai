@@ -370,6 +370,74 @@ def map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+async def fetch_boss_2d_report(manager_employee: str, cycle_name: str, user_auth: str = "") -> Dict[str, Any]:
+    """
+    Fetch boss + all direct-report employees' 2D data from Frappe.
+    Returns the parsed message dict: { boss: {...}, employees: [...], submission_group_id: ... }
+    """
+    from core.config import Config as _Config
+    headers = frappe_headers(explicit_auth=user_auth)
+    params: Dict[str, str] = {"manager_employee": manager_employee}
+    if cycle_name:
+        params["cycle_name"] = cycle_name
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(_Config.FRAPPE_BOSS_2D_URL, params=params, headers=headers)
+            resp.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(f"Frappe get_boss_2d_report timed out for manager={manager_employee}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(
+                f"Frappe get_boss_2d_report returned {exc.response.status_code} "
+                f"for manager={manager_employee}: {exc.response.text[:200]}"
+            ) from exc
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise RuntimeError("Frappe get_boss_2d_report returned invalid JSON") from exc
+
+    msg = data.get("message", data)
+    if not isinstance(msg, dict):
+        raise ValueError(f"Unexpected get_boss_2d_report response shape: {type(msg)}")
+    return msg
+
+
+async def fetch_employee_2d_context(employee: str, cycle_name: str, user_auth: str = "") -> Dict[str, Any]:
+    """
+    Fetch employee + their manager's 2D data from Frappe.
+    Returns the parsed message dict: { boss: {...}, employees: [employee_data], submission_group_id: ... }
+    """
+    from core.config import Config as _Config
+    headers = frappe_headers(explicit_auth=user_auth)
+    params: Dict[str, str] = {"employee": employee}
+    if cycle_name:
+        params["cycle_name"] = cycle_name
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(_Config.FRAPPE_EMPLOYEE_2D_URL, params=params, headers=headers)
+            resp.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(f"Frappe get_employee_2d_context timed out for employee={employee}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(
+                f"Frappe get_employee_2d_context returned {exc.response.status_code} "
+                f"for employee={employee}: {exc.response.text[:200]}"
+            ) from exc
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise RuntimeError("Frappe get_employee_2d_context returned invalid JSON") from exc
+
+    msg = data.get("message", data)
+    if not isinstance(msg, dict):
+        raise ValueError(f"Unexpected get_employee_2d_context response shape: {type(msg)}")
+    return msg
+
+
 async def fetch_frappe_swot_doc(sub_stage: Optional[str], user_auth: str = "") -> Optional[Dict[str, Any]]:
     """
     Fetch SWOT doc from Frappe.

@@ -41,6 +41,16 @@ class Config:
         "FRAPPE_RESOURCE_BASE_URL",
         "https://cvdev.m.frappe.cloud/api/resource",
     )
+    FRAPPE_BOSS_2D_URL = os.getenv(
+        "FRAPPE_BOSS_2D_URL",
+        "https://cvdev.m.frappe.cloud/api/method/"
+        "chaturvima_api.api.dashboard.get_boss_2d_report",
+    )
+    FRAPPE_EMPLOYEE_2D_URL = os.getenv(
+        "FRAPPE_EMPLOYEE_2D_URL",
+        "https://cvdev.m.frappe.cloud/api/method/"
+        "chaturvima_api.api.dashboard.get_employee_2d_context",
+    )
     DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
     HTML_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "html_data")
 

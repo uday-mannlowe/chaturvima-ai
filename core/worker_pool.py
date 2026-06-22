@@ -16,6 +16,8 @@ from core.rate_limiter import RateLimiter
 from models.schemas import JobStatus, ReportJob, ReportQueue
 from services.frappe_client import (
     extract_full_swot_doc,
+    fetch_boss_2d_report,
+    fetch_employee_2d_context,
     fetch_frappe_swot_doc,
     frappe_headers,
     frappe_query_params,
@@ -55,10 +57,11 @@ def _generate_swot_via_llm(behavioral_stage: Dict[str, Any], report_type: str = 
     definition = behavioral_stage.get("sub_stage_definition", "")
 
     _context_map = {
-        "employee":     ("an individual employee's personal growth and development",          "Individual SWOT"),
-        "boss":         ("the employee-boss working relationship and its dynamics",           "Dyadic SWOT (Employee-Boss Relationship)"),
-        "team":         ("the team's collective performance, dynamics, and collaboration",    "Collective SWOT (Team/Department)"),
-        "organization": ("the organization's alignment, culture, and strategic performance", "Cumulative SWOT (Organizational)"),
+        "employee":      ("an individual employee's personal growth and development",                      "Individual SWOT"),
+        "boss":          ("the employee-boss working relationship and its dynamics",                       "Dyadic SWOT (Employee-Boss Relationship)"),
+        "boss_overview": ("a manager's leadership effectiveness across their entire team",                 "Leadership SWOT (Boss & Team)"),
+        "team":          ("the team's collective performance, dynamics, and collaboration",                "Collective SWOT (Team/Department)"),
+        "organization":  ("the organization's alignment, culture, and strategic performance",              "Cumulative SWOT (Organizational)"),
     }
     context_desc, swot_label = _context_map.get(report_type, _context_map["employee"])
 
@@ -276,8 +279,11 @@ _SWOT_LABELS = {
     "opportunities": "Opportunities", "threat": "Threats",
 }
 _SWOT_SECTION_TITLES = {
-    "employee": "Individual SWOT Analysis", "boss": "Dyadic SWOT Analysis",
-    "team": "Collective SWOT Analysis",     "organization": "Cumulative SWOT Overlay",
+    "employee":     "Individual SWOT Analysis",
+    "boss":         "Dyadic SWOT Analysis",
+    "boss_overview": "Leadership SWOT Analysis",
+    "team":         "Collective SWOT Analysis",
+    "organization": "Cumulative SWOT Overlay",
 }
 _RECOMMENDATION_SECTION_TITLES = {
     "employee": "Recommendations", "boss": "Recommendations",
@@ -575,7 +581,11 @@ class WorkerPool:
                 try:
                     await self.rate_limiter.acquire()
 
-                    if job.employee_report:
+                    if job.boss_2d_report:
+                        await self._process_boss_2d_report(job, worker_id)
+                    elif job.employee_2d_report:
+                        await self._process_employee_2d_report(job, worker_id)
+                    elif job.employee_report:
                         await self._process_employee_report(job, worker_id)
                     elif job.multi_report:
                         data = resolve_input_data(job.payload)
@@ -871,6 +881,307 @@ class WorkerPool:
 
         path = save_employee_json(json_payload, employee_id, submission_id=submission_id, cycle_name=cycle_name)
         print(f"Worker {worker_id}: saved {path}")
+        job.result = json_payload
+
+    async def _process_boss_2d_report(self, job: ReportJob, worker_id: int):
+        from generate_groq import REPORT_TITLE_MAP, generate_report_as_json, rag_lock, retrieve_rag_context, validate_input_data
+        from datetime import datetime as _dt
+
+        manager_employee = job.payload["manager_employee"]
+        cycle_name       = _normalize_optional_str(job.payload.get("cycle_name"))
+        runtime_auth     = _normalize_optional_str(job.payload.get("_frappe_auth"))
+
+        print(f"Worker {worker_id}: fetching boss 2D data for manager={manager_employee}")
+        msg = await fetch_boss_2d_report(manager_employee, cycle_name or "", user_auth=runtime_auth or "")
+
+        boss_data      = msg.get("boss", {})
+        employees_data = msg.get("employees", [])
+        group_id       = _normalize_optional_str(msg.get("submission_group_id")) or ""
+
+        nd_data = {
+            "dimension": "2D",
+            "boss": boss_data,
+            "employees": employees_data,
+            "employee_context": boss_data.get("employee_context", {}),
+            "behavioral_stage": boss_data.get("behavioral_stage", {}),
+            "revised_employee_model_weights": boss_data.get("revised_employee_model_weights", {}),
+        }
+        nd_data = validate_input_data(nd_data)
+
+        with rag_lock:
+            rag_context = retrieve_rag_context(nd_data)
+
+        print(f"Worker {worker_id}: generating boss_overview report for manager={manager_employee}")
+        result_report = await asyncio.wait_for(
+            asyncio.to_thread(generate_report_as_json, nd_data, "boss_overview", rag_context),
+            timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
+        )
+        reports_payload = {"boss_overview": result_report}
+
+        report_sections_list = []
+        for rtype, robj in reports_payload.items():
+            if not (isinstance(robj, dict) and "sections" in robj):
+                continue
+            from services.report_renderer import build_swot_lists_from_section_paragraphs, is_swot_section, text_to_paragraphs
+            clean_sections: List[Dict[str, Any]] = []
+            for sec in robj.get("sections", []):
+                paras      = sec.get("paragraphs") or text_to_paragraphs(sec.get("text", ""))
+                clean_sec  = {"id": sec.get("id", ""), "title": sec.get("title", ""), "paragraphs": paras}
+                existing_swot = sec.get("swot_lists")
+                if isinstance(existing_swot, dict):
+                    clean_sec["swot_lists"] = existing_swot
+                elif is_swot_section(sec.get("id", ""), sec.get("title", "")):
+                    clean_sec["swot_lists"] = build_swot_lists_from_section_paragraphs(paras)
+                clean_sections.append(clean_sec)
+            _ensure_swot_section(clean_sections, rtype)
+
+            existing_sec   = next((s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))), None)
+            existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
+            has_real = any(
+                existing_lists.get(k) and not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
+                for k in ("strengths", "weaknesses", "opportunities", "threat", "threats")
+                if existing_lists.get(k)
+            )
+            if not has_real:
+                print(f"Worker {worker_id}: generating {rtype} SWOT via LLM")
+                swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), rtype)
+                for sec in clean_sections:
+                    if is_swot_section(sec.get("id", ""), sec.get("title", "")):
+                        threat_rows = swot_to_inject.get("threat") or swot_to_inject.get("threats", [])
+                        sec["swot_lists"] = {
+                            "strengths":     [_swot_row_text(r) for r in swot_to_inject.get("strengths",     []) if _swot_row_text(r)],
+                            "weaknesses":    [_swot_row_text(r) for r in swot_to_inject.get("weaknesses",    []) if _swot_row_text(r)],
+                            "opportunities": [_swot_row_text(r) for r in swot_to_inject.get("opportunities", []) if _swot_row_text(r)],
+                            "threat":        [_swot_row_text(r) for r in threat_rows                         if _swot_row_text(r)],
+                        }
+                        sec["source"]    = swot_to_inject.get("source", "llm_generated")
+                        sec["sub_stage"] = swot_to_inject.get("sub_stage", "")
+                        sec["paragraphs"] = _swot_lists_to_paragraphs(sec["swot_lists"])
+                        break
+                if _inject_actionable_into_action_section(clean_sections, swot_to_inject):
+                    print(f"Worker {worker_id}: actionable steps added for '{rtype}'")
+                if _inject_recommendations_section(clean_sections, swot_to_inject, rtype):
+                    print(f"Worker {worker_id}: recommendations section updated for '{rtype}'")
+
+            report_sections_list.append({
+                "title":       robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
+                "report_type": rtype,
+                "sections":    clean_sections,
+            })
+
+        boss_ctx   = boss_data.get("employee_context", {})
+        raw_boss_stage = boss_data.get("behavioral_stage", {})
+        boss_stage = dict(raw_boss_stage)
+        if "dominant_stage" in boss_stage and "stage" not in boss_stage:
+            boss_stage["stage"]     = boss_stage["dominant_stage"]
+            boss_stage["sub_stage"] = boss_stage.get("dominant_sub_stage", "")
+
+        boss_revised = boss_data.get("revised_employee_model_weights", {})
+        boss_dominant_stage = (
+            boss_stage.get("dominant_stage") or
+            boss_stage.get("stage") or
+            boss_revised.get("dominant_stage") or
+            "-"
+        )
+        boss_dominant_sub_stage = (
+            boss_stage.get("dominant_sub_stage") or
+            boss_stage.get("sub_stage") or
+            boss_revised.get("dominant_sub_stage") or
+            "-"
+        )
+
+        boss_questionnaire  = boss_data.get("employee_questionnaire", [])
+        boss_submission_id  = ""
+        if isinstance(boss_questionnaire, list) and boss_questionnaire:
+            first_q = boss_questionnaire[0] if isinstance(boss_questionnaire[0], dict) else {}
+            boss_submission_id = _normalize_optional_str(
+                first_q.get("submission_name") or first_q.get("submission_id")
+            ) or group_id
+
+        json_payload = {
+            "status": "ok",
+            "header": {
+                "employee_id":        manager_employee,
+                "submission_id":      boss_submission_id or group_id,
+                "cycle_name":         cycle_name or "",
+                "employee_name":      boss_ctx.get("employee_name") or boss_ctx.get("name", manager_employee),
+                "designation":        boss_ctx.get("designation", "Manager"),
+                "report_type":        "2D Boss Leadership Report",
+                "dimension_label":    "2D - Employee-Boss Relationship",
+                "dominant_stage":     boss_dominant_stage,
+                "dominant_sub_stage": boss_dominant_sub_stage,
+                "questionnaire_text": "BOSS",
+                "generated_date":     _dt.now().strftime("%d %B %Y"),
+                "stage_scores":       [],
+            },
+            "reports": report_sections_list,
+        }
+
+        path = save_employee_json(json_payload, manager_employee, submission_id=boss_submission_id or group_id, cycle_name=cycle_name)
+        print(f"Worker {worker_id}: saved boss_overview report → {path}")
+        job.result = json_payload
+
+    async def _process_employee_2d_report(self, job: ReportJob, worker_id: int):
+        from generate_groq import REPORT_TITLE_MAP, generate_report_as_json, rag_lock, retrieve_rag_context, validate_input_data
+        from datetime import datetime as _dt
+
+        employee_id  = job.payload["employee"]
+        cycle_name   = _normalize_optional_str(job.payload.get("cycle_name"))
+        runtime_auth = _normalize_optional_str(job.payload.get("_frappe_auth"))
+
+        print(f"Worker {worker_id}: fetching employee 2D context for employee={employee_id}")
+        msg = await fetch_employee_2d_context(employee_id, cycle_name or "", user_auth=runtime_auth or "")
+
+        boss_data      = msg.get("boss", {})
+        employees_list = msg.get("employees", [])
+        employee_data  = employees_list[0] if employees_list else {}
+        group_id       = _normalize_optional_str(msg.get("submission_group_id")) or ""
+
+        # Extract submission_name from employee's questionnaire to use as
+        # submission_id so the frontend can fetch with the same key it knows.
+        emp_questionnaire = employee_data.get("employee_questionnaire", [])
+        emp_submission_id = ""
+        if isinstance(emp_questionnaire, list) and emp_questionnaire:
+            first_q = emp_questionnaire[0] if isinstance(emp_questionnaire[0], dict) else {}
+            emp_submission_id = _normalize_optional_str(
+                first_q.get("submission_name") or first_q.get("submission_id")
+            ) or group_id
+
+        # Normalize behavioral_stage: add "stage"/"sub_stage" aliases so RAG
+        # context extraction works (it looks for behavioral_stage.stage).
+        raw_emp_stage = employee_data.get("behavioral_stage", {})
+        emp_stage_normalized = dict(raw_emp_stage)
+        if "dominant_stage" in emp_stage_normalized and "stage" not in emp_stage_normalized:
+            emp_stage_normalized["stage"]     = emp_stage_normalized["dominant_stage"]
+            emp_stage_normalized["sub_stage"] = emp_stage_normalized.get("dominant_sub_stage", "")
+
+        nd_data = {
+            "dimension": "2D",
+            "boss": boss_data,
+            "employee": employee_data,
+            "employee_context": employee_data.get("employee_context", {}),
+            "behavioral_stage": emp_stage_normalized,
+            "revised_employee_model_weights": employee_data.get("revised_employee_model_weights", {}),
+            "employee_questionnaire": emp_questionnaire,
+        }
+        nd_data = validate_input_data(nd_data)
+
+        with rag_lock:
+            rag_context = retrieve_rag_context(nd_data)
+
+        print(f"Worker {worker_id}: generating boss (2D) report for employee={employee_id}")
+        result_report = await asyncio.wait_for(
+            asyncio.to_thread(generate_report_as_json, nd_data, "boss", rag_context),
+            timeout=Config.GROQ_TIMEOUT_SECONDS * 5,
+        )
+        reports_payload = {"boss": result_report}
+
+        report_sections_list = []
+        for rtype, robj in reports_payload.items():
+            if not (isinstance(robj, dict) and "sections" in robj):
+                continue
+            from services.report_renderer import build_swot_lists_from_section_paragraphs, is_swot_section, text_to_paragraphs
+            clean_sections: List[Dict[str, Any]] = []
+            for sec in robj.get("sections", []):
+                paras     = sec.get("paragraphs") or text_to_paragraphs(sec.get("text", ""))
+                clean_sec = {"id": sec.get("id", ""), "title": sec.get("title", ""), "paragraphs": paras}
+                existing_swot = sec.get("swot_lists")
+                if isinstance(existing_swot, dict):
+                    clean_sec["swot_lists"] = existing_swot
+                elif is_swot_section(sec.get("id", ""), sec.get("title", "")):
+                    clean_sec["swot_lists"] = build_swot_lists_from_section_paragraphs(paras)
+                clean_sections.append(clean_sec)
+            _ensure_swot_section(clean_sections, rtype)
+
+            existing_sec   = next((s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))), None)
+            existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
+            has_real = any(
+                existing_lists.get(k) and not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
+                for k in ("strengths", "weaknesses", "opportunities", "threat", "threats")
+                if existing_lists.get(k)
+            )
+            if not has_real:
+                print(f"Worker {worker_id}: generating {rtype} SWOT via LLM")
+                swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), rtype)
+                for sec in clean_sections:
+                    if is_swot_section(sec.get("id", ""), sec.get("title", "")):
+                        threat_rows = swot_to_inject.get("threat") or swot_to_inject.get("threats", [])
+                        sec["swot_lists"] = {
+                            "strengths":     [_swot_row_text(r) for r in swot_to_inject.get("strengths",     []) if _swot_row_text(r)],
+                            "weaknesses":    [_swot_row_text(r) for r in swot_to_inject.get("weaknesses",    []) if _swot_row_text(r)],
+                            "opportunities": [_swot_row_text(r) for r in swot_to_inject.get("opportunities", []) if _swot_row_text(r)],
+                            "threat":        [_swot_row_text(r) for r in threat_rows                         if _swot_row_text(r)],
+                        }
+                        sec["source"]    = swot_to_inject.get("source", "llm_generated")
+                        sec["sub_stage"] = swot_to_inject.get("sub_stage", "")
+                        sec["paragraphs"] = _swot_lists_to_paragraphs(sec["swot_lists"])
+                        break
+                if _inject_actionable_into_action_section(clean_sections, swot_to_inject):
+                    print(f"Worker {worker_id}: actionable steps added for '{rtype}'")
+                if _inject_recommendations_section(clean_sections, swot_to_inject, rtype):
+                    print(f"Worker {worker_id}: recommendations section updated for '{rtype}'")
+
+            report_sections_list.append({
+                "title":       robj.get("title") or REPORT_TITLE_MAP.get(rtype, rtype),
+                "report_type": rtype,
+                "sections":    clean_sections,
+            })
+
+        emp_ctx    = employee_data.get("employee_context", {})
+        emp_stage  = emp_stage_normalized
+        emp_revised = employee_data.get("revised_employee_model_weights", {})
+        emp_dominant_stage = (
+            emp_stage.get("dominant_stage") or
+            emp_stage.get("stage") or
+            emp_revised.get("dominant_stage") or
+            "-"
+        )
+        emp_dominant_sub_stage = (
+            emp_stage.get("dominant_sub_stage") or
+            emp_stage.get("sub_stage") or
+            emp_revised.get("dominant_sub_stage") or
+            "-"
+        )
+
+        # Extract boss stage for the 2D Assessment Summary
+        raw_boss_stage_2d = boss_data.get("behavioral_stage", {})
+        boss_revised_2d   = boss_data.get("revised_employee_model_weights", {})
+        boss_dominant_stage_2d = (
+            raw_boss_stage_2d.get("dominant_stage") or
+            raw_boss_stage_2d.get("stage") or
+            boss_revised_2d.get("dominant_stage") or
+            "-"
+        )
+        boss_dominant_sub_stage_2d = (
+            raw_boss_stage_2d.get("dominant_sub_stage") or
+            raw_boss_stage_2d.get("sub_stage") or
+            boss_revised_2d.get("dominant_sub_stage") or
+            "-"
+        )
+
+        json_payload = {
+            "status": "ok",
+            "header": {
+                "employee_id":           employee_id,
+                "submission_id":         emp_submission_id,
+                "cycle_name":            cycle_name or "",
+                "employee_name":         emp_ctx.get("employee_name") or emp_ctx.get("name", employee_id),
+                "designation":           emp_ctx.get("designation", "Employee"),
+                "report_type":           "2D Employee-Boss Relationship Report",
+                "dimension_label":       "2D - Employee-Boss Relationship",
+                "dominant_stage":        emp_dominant_stage,
+                "dominant_sub_stage":    emp_dominant_sub_stage,
+                "boss_dominant_stage":   boss_dominant_stage_2d,
+                "boss_dominant_sub_stage": boss_dominant_sub_stage_2d,
+                "questionnaire_text":    "BOSS",
+                "generated_date":        _dt.now().strftime("%d %B %Y"),
+                "stage_scores":          [],
+            },
+            "reports": report_sections_list,
+        }
+
+        path = save_employee_json(json_payload, employee_id, submission_id=emp_submission_id, cycle_name=cycle_name)
+        print(f"Worker {worker_id}: saved employee 2D report → {path}")
         job.result = json_payload
 
     async def start(self):

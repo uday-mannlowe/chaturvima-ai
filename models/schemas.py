@@ -33,6 +33,8 @@ class ReportJob:
     multi_report: bool = False
     structured: bool = False
     employee_report: bool = False
+    boss_2d_report: bool = False
+    employee_2d_report: bool = False
 
 
 class ReportQueue:
@@ -49,6 +51,8 @@ class ReportQueue:
         multi_report: bool = False,
         structured: bool = False,
         employee_report: bool = False,
+        boss_2d_report: bool = False,
+        employee_2d_report: bool = False,
     ) -> str:
         async with self._lock:
             self.job_counter += 1
@@ -59,6 +63,8 @@ class ReportQueue:
                 multi_report=multi_report,
                 structured=structured,
                 employee_report=employee_report,
+                boss_2d_report=boss_2d_report,
+                employee_2d_report=employee_2d_report,
             )
 
             try:

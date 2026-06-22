@@ -63,6 +63,7 @@ MODEL_BY_DIMENSION = {
 MODEL_BY_REPORT_TYPE_DEDICATED = {
     "employee":     MODEL_NAME_1D,   # always use 1D model for employee report
     "boss":         MODEL_NAME_2D,   # always use 2D model for boss report
+    "boss_overview": MODEL_NAME_2D,  # always use 2D model for boss overview report
     "team":         MODEL_NAME_3D,   # always use 3D model for team report
     "organization": MODEL_NAME_4D,   # always use 4D model for org report
 }
@@ -583,7 +584,7 @@ Generate a FULL, IN-DEPTH 2D Employee-Boss Relationship Diagnostic Report.
 Report Title: "Employee-Boss Relationship Assessment"
 
 Audience:
-- Boss/Manager
+- Employee (primary recipient)
 - HR/Leadership (if applicable)
 
 MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
@@ -648,9 +649,9 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
     - Ground every point in the provided relationship data.
     - This SWOT section is mandatory and must never be omitted.
 
-14. Recommendations for the Boss
-    - Provide boss-focused interventions
-    - Suggest management adjustments
+14. Recommendations for the Employee
+    - Provide employee-focused actions to improve the relationship with the boss
+    - Suggest how the employee can communicate, align expectations, and navigate the dynamic
 
 15. Recommendations for Joint Action
     - Suggest collaborative improvements
@@ -667,6 +668,113 @@ MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
 Write in full, detailed paragraphs with concrete examples from the data.
 Do NOT use bullet points. Use flowing narrative structure.
 Focus on the RELATIONSHIP dynamics, not individual psychology.
+"""
+
+DEV_PROMPT_2D_BOSS_OVERVIEW = """
+Generate a FULL, IN-DEPTH 2D Boss Leadership Overview Report.
+
+Report Title: "Boss Leadership & Team Relationship Assessment"
+
+Audience:
+- Boss/Manager
+- HR/Leadership
+
+Context:
+This report is generated for a boss who manages multiple employees.
+You have the boss's own behavioral data AND the individual data of each employee
+they manage. Use this combined data to assess the boss's leadership effectiveness
+across the entire team — not just one relationship.
+
+MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
+
+1. Purpose of the Assessment
+   - Explain the purpose of this multi-employee leadership assessment
+   - Set context for why analyzing boss-team dynamics matters at this level
+
+2. Dimension Overview & Scope
+   - Describe what the 2D hierarchical dimension covers
+   - Clarify that this report covers the boss's relationship with ALL direct reports
+   - Explain the scope and limitations
+
+3. Inputs & Assessment Instruments
+   - List data sources used: boss questionnaire, each employee's weights and stage data
+   - Explain how individual employee data was used for team-level analysis
+
+4. Boss Profile Summary
+   - Summarize the boss's behavioral stage, substage, and key profile information
+   - Include role, department, and relevant context
+
+5. Team Composition Overview
+   - Summarize the emotional stage distribution across all employees
+   - Identify which employees are in which stages without diagnosing individuals by name
+   - Highlight the range and diversity of behavioral states in the team
+
+6. Boss Behavioral Stage Interpretation
+   - Define and interpret the boss's dominant stage and substage
+   - Explain how the boss's current emotional state influences their leadership style
+   - Connect stage characteristics to observable management patterns
+
+7. Boss–Team Alignment Analysis
+   - Analyze how the boss's behavioral style aligns or misaligns with the team's collective emotional state
+   - Identify where the boss's strengths naturally support certain employee stages
+   - Identify where the boss's style may create friction or gaps for other stages
+
+8. Individual Relationship Highlights
+   - Without writing full individual reports, briefly note the key dynamic for each employee relationship
+   - Focus on: compatibility, tension points, and priority attention needed
+   - Flag any relationships that require immediate leadership intervention
+
+9. Communication & Leadership Style Patterns
+   - Analyze the boss's overall communication style as reflected across all relationships
+   - Identify consistent patterns in how the boss engages with the team
+   - Note any style gaps relative to what different employee stages need
+
+10. Trust & Psychological Safety Across the Team
+    - Evaluate the overall trust climate the boss has created
+    - Assess whether the team environment supports openness and accountability
+    - Connect to specific employee stage data where relevant
+
+11. Risk & Tension Hotspots
+    - Identify the highest-risk relationships or team dynamics
+    - Flag employees whose stage indicates disengagement, frustration, or instability
+    - Highlight any systemic tension patterns the boss should address
+
+12. Root Cause Assessment
+    - Explore the underlying leadership factors driving team dynamics
+    - Connect the boss's behavioral stage to team-wide patterns
+    - Avoid blame — focus on patterns and systemic explanations
+
+13. Leadership SWOT Analysis
+    - Show all four sections clearly with numbered points. Do NOT skip any:
+      1. Strengths — what the boss does well across the team
+      2. Weaknesses — blind spots in the boss's leadership approach
+      3. Opportunities — where the boss can leverage team dynamics for growth
+      4. Threats — risks to team cohesion, performance, or key relationships
+    - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
+    - Keep each point concise but descriptive (2-3 lines each).
+    - Ground every point in the provided boss and employee data.
+    - This SWOT section is mandatory and must never be omitted.
+
+14. Recommendations for the Boss
+    - Provide specific, actionable recommendations for how the boss should adjust their leadership approach
+    - Include recommendations tailored to different employee stage groups
+    - Focus on practical behavioral changes, not abstract leadership theory
+
+15. Priority Action Plan
+    - Outline a phased action plan for the boss:
+      Phase 1 (Immediate — Week 1-4): highest-priority relationship repairs or adjustments
+      Phase 2 (Short-term — Week 5-10): team-wide communication and trust-building steps
+      Phase 3 (Medium-term — Week 11-16): structural changes to leadership style and team rhythm
+    - Make each phase concrete and tied to the data
+
+16. Closing Notes
+    - Summarize the overall leadership assessment
+    - Provide a constructive, forward-looking outlook for the boss and team
+
+Write in full, detailed paragraphs with concrete examples from the data.
+Do NOT use bullet points in narrative sections. Use flowing narrative structure.
+EXCEPTION: Section 13 (Leadership SWOT) MUST use numbered points under each quadrant.
+Focus on LEADERSHIP PATTERNS and TEAM DYNAMICS, not individual psychology.
 """
 
 DEV_PROMPT_3D = """
@@ -783,6 +891,13 @@ REPORT_STYLE = {
         "Audience: Manager/Boss (and HR/Leadership).\n"
         "Tone: direct, actionable, professional.\n"
         "Focus on relationship dynamics, not individual psychology.\n"
+        "Write in full paragraphs and do not use bullet points.\n"
+        "Do not invent facts or scores."
+    ),
+    "boss_overview": (
+        "Audience: Manager/Boss and HR Leadership.\n"
+        "Tone: strategic, analytical, and direct.\n"
+        "Focus on leadership effectiveness and team dynamics, not individual psychology.\n"
         "Write in full paragraphs and do not use bullet points.\n"
         "Do not invent facts or scores."
     ),
@@ -1179,12 +1294,140 @@ SECTION_SPECS_BOSS: List[SectionSpec] = [
         min_words=280,
         max_words=420,
         guidance=(
-            "Provide concrete, actionable recommendations for the boss and for joint action. "
-            "Include: (1) Recommendations for the Boss — specific interventions and management adjustments; "
+            "Provide concrete, actionable recommendations for the employee (primary audience) and for joint action. "
+            "Include: (1) Recommendations for the Employee — specific actions the employee can take to improve the relationship with their boss; "
             "(2) Recommendations for Joint Action — collaborative steps both parties can take together; "
             "(3) Next Steps & Development Path — immediate actions and a long-term improvement plan."
         ),
         data_keys=("superior_subordinate_dynamics", "relationship_variables"),
+    ),
+]
+
+
+SECTION_SPECS_BOSS_OVERVIEW: List[SectionSpec] = [
+    SectionSpec(
+        id="purpose",
+        title="Purpose of the Assessment",
+        min_words=200, max_words=300,
+        guidance="Explain the purpose of this multi-employee leadership assessment and why boss-team dynamics matter.",
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="overview",
+        title="Dimension Overview & Scope",
+        min_words=200, max_words=300,
+        guidance="Describe what the 2D hierarchical dimension covers and clarify that this report spans all direct reports.",
+        data_keys=("boss",),
+    ),
+    SectionSpec(
+        id="inputs",
+        title="Inputs & Assessment Instruments",
+        min_words=200, max_words=300,
+        guidance="List data sources used: boss questionnaire, each employee's weights and stage data.",
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="boss_profile",
+        title="Boss Profile Summary",
+        min_words=220, max_words=320,
+        guidance="Summarize the boss's behavioral stage, substage, role, department, and relevant context.",
+        data_keys=("boss",),
+    ),
+    SectionSpec(
+        id="team_composition",
+        title="Team Composition Overview",
+        min_words=220, max_words=320,
+        guidance="Summarize the emotional stage distribution across all employees without naming individuals. Highlight the diversity of behavioral states.",
+        data_keys=("employees",),
+    ),
+    SectionSpec(
+        id="boss_stage",
+        title="Boss Behavioral Stage Interpretation",
+        min_words=260, max_words=360,
+        guidance="Define and interpret the boss's dominant stage and substage. Connect it to their observable leadership style using reference material.",
+        data_keys=("boss",),
+        needs_rag=True,
+    ),
+    SectionSpec(
+        id="alignment",
+        title="Boss–Team Alignment Analysis",
+        min_words=260, max_words=360,
+        guidance="Analyze how the boss's behavioral style aligns or misaligns with the team's collective emotional state. Identify support and friction points.",
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="relationship_highlights",
+        title="Individual Relationship Highlights",
+        min_words=260, max_words=380,
+        guidance="Briefly note the key dynamic for each employee relationship: compatibility, tension points, and priority attention. Flag urgent interventions.",
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="communication_patterns",
+        title="Communication & Leadership Style Patterns",
+        min_words=240, max_words=340,
+        guidance="Analyze the boss's overall communication style across all relationships and identify consistent patterns and style gaps.",
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="trust_safety",
+        title="Trust & Psychological Safety Across the Team",
+        min_words=220, max_words=320,
+        guidance="Evaluate the trust climate the boss has created and assess whether the team environment supports openness and accountability.",
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="risk_hotspots",
+        title="Risk & Tension Hotspots",
+        min_words=220, max_words=320,
+        guidance="Identify the highest-risk relationships and employees whose stage indicates disengagement or instability. Highlight systemic tension patterns.",
+        data_keys=("employees",),
+    ),
+    SectionSpec(
+        id="root_cause",
+        title="Root Cause Assessment",
+        min_words=220, max_words=320,
+        guidance="Explore the underlying leadership factors driving team dynamics. Connect the boss's behavioral stage to team-wide patterns without assigning blame.",
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="swot",
+        title="Leadership SWOT Analysis",
+        min_words=300, max_words=420,
+        guidance=(
+            "Provide a leadership SWOT for the boss across the entire team. Include ALL four sections with at least 3 numbered points each: "
+            "Strengths (what the boss does well), Weaknesses (blind spots in leadership), "
+            "Opportunities (leverage points in team dynamics), Threats (risks to cohesion and performance). "
+            "Ground every point in the boss and employee data. This section is MANDATORY."
+        ),
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="recommendations",
+        title="Recommendations for the Boss",
+        min_words=260, max_words=380,
+        guidance="Provide specific, actionable recommendations tailored to different employee stage groups. Focus on practical behavioral changes.",
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="action_plan",
+        title="Priority Action Plan",
+        min_words=260, max_words=380,
+        guidance=(
+            "Write a phased action plan: "
+            "Phase 1 (Week 1-4) — immediate relationship repairs; "
+            "Phase 2 (Week 5-10) — team-wide communication and trust steps; "
+            "Phase 3 (Week 11-16) — structural leadership style changes. "
+            "Make each phase concrete and data-driven."
+        ),
+        data_keys=("boss", "employees"),
+    ),
+    SectionSpec(
+        id="closing",
+        title="Closing Notes",
+        min_words=180, max_words=260,
+        guidance="Summarize the overall leadership assessment and provide a constructive, forward-looking outlook for the boss and team.",
+        data_keys=("boss", "employees"),
     ),
 ]
 
@@ -1407,6 +1650,7 @@ SECTION_SPECS_ORGANIZATION: List[SectionSpec] = [
 REPORT_SPECS: Dict[str, List[SectionSpec]] = {
     "employee": SECTION_SPECS_EMPLOYEE,
     "boss": SECTION_SPECS_BOSS,
+    "boss_overview": SECTION_SPECS_BOSS_OVERVIEW,
     "team": SECTION_SPECS_TEAM,
     "organization": SECTION_SPECS_ORGANIZATION,
 }
@@ -1432,6 +1676,7 @@ DEFAULT_REPORT_TYPE_BY_DIMENSION = {
 PROMPT_MAP = {
     "employee": DEV_PROMPT_1D,
     "boss": DEV_PROMPT_2D,
+    "boss_overview": DEV_PROMPT_2D_BOSS_OVERVIEW,
     "team": DEV_PROMPT_3D,
     "organization": DEV_PROMPT_4D
 }
@@ -1440,6 +1685,7 @@ PROMPT_MAP = {
 REPORT_TITLE_MAP = {
     "employee": "Individual Self-Assessment Report",
     "boss": "Employee-Boss Relationship Assessment",
+    "boss_overview": "Boss Leadership & Team Relationship Assessment",
     "team": "Team Assessment Report",
     "organization": "Organizational Assessment Report"
 }
@@ -2187,7 +2433,7 @@ def generate_report_as_json(
         keys_to_strip = ()  # keep everything for boss/team/org so SWOT data is available
     slim_data = {k: v for k, v in data.items() if k not in keys_to_strip}
 
-    mandatory_swot_types = {"boss", "team", "organization"}
+    mandatory_swot_types = {"boss", "boss_overview", "team", "organization"}
     swot_rule_block = ""
 
     if report_type == "employee":
