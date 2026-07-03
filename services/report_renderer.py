@@ -135,41 +135,103 @@ def is_swot_section(section_id: Any, section_title: Any) -> bool:
 
 # Maps keyword fragments to SWOT quadrant keys.
 # Order matters: more specific patterns first.
+# "risks?" is an alias for threats — LLMs sometimes use "Risks" as the label.
 _QUAD_KEYWORD_MAP = [
     (re.compile(r'\bopportunit', re.IGNORECASE), "opportunities"),
-    (re.compile(r'\bthreat',     re.IGNORECASE), "threats"),
+    (re.compile(r'\bthreat|\brisk',  re.IGNORECASE), "threats"),
     (re.compile(r'\bweakness|\bblind.?spot', re.IGNORECASE), "weaknesses"),
     (re.compile(r'\bstrength',   re.IGNORECASE), "strengths"),
 ]
 
+# Broad pattern that matches any quadrant header the LLM might write, including
+# parenthetical variants like "THREATS (risks that could...):".
+# Matches standalone labels at the start of a line or a paragraph.
+_QUAD_HEADER_PAT = re.compile(
+    r'(?m)(?:^|(?<=\n))\s*\*{0,2}\s*'
+    r'(STRENGTHS?|WEAKNESSES?|BLIND[\s\-]?SPOTS?|OPPORTUNITIES?|THREATS?|RISKS?)'
+    r'(?:\s*\([^)]*\))?\s*[:\-]?\s*\*{0,2}\s*$',
+    re.IGNORECASE,
+)
+
+# Inline variant — "THREATS:" or "THREATS (...):" anywhere as a label (not mid-sentence).
+_QUAD_INLINE_PAT = re.compile(
+    r'(?<![a-z])'
+    r'(STRENGTHS?|WEAKNESSES?|BLIND[\s\-]?SPOTS?|OPPORTUNITIES?|THREATS?|RISKS?)'
+    r'(?:\s*\([^)]*\))?\s*[:\-]\s*',
+    re.IGNORECASE,
+)
+
 # Sentence starters that signal the LLM is introducing a NEW quadrant.
-# e.g. "There are several opportunities for growth"
-#      "One threat is that..."
-#      "Weaknesses include..."
 _QUAD_INTRO_PATTERNS = re.compile(
     r'^(there are|one|another|additionally|furthermore|the|these)?\s*'
-    r'(strengths?|weaknesses?|blind.?spots?|opportunities?|threats?)'
+    r'(strengths?|weaknesses?|blind.?spots?|opportunities?|threats?|risks?)'
     r'\s*(of|for|to|include|in|is|are|:)',
     re.IGNORECASE
 )
 
+_QUAD_LABEL_TO_KEY = {
+    'strength': 'strengths', 'strengths': 'strengths',
+    'weakness': 'weaknesses', 'weaknesses': 'weaknesses', 'blind': 'weaknesses',
+    'opportunit': 'opportunities',
+    'threat': 'threats', 'threats': 'threats', 'risk': 'threats', 'risks': 'threats',
+}
+
+
+def _label_to_key(label: str) -> Optional[str]:
+    label = label.strip().lower()
+    for prefix, key in _QUAD_LABEL_TO_KEY.items():
+        if label.startswith(prefix):
+            return key
+    return None
+
 
 def _detect_quadrant(text: str) -> Optional[str]:
     """Return the SWOT quadrant this text most likely belongs to, or None."""
-    # First check if the text STARTS with a quadrant intro sentence
-    # e.g. "There are several opportunities for growth..."
     m = _QUAD_INTRO_PATTERNS.match(text.strip())
     if m:
         word = m.group(2).lower()
         if 'opportunit' in word: return 'opportunities'
-        if 'threat'     in word: return 'threats'
+        if 'threat' in word or 'risk' in word: return 'threats'
         if 'weakness' in word or 'blind' in word: return 'weaknesses'
-        if 'strength'   in word: return 'strengths'
-    # Fall back: first keyword match anywhere in text
+        if 'strength' in word: return 'strengths'
     for pattern, key in _QUAD_KEYWORD_MAP:
         if pattern.search(text):
             return key
     return None
+
+
+def _split_full_swot_text(full_text: str) -> Dict[str, List[str]]:
+    """
+    Split a multi-quadrant SWOT blob at quadrant header boundaries and extract
+    numbered points per quadrant. Handles both standalone-label and inline-label formats.
+    """
+    swot: Dict[str, List[str]] = {
+        "strengths": [], "weaknesses": [], "opportunities": [], "threats": []
+    }
+
+    # Find all quadrant header positions in the full text
+    matches = list(_QUAD_INLINE_PAT.finditer(full_text))
+    if not matches:
+        return swot
+
+    chunks: List[tuple] = []
+    for i, m in enumerate(matches):
+        label = m.group(1)
+        key = _label_to_key(label)
+        if not key:
+            continue
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
+        chunk_text = full_text[start:end].strip()
+        chunks.append((key, chunk_text))
+
+    for key, chunk in chunks:
+        points = _split_swot_para_into_points(chunk)
+        for pt in points:
+            if pt and len(pt) > 10:
+                swot[key].append(pt)
+
+    return swot
 
 
 def build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str, List[str]]:
@@ -177,28 +239,32 @@ def build_swot_lists_from_section_paragraphs(paragraphs: List[str]) -> Dict[str,
     Parse free-text SWOT paragraphs into structured S/W/O/T lists.
 
     Strategy:
-    1. Split each paragraph into individual points first.
-    2. For EACH point, detect which quadrant it belongs to by scanning
-       for intro sentences and keyword signals.
-    3. Route accordingly — this handles cases where the LLM mixes
-       Opportunities content into the Strengths paragraph.
+    1. First try to detect inline quadrant headers (e.g. "THREATS:") across the
+       full joined text — this handles single-blob LLM output reliably.
+    2. If that yields all 4 quadrants, return early.
+    3. Otherwise fall back to per-paragraph detection for outputs that already
+       arrive as separate paragraphs per quadrant.
     """
     swot: Dict[str, List[str]] = {
         "strengths": [], "weaknesses": [], "opportunities": [], "threats": []
     }
-    current_key = "strengths"
 
+    # ── Strategy 1: split the whole text at quadrant headers ──
+    full_text = "\n".join(p for p in paragraphs if p.strip())
+    if _QUAD_INLINE_PAT.search(full_text):
+        parsed = _split_full_swot_text(full_text)
+        filled = sum(1 for v in parsed.values() if v)
+        if filled >= 3:  # accept if we got at least 3 quadrants
+            return parsed
+
+    # ── Strategy 2: per-paragraph routing (original logic) ──
+    current_key = "strengths"
     for para in paragraphs:
-        # Detect quadrant from the paragraph-level header first
         detected = _detect_quadrant(para)
         if detected:
             current_key = detected
-
-        # Split paragraph into individual points
         points = _split_swot_para_into_points(para)
-
         for point in points:
-            # Re-detect quadrant at the point level — catches misplaced content
             point_quad = _detect_quadrant(point)
             target_key = point_quad if point_quad else current_key
             swot[target_key].append(point)
@@ -465,29 +531,65 @@ def _load_logo_data_uri() -> Optional[str]:
     return f"data:image/png;base64,{encoded}"
 
 
+_STAGE_FILENAME_ALIASES: Dict[str, str] = {
+    "honeymoon": "sunshine",
+}
+
+
 @lru_cache(maxsize=8)
 def _load_stage_image_data_uri(stage_name: str) -> Optional[str]:
     """Load a stage-specific illustration as a base64 data URI.
 
-    Image file naming convention (place in the html/ template dir):
+    Image file naming convention (place in html/ or html/images/):
       sunshine_stage.png   — for the Sunshine / Honeymoon stage
-      self_introspection_stage.png
-      soul_searching_stage.png
-      steady_state_stage.png
+      self_introspection_stage.jpg
+      soul_searching_stage.jpg
+      steady_state_stage.jpg
     """
-    safe_name = re.sub(r"[\s\-]+", "_", stage_name.lower().strip())
+    normalised = stage_name.lower().strip()
+    for old, new in _STAGE_FILENAME_ALIASES.items():
+        normalised = normalised.replace(old, new)
+    safe_name = re.sub(r"[\s\-]+", "_", normalised)
     candidates = [
         f"{safe_name}_stage",
         safe_name,
     ]
+    search_dirs = [
+        Config.TEMPLATE_DIR,
+        os.path.join(Config.TEMPLATE_DIR, "images"),
+    ]
     for stem in candidates:
         for ext in ("png", "jpg", "jpeg", "webp"):
-            image_path = os.path.join(Config.TEMPLATE_DIR, f"{stem}.{ext}")
-            if os.path.exists(image_path):
+            for search_dir in search_dirs:
+                image_path = os.path.join(search_dir, f"{stem}.{ext}")
+                if os.path.exists(image_path):
+                    try:
+                        with open(image_path, "rb") as handle:
+                            encoded = base64.b64encode(handle.read()).decode("ascii")
+                        mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                        return f"data:{mime};base64,{encoded}"
+                    except OSError:
+                        pass
+    return None
+
+
+@lru_cache(maxsize=1)
+def _load_default_header_data_uri() -> Optional[str]:
+    """Load the default header background (used when no stage-specific image is found)."""
+    search_dirs = [
+        os.path.join(Config.TEMPLATE_DIR, "images"),
+        Config.TEMPLATE_DIR,
+    ]
+    for search_dir in search_dirs:
+        for ext in ("svg", "png", "jpg", "jpeg", "webp"):
+            path = os.path.join(search_dir, f"default_header_bg.{ext}")
+            if os.path.exists(path):
                 try:
-                    with open(image_path, "rb") as handle:
-                        encoded = base64.b64encode(handle.read()).decode("ascii")
-                    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                    with open(path, "rb") as fh:
+                        encoded = base64.b64encode(fh.read()).decode("ascii")
+                    mime = "image/svg+xml" if ext == "svg" else (
+                        "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                    )
                     return f"data:{mime};base64,{encoded}"
                 except OSError:
                     pass
@@ -512,10 +614,15 @@ def render_html_report(json_payload: Dict[str, Any]) -> str:
                 header["logo_data_uri"] = logo_data_uri
         if not str(header.get("stage_image_data_uri") or "").strip():
             dominant_stage = str(header.get("dominant_stage") or "").strip()
-            if dominant_stage:
+            if dominant_stage and dominant_stage not in ("-", "N/A", "Unknown"):
                 stage_img_uri = _load_stage_image_data_uri(dominant_stage)
                 if stage_img_uri:
                     header["stage_image_data_uri"] = stage_img_uri
+        # Fallback: always show a background image even when stage is unknown
+        if not str(header.get("stage_image_data_uri") or "").strip():
+            default_uri = _load_default_header_data_uri()
+            if default_uri:
+                header["stage_image_data_uri"] = default_uri
         reports = _ensure_swot_sections_for_render(
             list(json_payload.get("reports", []) or [])
         )

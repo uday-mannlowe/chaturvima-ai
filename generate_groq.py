@@ -10,6 +10,19 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from typing import List, Dict, Any, Tuple
 from core.config import Config
+from prompts import (
+    GLOBAL_INSTRUCTION,
+    QUALITY_REVIEW_PROMPT,
+    TONE_GUIDELINES,
+    SYSTEM_PROMPT,
+    DEV_PROMPT_1D,
+    DEV_PROMPT_2D,
+    DEV_PROMPT_2D_BOSS_OVERVIEW,
+    DEV_PROMPT_3D,
+    DEV_PROMPT_4D,
+    REPORT_STYLE,
+    HARDCODED_EMPLOYEE_SECTIONS,
+)
 
 # RAG imports
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -435,435 +448,6 @@ rag_system = BehavioralStagesRAG()
 rag_lock = threading.Lock()
 
 
-# TONE GUIDELINES (BASED ON STAGE/SUBSTAGE)
-
-TONE_GUIDELINES = """
-TONE ADAPTATION BASED ON STAGE & SUBSTAGE:
-
-**Honeymoon Stage:**
-- Excitement & Optimism: Inspirational & Affirming (positive, energizing, future-oriented, validating confidence)
-- Confidence & Over-Reliance on Past Success: Respectful yet Gently Grounding (appreciative, subtly present new context, non-confrontational)
-- Initial Reality Check: Reassuring & Calibrating (supportive, calming, normalize challenges)
-- Sustained Confidence with Subtle Complacency: Encouraging with Wake-Up Signals (balanced praise, mild urgency)
-
-**Self-Reflection Stage:**
-- Acknowledgment of Problems: Neutral & Observational (fact-based, non-judgmental, descriptive)
-- Analyzing Cause: Analytical & Curious (diagnostic, structured, process-focused, avoids blame)
-- Partial Acceptance of Responsibility: Constructive & Empowering (validating insight, reinforce accountability)
-- Exploration of Solutions: Solution-Oriented & Supportive (forward-looking, collaborative, practical)
-
-**Soul Searching Stage:**
-- Deep Frustration: Highly Empathetic & Stabilizing (compassionate, validating struggle, emotionally safe)
-- Questioning Fundamentals: Reflective & Thought-Provoking (calm, philosophical, invite deep insight)
-- Openness to Change: Encouraging & Reassurance-Based (hopeful, confidence-building, normalize uncertainty)
-- Actionable Transformation: Motivational & Directive (clear, decisive, action-focused, optimistic but grounded)
-
-**Steady State Stage:**
-- Stability & Alignment: Affirmative & Reinforcing (calm, confident, acknowledge effectiveness)
-- Operational Predictability: Assuring & Confidence-Building (steady, matter-of-fact, reliability-focused)
-- Emerging Challenges: Proactively Alerting (Non-Alarming) (observant, anticipatory, encourage readiness)
-- Dynamic Balance: Strategic & Forward-Looking (vision-oriented, mature, continuous-improvement mindset)
-
-APPLY THE APPROPRIATE TONE THROUGHOUT THE REPORT BASED ON THE IDENTIFIED STAGE AND SUBSTAGE.
-"""
-
-
-
-# MASTER SYSTEM PROMPT (GLOBAL)
-
-SYSTEM_PROMPT = """
-You are a senior behavioral diagnostics and organizational assessment expert
-working within the ChaturVima framework.
-
-You generate long-form, consulting-grade diagnostic reports
-for individuals, relationships, teams, and organizations.
-
-Give report in simple language that is easy to understand.
-
-use your own reasoning to generate the report based on the input data and reference material.
-
-GLOBAL RULES:
-- Use ONLY the provided input data and reference material
-- Do NOT invent scores, facts, stages, or causes
-- Do NOT diagnose mental health or label individuals
-- Do NOT assign blame or intent
-- Interpret patterns, not personalities
-- Maintain a professional, neutral, and developmental tone
-- Write in clear, structured language suitable for HR and leadership review
-- Keep the content of the report in detail and in layman terms so that it is easy to understand for everyone
-- Use the behavioral stage definitions provided in the reference material to explain stages accurately
-- Adapt your tone based on the stage and substage identified (see tone guidelines)
-- Avoid repeating the same idea across multiple sections. Each section must provide new and distinct insights.
-- Do NOT restate or paraphrase content already covered in a previous section — every section must add unique value.
-"""
-
-# DEVELOPER PROMPTS (DIMENSION-SPECIFIC)
-DEV_PROMPT_1D = """
-Generate a FULL, IN-DEPTH 1D Individual Employee Diagnostic Report.
-
-Report Title: "Employee Personal Insights"
-
-Audience:
-- Employee
-
-MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
-
-1. Purpose of the Assessment
-   - Explain why this assessment was conducted
-   - Set context for the individual dimension
-
-2. Dimension Overview & Scope
-   - Describe what the 1D dimension covers
-   - Clarify the scope and limitations
-
-3. Inputs & Assessment Instruments
-   - List the data sources and methods used
-   - Explain the assessment approach
-
-   
-4. Employee Profile Summary
-   - Summarize key employee information
-   - Include role, department, and relevant context
-
-5. Emotional Stage Interpretation (Stage and Sub stage)
-   5.1. Definition of Dominant Stage and Pre Dominant Sub stage
-        - Use reference material to define the stages accurately
-        - Explain what each stage means in clear terms
-   5.2. Interpretation
-        - Interpret the employee's current emotional stage
-        - Connect it to observed behaviors and patterns
-   5.3. Behavioural Indicators
-        - List specific behavioral indicators from reference material
-        - Show how these manifest in the employee's case
-    5.4. Stage Level Score Summary Scoring (Table) and Interpretation
-        - Provide a table summarizing stage level scores
-        - Interpret what these scores indicate about the employee
-
-6. Psychological Profile & Tendencies
-   - Describe psychological patterns and tendencies
-   - Connect to emotional stage characteristics
-
-7. Internal Drivers & Stressors
-   - Identify what motivates the employee
-   - Highlight sources of stress and tension
-
-8. Individual SWOT Analysis
-   - Strengths: What the employee does well
-   - Weaknesses (frame as blind spots): Areas for development
-   - Opportunities: Growth potential areas
-   - Threats: Risks to performance and wellbeing
-
-9. Action Navigator – Personal Improvement Plan
-   - Provide phase-wise action plan
-   - Make it practical, actionable, and developmental
-   - Focus on sustainable growth and self-awareness
-
-10. Value Contribution to Higher Dimensions
-    - Explain how individual growth impacts team and organization
-    - Connect personal development to broader organizational value
-
-TONE:
-- Inspirational, developmental, and encouraging
-- Use appropriate tone based on stage/substage (refer to tone guidelines)
-- Frame weaknesses as blind spots, not failures
-- Focus on self-awareness and sustainable growth
-
-DEPTH:
-- 8-10 pages equivalent
-- Each section should be detailed and comprehensive
-- Use layman terms for easy understanding
-
-CRITICAL:
-- Use stage definitions from reference material
-- Do not invent stages or characteristics
-"""
-
-DEV_PROMPT_2D = """
-Generate a FULL, IN-DEPTH 2D Employee-Boss Relationship Diagnostic Report.
-
-Report Title: "Employee-Boss Relationship Assessment"
-
-Audience:
-- Employee (primary recipient)
-- HR/Leadership (if applicable)
-
-MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
-
-1. Purpose of the Assessment
-   - Explain the 2D relational assessment
-   - Set context for boss-employee dynamics
-
-2. Dimension Overview & Scope
-   - Describe the 2D relational dimension
-   - Clarify assessment boundaries
-
-3. Inputs & Assessment Instruments
-   - List data sources from both parties
-   - Explain relationship assessment methods
-
-4. Relationship Profile Summary
-   - Summarize the working relationship
-   - Include history and context
-
-5. Employee Perspective on the Relationship
-   - Document employee's view of the relationship
-   - Identify stated challenges and concerns
-
-6. Boss Perspective on the Relationship  
-   - Document boss's view of the relationship
-   - Identify management observations
-
-7. Relationship Stage Diagnosis
-   - Identify current relational stage and substage
-   - Explain using reference material
-   - Provide evidence from input data
-
-8. Communication & Interaction Patterns
-   - Analyze communication dynamics
-   - Identify interaction patterns
-
-9. Trust & Alignment Assessment
-   - Evaluate trust levels
-   - Assess goal and value alignment
-
-10. Conflict & Tension Points
-    - Identify areas of friction
-    - Analyze sources of conflict
-
-11. Root Cause Assessment
-    - Explore underlying relational factors
-    - Connect patterns to root causes
-
-12. Implications & Impact
-    - Discuss current impact on performance
-    - Project future implications
-
-13. Dyadic SWOT Analysis
-    - Show all four sections clearly with pointers and do not skip any:
-      1. Strengths
-      2. Weaknesses
-      3. Opportunities
-      4. Threats
-    - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
-    - Keep each point concise but descriptive (2-3 lines each).
-    - Ground every point in the provided relationship data.
-    - This SWOT section is mandatory and must never be omitted.
-
-14. Recommendations for the Employee
-    - Provide employee-focused actions to improve the relationship with the boss
-    - Suggest how the employee can communicate, align expectations, and navigate the dynamic
-
-15. Recommendations for Joint Action
-    - Suggest collaborative improvements
-    - Outline relationship-building steps
-
-16. Next Steps & Development Path
-    - Outline immediate actions
-    - Suggest long-term relationship development
-
-17. Closing Notes
-    - Summarize relationship assessment
-    - Provide constructive outlook
-
-Write in full, detailed paragraphs with concrete examples from the data.
-Do NOT use bullet points. Use flowing narrative structure.
-Focus on the RELATIONSHIP dynamics, not individual psychology.
-"""
-
-DEV_PROMPT_2D_BOSS_OVERVIEW = """
-Generate a FULL, IN-DEPTH 2D Boss Leadership Overview Report.
-
-Report Title: "Boss Leadership & Team Relationship Assessment"
-
-Audience:
-- Boss/Manager
-- HR/Leadership
-
-Context:
-This report is generated for a boss who manages multiple employees.
-You have the boss's own behavioral data AND the individual data of each employee
-they manage. Use this combined data to assess the boss's leadership effectiveness
-across the entire team — not just one relationship.
-
-MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
-
-1. Purpose of the Assessment
-   - Explain the purpose of this multi-employee leadership assessment
-   - Set context for why analyzing boss-team dynamics matters at this level
-
-2. Dimension Overview & Scope
-   - Describe what the 2D hierarchical dimension covers
-   - Clarify that this report covers the boss's relationship with ALL direct reports
-   - Explain the scope and limitations
-
-3. Inputs & Assessment Instruments
-   - List data sources used: boss questionnaire, each employee's weights and stage data
-   - Explain how individual employee data was used for team-level analysis
-
-4. Boss Profile Summary
-   - Summarize the boss's behavioral stage, substage, and key profile information
-   - Include role, department, and relevant context
-
-5. Team Composition Overview
-   - Summarize the emotional stage distribution across all employees
-   - Identify which employees are in which stages without diagnosing individuals by name
-   - Highlight the range and diversity of behavioral states in the team
-
-6. Boss Behavioral Stage Interpretation
-   - Define and interpret the boss's dominant stage and substage
-   - Explain how the boss's current emotional state influences their leadership style
-   - Connect stage characteristics to observable management patterns
-
-7. Boss–Team Alignment Analysis
-   - Analyze how the boss's behavioral style aligns or misaligns with the team's collective emotional state
-   - Identify where the boss's strengths naturally support certain employee stages
-   - Identify where the boss's style may create friction or gaps for other stages
-
-8. Individual Relationship Highlights
-   - Without writing full individual reports, briefly note the key dynamic for each employee relationship
-   - Focus on: compatibility, tension points, and priority attention needed
-   - Flag any relationships that require immediate leadership intervention
-
-9. Communication & Leadership Style Patterns
-   - Analyze the boss's overall communication style as reflected across all relationships
-   - Identify consistent patterns in how the boss engages with the team
-   - Note any style gaps relative to what different employee stages need
-
-10. Trust & Psychological Safety Across the Team
-    - Evaluate the overall trust climate the boss has created
-    - Assess whether the team environment supports openness and accountability
-    - Connect to specific employee stage data where relevant
-
-11. Risk & Tension Hotspots
-    - Identify the highest-risk relationships or team dynamics
-    - Flag employees whose stage indicates disengagement, frustration, or instability
-    - Highlight any systemic tension patterns the boss should address
-
-12. Root Cause Assessment
-    - Explore the underlying leadership factors driving team dynamics
-    - Connect the boss's behavioral stage to team-wide patterns
-    - Avoid blame — focus on patterns and systemic explanations
-
-13. Leadership SWOT Analysis
-    - Show all four sections clearly with numbered points. Do NOT skip any:
-      1. Strengths — what the boss does well across the team
-      2. Weaknesses — blind spots in the boss's leadership approach
-      3. Opportunities — where the boss can leverage team dynamics for growth
-      4. Threats — risks to team cohesion, performance, or key relationships
-    - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
-    - Keep each point concise but descriptive (2-3 lines each).
-    - Ground every point in the provided boss and employee data.
-    - This SWOT section is mandatory and must never be omitted.
-
-14. Recommendations for the Boss
-    - Provide specific, actionable recommendations for how the boss should adjust their leadership approach
-    - Include recommendations tailored to different employee stage groups
-    - Focus on practical behavioral changes, not abstract leadership theory
-
-15. Priority Action Plan
-    - Outline a phased action plan for the boss:
-      Phase 1 (Immediate — Week 1-4): highest-priority relationship repairs or adjustments
-      Phase 2 (Short-term — Week 5-10): team-wide communication and trust-building steps
-      Phase 3 (Medium-term — Week 11-16): structural changes to leadership style and team rhythm
-    - Make each phase concrete and tied to the data
-
-16. Closing Notes
-    - Summarize the overall leadership assessment
-    - Provide a constructive, forward-looking outlook for the boss and team
-
-Write in full, detailed paragraphs with concrete examples from the data.
-Do NOT use bullet points in narrative sections. Use flowing narrative structure.
-EXCEPTION: Section 13 (Leadership SWOT) MUST use numbered points under each quadrant.
-Focus on LEADERSHIP PATTERNS and TEAM DYNAMICS, not individual psychology.
-"""
-
-DEV_PROMPT_3D = """
-Generate a FULL, IN-DEPTH 3D Team Diagnostic Report.
-
-Report Title: "Team Assessment Report"
-
-Audience:
-- Team Leader
-- Team Members
-- HR/Leadership
-
-MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
-
-1. Purpose of the Assessment
-2. Dimension Overview & Scope
-3. Inputs & Assessment Instruments
-4. Team Profile Summary
-5. Team Stage Diagnosis
-6. Team Dynamics & Collaboration Patterns
-7. Communication & Interaction Analysis
-8. Trust & Psychological Safety
-9. Performance & Productivity Patterns
-10. Conflict & Tension Points
-11. Root Cause Assessment
-12. Implications & Impact
-13. Collective SWOT (Individual within Department).
-    - Show all four sections clearly with pointers and do not skip any:
-      1. Strengths
-      2. Weaknesses
-      3. Opportunities
-      4. Threats
-    - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
-    - Keep each point concise but descriptive (2-3 lines each).
-    - Ground every point in the provided team and department data.
-    - This SWOT section is mandatory and must never be omitted.
-
-14. Recommendations for Team Development
-15. Next Steps & Development Path
-16. Closing Notes
-
-Write in full, detailed paragraphs with concrete examples from the data.
-Do NOT use bullet points. Use flowing narrative structure.
-"""
-
-DEV_PROMPT_4D = """
-Generate a FULL, IN-DEPTH 4D Organizational Diagnostic Report.
-
-Report Title: "Organizational Assessment Report"
-
-Audience:
-- Executive Leadership
-- Board
-- HR Leadership
-
-MANDATORY SECTIONS (MULTI-PARAGRAPH EACH):
-
-1. Purpose of the Assessment
-2. Dimension Overview & Scope
-3. Inputs & Assessment Instruments
-4. Emotional Stage Interpretation( Stage and Sub stage)Specific Format
-    1.Definition of Dominant Stage and Pre Dominant Sub stage
-    2.Interpretation
-    3.Behavioural Indicators
-5.Organisational Climate & Alignment Analysis
-6.Policy–Practice Gap Assessment
-7.Leadership Consistency & Strategic Disconnect Indices
-8.Full 4D Alignment Profile
-9.Individual’s Position in the Organisational Emotional Map
-10.Cumulative SWOT Overlay (Employee, Boss, Dept, Company)
-    - Show all four sections clearly with pointers and do not skip any:
-      1. Strengths
-      2. Weaknesses
-      3. Opportunities
-      4. Threats
-    - Under each heading, provide at least 3 numbered points (1, 2, 3, ...).
-    - Keep each point concise but descriptive (2-3 lines each).
-    - Ground every point in the provided employee, boss, department, and organization data.
-    - This SWOT section is mandatory and must never be omitted.
-
-11.Psychological & Cultural Fit Map
-12.Action Navigator – Organisation-Level Interventions
-13.Strategic Value & Leadership Insights
-
-Write in full, detailed paragraphs with concrete examples from the data.
-Do NOT use bullet points. Use flowing narrative structure.
-EXCEPTION: Section 10 (Cumulative SWOT Overlay) MUST use numbered points (1. 2. 3.) under each of the four quadrant headings — do NOT write it as paragraphs.
-"""
-
 # ===================================================
 # STRUCTURED REPORT SPECS (SECTION-WISE GENERATION)
 # ===================================================
@@ -877,141 +461,6 @@ class SectionSpec:
     guidance: str
     data_keys: Tuple[str, ...] = ()
     needs_rag: bool = False
-
-
-REPORT_STYLE = {
-    "employee": (
-        "Audience: Employee.\n"
-        "Tone: inspirational, developmental, and encouraging.\n"
-        "Use clear, simple language and avoid jargon.\n"
-        "Write in full paragraphs and avoid bullet points.\n"
-        "Do not invent facts or scores."
-    ),
-    "boss": (
-        "Audience: Manager/Boss (and HR/Leadership).\n"
-        "Tone: direct, actionable, professional.\n"
-        "Focus on relationship dynamics, not individual psychology.\n"
-        "Write in full paragraphs and do not use bullet points.\n"
-        "Do not invent facts or scores."
-    ),
-    "boss_overview": (
-        "Audience: Manager/Boss and HR Leadership.\n"
-        "Tone: strategic, analytical, and direct.\n"
-        "Focus on leadership effectiveness and team dynamics, not individual psychology.\n"
-        "Write in full paragraphs and do not use bullet points.\n"
-        "Do not invent facts or scores."
-    ),
-    "team": (
-        "Audience: Team Leader, Team Members, HR/Leadership.\n"
-        "Tone: professional, diagnostic, constructive.\n"
-        "Write in full paragraphs and avoid bullet points."
-    ),
-    "organization": (
-        "Audience: Executive Leadership, Board, HR Leadership.\n"
-        "Tone: strategic, analytical, constructive.\n"
-        "Write in full paragraphs and avoid bullet points."
-    ),
-}
-
-
-# First 3 employee sections are served verbatim — no LLM call needed.
-_HARDCODED_EMPLOYEE_SECTIONS: Dict[str, List[str]] = {
-    "purpose": [
-        (
-            "This assessment was created to help you understand your internal behavioral patterns "
-            "and emotional stage as an individual. It is a self-reflection tool designed within the "
-            "ChaturVima framework to reveal how you approach work, handle responsibilities, and "
-            "maintain consistency in your daily life. The focus is on your personal dimension — the "
-            "one that shapes your reliability, sense of purpose, and ability to deliver on "
-            "commitments. By exploring these aspects, you can identify areas where you are already "
-            "strong and uncover opportunities for continued growth. The goal is not to label you, "
-            "but to provide a clear mirror that supports your professional and personal development."
-        ),
-        (
-            "Conducting this assessment at this point in your journey allows you to pause and "
-            "recognize the patterns that define your current effectiveness. It is especially "
-            "valuable when you are performing well but want to ensure that your stability does not "
-            "lead to complacency. The assessment helps you see where you stand emotionally and "
-            "behaviorally, giving you a foundation to build upon. For you, this is a chance to "
-            "affirm your strengths while gently exploring how you can stay adaptable and open to "
-            "new challenges. The insights here are meant to inspire confidence and encourage "
-            "intentional self-awareness."
-        ),
-        (
-            "Understanding your own emotional stage is the first step toward sustaining high "
-            "performance and well-being. This report will clarify your dominant behavioral stage "
-            "and substage, explain what that means in practical terms, and connect it to your "
-            "day-to-day actions. It is designed to be a constructive and empowering guide, not a "
-            "critique. As you read through the findings, consider how they resonate with your "
-            "experience and how you can use this awareness to keep growing. The ultimate purpose "
-            "is to support you in becoming an even more grounded and forward-looking professional."
-        ),
-    ],
-    "overview": [
-        (
-            "The 1D dimension, also called the Individual Dimension, focuses entirely on your "
-            "personal behavioral patterns and emotional state as a single person. It examines how "
-            "you navigate your own work life, meet goals, handle pressure, and maintain a sense of "
-            "inner alignment. This dimension does not look at your relationships with others or "
-            "team dynamics — it is strictly about you as an individual. The scope includes your "
-            "internal drivers, your typical responses to success and challenge, and the stability "
-            "with which you operate. By understanding this dimension, you gain clarity on what "
-            "fuels your reliability and where you might need to refresh your approach."
-        ),
-        (
-            "This assessment covers four main behavioral stages: Sunshine, Self-Introspection, "
-            "Soul-Searching, and Steady State. Each stage represents a different emotional and "
-            "behavioral phase that individuals can move through over time. The current report "
-            "identifies your dominant stage and substage based on your self-reported responses. "
-            "While the framework acknowledges that people can show traits from multiple stages, "
-            "the analysis highlights the most prominent pattern in your behavior. The scope is "
-            "limited to your own perspective, which makes it a powerful tool for self-awareness "
-            "but also means it reflects your personal views rather than external observations."
-        ),
-        (
-            "It is important to remember that this assessment provides a snapshot of your current "
-            "state, not a permanent label. People evolve, and stages can shift as circumstances "
-            "change or as you develop new coping strategies. The scope of this report is to give "
-            "you a clear sense of where you are today, so you can make informed choices moving "
-            "forward. The findings are drawn from your questionnaire responses, which are mapped "
-            "to specific behavioral indicators. By focusing on the 1D dimension, you can "
-            "strengthen your personal foundation, which in turn supports every other dimension "
-            "of your professional life."
-        ),
-    ],
-    "inputs": [
-        (
-            "The primary input for this assessment is the self-report questionnaire you completed "
-            "as part of the ChaturVima framework. This questionnaire contains carefully designed "
-            "statements that reflect different behavioral sub-stages across the four main stages. "
-            "Your responses were scored and analyzed to determine which stage and substage best "
-            "describe your current emotional and behavioral patterns. The questionnaire is the "
-            "only instrument used for your 1D assessment, which means the findings are based "
-            "entirely on your own honest self-reflection. This makes your active participation "
-            "and candor essential for accurate results."
-        ),
-        (
-            "The assessment approach is systematic and non-judgmental. Each question is linked to "
-            "a specific sub-stage, and your scores indicate how strongly you exhibit the behaviors "
-            "associated with that sub-stage. For example, a high score in Stability and Alignment "
-            "suggests you consistently operate with reliability and a clear sense of purpose. The "
-            "scores are then aggregated to identify your dominant stage and substage. In your "
-            "case, the data clearly points to the Steady State stage, with the Stability and "
-            "Alignment substage being the most prominent. The methodology ensures that the "
-            "interpretation is grounded in your actual responses."
-        ),
-        (
-            "In addition to the questionnaire, the system also accounts for overlapping scores "
-            "between stages. You may notice that some sub-stages from Self-Introspection, "
-            "Soul-Searching, and Sunshine also received relatively high scores. This is normal "
-            "and shows that you carry qualities from multiple phases. The instrument is designed "
-            "to capture these nuances, providing a richer picture than a simple label. The final "
-            "analysis weighs all your responses to present a balanced view. By using this "
-            "structured input, the report can offer specific, actionable insights that are "
-            "tailored to your personal behavioral landscape."
-        ),
-    ],
-}
 
 
 SECTION_SPECS_EMPLOYEE: List[SectionSpec] = [
@@ -1186,41 +635,90 @@ SECTION_SPECS_BOSS: List[SectionSpec] = [
     SectionSpec(
         id="profile",
         title="Relationship Profile Summary",
-        min_words=240,
-        max_words=340,
+        min_words=420,
+        max_words=580,
         guidance=(
-            "Summarize the working relationship with relevant history and context."
+            "Write a rich, substantive Relationship Profile Summary across 4 paragraphs. "
+            "Paragraph 1 — Overall Health: Describe the current state of the working relationship based on both parties' "
+            "assessment data. Comment on stability, maturity, and operational effectiveness of the relationship as a whole. "
+            "Paragraph 2 — Perception Gap: Identify the most significant difference in how the Employee and the Boss each "
+            "perceive the relationship. Reference specific stage data. Explain what this divergence means in practical terms. "
+            "Paragraph 3 — Dominant Dynamic: Name the single most defining dynamic that characterises this relationship "
+            "right now. Is it stability with hidden friction? Reflective tension? Mutual frustration? Explain using the data. "
+            "Paragraph 4 — Overall Picture: Integrate the above into a holistic assessment. What is the current trajectory "
+            "of this relationship — improving, deteriorating, or stagnating — and what is the one most critical factor? "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("context", "relationship_variables", "superior_subordinate_dynamics"),
     ),
     SectionSpec(
         id="employee_perspective",
         title="Employee Perspective on the Relationship",
-        min_words=240,
-        max_words=340,
+        min_words=420,
+        max_words=580,
         guidance=(
-            "Document the employee's view of the relationship and identify stated challenges."
+            "Write a detailed, evidence-rich Employee Perspective section across 4 paragraphs. "
+            "Paragraph 1 — Dominant Stage Behaviour: Describe what the Employee's dominant stage and substage reveal "
+            "about how they currently experience the relationship. Reference specific stage scores. Explain what this "
+            "behavioural pattern looks like in day-to-day interaction with the Boss. "
+            "Paragraph 2 — Secondary Signals: Identify the most significant secondary stage scores in the Employee's "
+            "profile. What do these reveal about underlying feelings — frustration, complacency, anxiety, confidence? "
+            "Explain the tension or contrast between the dominant and secondary signals. "
+            "Paragraph 3 — Interpretation: What does the combination of these signals most likely indicate about how "
+            "the Employee experiences the relationship with the Boss? What emotional or relational needs does it point to? "
+            "Use cautious language: 'suggests', 'may indicate', 'the data points to'. "
+            "Paragraph 4 — Potential Impact: How do these patterns likely affect the Employee's engagement, "
+            "performance, and openness to feedback in this specific relationship? What is at risk if the current "
+            "pattern continues unaddressed? "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("employee",),
     ),
     SectionSpec(
         id="boss_perspective",
         title="Boss Perspective on the Relationship",
-        min_words=240,
-        max_words=340,
+        min_words=420,
+        max_words=580,
         guidance=(
-            "Document the boss's view of the relationship and identify management observations."
+            "Write a detailed, evidence-rich Boss Perspective section across 4 paragraphs. "
+            "Paragraph 1 — Dominant Stage Behaviour: Describe what the Boss's dominant stage and substage reveal "
+            "about how the Boss currently views this relationship. Reference specific stage scores and confidence level. "
+            "Explain what this behavioural pattern suggests about the Boss's current management approach. "
+            "Paragraph 2 — Secondary Signals: Identify the most significant secondary stage scores in the Boss's "
+            "profile. What underlying states do these reveal — introspection, frustration, uncertainty, questioning? "
+            "Explain the tension between dominant and secondary signals and what that internal conflict may mean. "
+            "Paragraph 3 — Interpretation: What does this combination most likely indicate about how the Boss "
+            "experiences managing this Employee? What does it suggest about the Boss's current level of confidence "
+            "in the relationship? Use cautious language throughout. "
+            "Paragraph 4 — Management Implications: How do these patterns affect the Boss's effectiveness in leading "
+            "this Employee? Where does the Boss's current behavioural state create risk — avoidance, over-analysis, "
+            "unclear direction — and where does it create opportunity? "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("boss",),
     ),
     SectionSpec(
         id="stage_diagnosis",
         title="Relationship Stage Diagnosis",
-        min_words=300,
-        max_words=420,
+        min_words=480,
+        max_words=650,
         guidance=(
-            "Identify the current relational stage and substage, explain using reference material, "
-            "and provide evidence from input data."
+            "Write a rich, analytical Relationship Stage Diagnosis across 4-5 paragraphs using the reference material. "
+            "Paragraph 1 — Combined Stage Diagnosis: State the composite relational stage that best characterises "
+            "this relationship given both parties' positions. The relationship may not map to a single stage — "
+            "describe the tension between the two individuals' stages and what that combination creates (e.g. "
+            "'Stable-Reflective Tension', 'Divergent Trajectories'). Use the stage definitions from the reference material. "
+            "Paragraph 2 — Evidence: Present the specific assessment evidence that supports this diagnosis. "
+            "Name the actual stage scores, confidence levels, and substage weights for both the Employee and the Boss. "
+            "Explain why this data points to this diagnosis rather than an alternative. "
+            "Paragraph 3 — Stage Meaning: Using the reference material, explain what this stage combination "
+            "typically means for a working relationship. What patterns, behaviours, and risks are characteristic "
+            "of this stage? How does it tend to evolve if unaddressed? "
+            "Paragraph 4 — Strengths at This Stage: Identify what is working well within this stage. "
+            "What assets or capabilities does this stage preserve? "
+            "Paragraph 5 — Risks at This Stage: Identify the key vulnerabilities at this stage. "
+            "What could escalate the relationship into a more difficult phase, and what early warning signs already exist? "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("employee", "boss", "relationship_variables", "superior_subordinate_dynamics"),
         needs_rag=True,
@@ -1228,76 +726,189 @@ SECTION_SPECS_BOSS: List[SectionSpec] = [
     SectionSpec(
         id="communication_patterns",
         title="Communication & Interaction Patterns",
-        min_words=260,
-        max_words=360,
+        min_words=420,
+        max_words=580,
         guidance=(
-            "Analyze communication dynamics and interaction patterns using concrete examples."
+            "Write a detailed Communication & Interaction Patterns section across 4 paragraphs. "
+            "Paragraph 1 — Overall Communication Climate: Describe the overall communication tone and quality "
+            "this relationship currently operates in, as indicated by the stage data of both parties. "
+            "What does the Employee's stage suggest about their communication preferences? What does the Boss's "
+            "stage suggest about how they currently communicate? How do these two styles interact? "
+            "Paragraph 2 — Specific Patterns: Examine at least three specific communication dimensions: "
+            "feedback exchange (who gives, who seeks, how openly?), expectation clarity (are expectations "
+            "explicitly shared or assumed?), and responsiveness (how quickly and directly are concerns addressed?). "
+            "Draw each observation from the stage data. If data is indirect, say so explicitly. "
+            "Paragraph 3 — Hidden Communication Risk: Identify the most significant communication risk in this "
+            "relationship. What is most likely going unsaid by each party? What topics are probably being avoided "
+            "or communicated poorly, based on their stage profiles? "
+            "Paragraph 4 — Communication Opportunity: What specific communication change would most strengthen "
+            "this relationship right now? What format, frequency, or structure would work best given both "
+            "parties' current stages? Make this practical and concrete. "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("employee", "boss", "relationship_variables"),
     ),
     SectionSpec(
         id="trust_alignment",
         title="Trust & Alignment Assessment",
-        min_words=240,
-        max_words=340,
+        min_words=420,
+        max_words=580,
         guidance=(
-            "Evaluate trust levels and assess goal and value alignment."
+            "Write a substantive Trust & Alignment section across 4 paragraphs. "
+            "Paragraph 1 — Operational Trust: Assess the degree to which each party can rely on the other "
+            "to deliver on commitments. What does the Employee's stage data suggest about their reliability "
+            "and follow-through? What does the Boss's stage suggest about their consistency and predictability? "
+            "Is there a gap between the two parties' experiences of operational reliability? "
+            "Paragraph 2 — Relationship Trust: Assess interpersonal trust — the belief each party has in the "
+            "other's good intentions. What stage signals suggest openness, defensiveness, or withholding? "
+            "Does the data indicate that either party feels psychologically safe to raise concerns? "
+            "Paragraph 3 — Goal & Expectation Alignment: Compare what the stage data indicates about each party's "
+            "sense of shared direction. Are they operating toward the same goals? Do they appear to have the "
+            "same understanding of expectations? Where does misalignment appear most likely? "
+            "Paragraph 4 — Trust Trajectory: Based on the combined trust picture, is trust in this relationship "
+            "stable, eroding, or rebuilding? What is the single most important trust repair or trust-building "
+            "action this relationship needs right now? "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("relationship_variables",),
     ),
     SectionSpec(
         id="conflict",
         title="Conflict & Tension Points",
-        min_words=240,
-        max_words=340,
+        min_words=420,
+        max_words=580,
         guidance=(
-            "Identify areas of friction and analyze sources of conflict."
+            "Write a rich, evidence-grounded Conflict & Tension section across 4 paragraphs. "
+            "Paragraph 1 — Active Tension Indicators: Identify the tension signals that are visible right now "
+            "in the assessment data. Name the specific substage scores that indicate friction, frustration, "
+            "or dissatisfaction in each party. Explain what these patterns signal about the current state. "
+            "Paragraph 2 — Nature of the Tension: Describe the nature of the tension — is it perceptual "
+            "(different realities), emotional (suppressed frustration), structural (unclear roles), or directional "
+            "(misaligned goals)? Explain how the two parties' stage positions contribute to and reinforce each other. "
+            "Paragraph 3 — Escalation Risk: Identify the conditions under which this tension is most likely "
+            "to escalate. What specific patterns in the data suggest future risk? What would a worsening "
+            "trajectory look like, and what early warning signs already exist? "
+            "Paragraph 4 — De-escalation Path: What specific, practical actions would most reduce this tension? "
+            "Describe concrete steps for both the Employee and the Boss. What environment or structure would "
+            "make it safe for the tension to be named and addressed? "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("relationship_variables", "superior_subordinate_dynamics"),
     ),
     SectionSpec(
         id="root_cause",
-        title="Root Cause Assessment",
-        min_words=240,
-        max_words=340,
+        title="Key Drivers Behind the Relationship",
+        min_words=450,
+        max_words=620,
         guidance=(
-            "Explore underlying relational factors and connect patterns to root causes."
+            "Write a deep, analytical Key Drivers section that identifies the 3 root causes behind this relationship's "
+            "current dynamic. Each driver gets its own dedicated paragraph with three components: "
+            "Driver 1 — [Name the driver]: Evidence (what specific assessment data surfaces this factor — "
+            "name stage names and scores) | Interpretation (what underlying relational dynamic this evidence points to) | "
+            "Impact (how this driver shapes the day-to-day quality of the relationship). "
+            "Driver 2 — [Name the driver]: Same structure. Choose a second root cause that is distinct from "
+            "the first — do not repeat the same theme. "
+            "Driver 3 — [Name the driver]: Same structure. This third driver should address a dimension "
+            "not yet covered — confidence dynamics, role clarity, emotional regulation, or similar. "
+            "Closing Paragraph: Explain how these three drivers interact. Do they reinforce each other? "
+            "Does one cause the others? What does addressing the primary driver unlock for the relationship? "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("relationship_variables", "superior_subordinate_dynamics"),
     ),
     SectionSpec(
         id="implications",
         title="Implications & Impact",
-        min_words=240,
-        max_words=340,
+        min_words=420,
+        max_words=580,
         guidance=(
-            "Discuss current impact on performance and project future implications."
+            "Write a detailed Implications & Impact section across 4 paragraphs — one per stakeholder lens. "
+            "Paragraph 1 — Impact on the Employee: How do the current relationship patterns specifically affect "
+            "the Employee's day-to-day experience, motivation, and professional development? What is at risk "
+            "for the Employee if nothing changes? What opportunity exists if the relationship improves? "
+            "Ground every point in the Employee's stage data. "
+            "Paragraph 2 — Impact on the Boss: How do the current dynamics affect the Boss's effectiveness "
+            "as a manager of this Employee? What leadership risks does the Boss's current stage create? "
+            "What management potential is currently being constrained by the relational dynamic? "
+            "Paragraph 3 — Impact on the Team: What indirect effects does this two-person dynamic likely "
+            "have on the wider team? How might the tension or misalignment between the Employee and the Boss "
+            "ripple into team morale, collaboration, or clarity? "
+            "Paragraph 4 — Organisational Opportunity: What is the one positive opportunity that this "
+            "relationship's current profile creates — even within its current challenges? What structural "
+            "or cultural benefit could a targeted intervention unlock for the organisation? "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("relationship_variables", "superior_subordinate_dynamics"),
     ),
     SectionSpec(
         id="swot",
         title="Dyadic SWOT Analysis",
-        min_words=280,
-        max_words=380,
+        min_words=450,
+        max_words=620,
         guidance=(
-            "Provide a dyadic SWOT for the employee-boss relationship. Include ALL four sections "
-            "with at least 3 numbered points each: Strengths, Weaknesses (blind spots), "
-            "Opportunities, and Threats. Ground each point in relationship evidence from the input. "
-            "Do NOT skip any quadrant. This section is MANDATORY."
+            "Generate a Dyadic SWOT Analysis using EXACTLY this structure.\n\n"
+            "STRENGTHS:\n"
+            "1. [Relationship strength grounded in assessment evidence — 1-2 sentences]\n"
+            "2. [Second distinct strength]\n"
+            "3. [Third distinct strength]\n"
+            "4. [Fourth distinct strength]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "WEAKNESSES:\n"
+            "1. [Relational blind spot from the data — 1-2 sentences]\n"
+            "2. [Second distinct weakness]\n"
+            "3. [Third distinct weakness]\n"
+            "4. [Fourth distinct weakness]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "OPPORTUNITIES:\n"
+            "1. [Specific leverage point from assessment data — 1-2 sentences]\n"
+            "2. [Second distinct opportunity]\n"
+            "3. [Third distinct opportunity]\n"
+            "4. [Fourth distinct opportunity]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "THREATS:\n"
+            "1. [Specific risk that could worsen the relationship — 1-2 sentences]\n"
+            "2. [Second distinct threat]\n"
+            "3. [Third distinct threat]\n"
+            "4. [Fourth distinct threat]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "HARD RULES — follow exactly:\n"
+            "- MINIMUM 4 and MAXIMUM 6 points per quadrant. STOP after item 6. Never write item 7, 8, 9, or more.\n"
+            "- Numbering RESETS to 1 at each new quadrant header. Do NOT number continuously across quadrants.\n"
+            "- ALL FOUR quadrants (STRENGTHS, WEAKNESSES, OPPORTUNITIES, THREATS) are MANDATORY. Never omit or merge any.\n"
+            "- Each quadrant header must appear on its own line followed by a colon.\n"
+            "- No prose paragraphs inside quadrants — numbered points only.\n"
+            "- Every point must reference a specific stage name, sub-stage score, or pattern from the data.\n"
+            "- Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("relationship_variables", "superior_subordinate_dynamics", "individual_swot"),
     ),
     SectionSpec(
         id="recommendations",
         title="Recommendations",
-        min_words=280,
-        max_words=420,
+        min_words=500,
+        max_words=680,
         guidance=(
-            "Provide concrete, actionable recommendations for the employee (primary audience) and for joint action. "
-            "Include: (1) Recommendations for the Employee — specific actions the employee can take to improve the relationship with their boss; "
-            "(2) Recommendations for Joint Action — collaborative steps both parties can take together; "
-            "(3) Next Steps & Development Path — immediate actions and a long-term improvement plan."
+            "Write a rich, personalised Recommendations section structured into three groups. "
+            "GROUP A — For the Employee (2 recommendations): "
+            "Each recommendation must follow this structure: "
+            "Finding: [The specific assessment observation — stage name, score, pattern — that this addresses] "
+            "Action: [A concrete, specific behavioural step — not vague like 'communicate better' but specific "
+            "like 'schedule a fortnightly one-on-one and prepare two specific discussion points in advance'] "
+            "Benefit: [The measurable or observable improvement this action is expected to produce] "
+            "Timeframe: [When to start and when to review] "
+            "GROUP B — For the Boss (2 recommendations): "
+            "Same four-part structure for each. Focus on specific management behaviours the Boss can change. "
+            "GROUP C — Joint Actions (1 recommendation): "
+            "One collaborative step both parties should take together. Same four-part structure. "
+            "CLOSING — Development Path (1 paragraph): "
+            "Tie all five recommendations together. Explain how they collectively move the relationship "
+            "forward and what the relationship could look like in 3-6 months if these steps are taken. "
+            "End with one sentence on what success looks like for this specific relationship. "
+            "Use ONLY 'the Employee' and 'the Boss' — no personal names anywhere."
         ),
         data_keys=("superior_subordinate_dynamics", "relationship_variables"),
     ),
@@ -1385,7 +996,7 @@ SECTION_SPECS_BOSS_OVERVIEW: List[SectionSpec] = [
     ),
     SectionSpec(
         id="root_cause",
-        title="Root Cause Assessment",
+        title="Key Drivers Behind the Relationship",
         min_words=220, max_words=320,
         guidance="Explore the underlying leadership factors driving team dynamics. Connect the boss's behavioral stage to team-wide patterns without assigning blame.",
         data_keys=("boss", "employees"),
@@ -1393,12 +1004,44 @@ SECTION_SPECS_BOSS_OVERVIEW: List[SectionSpec] = [
     SectionSpec(
         id="swot",
         title="Leadership SWOT Analysis",
-        min_words=300, max_words=420,
+        min_words=380, max_words=540,
         guidance=(
-            "Provide a leadership SWOT for the boss across the entire team. Include ALL four sections with at least 3 numbered points each: "
-            "Strengths (what the boss does well), Weaknesses (blind spots in leadership), "
-            "Opportunities (leverage points in team dynamics), Threats (risks to cohesion and performance). "
-            "Ground every point in the boss and employee data. This section is MANDATORY."
+            "Generate a Leadership SWOT Analysis using EXACTLY this structure.\n\n"
+            "STRENGTHS:\n"
+            "1. [What the Boss does well — grounded in assessment data — 1-2 sentences]\n"
+            "2. [Second distinct leadership strength]\n"
+            "3. [Third distinct strength]\n"
+            "4. [Fourth distinct strength]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "WEAKNESSES:\n"
+            "1. [Leadership blind spot visible in the data — 1-2 sentences]\n"
+            "2. [Second distinct weakness]\n"
+            "3. [Third distinct weakness]\n"
+            "4. [Fourth distinct weakness]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "OPPORTUNITIES:\n"
+            "1. [Leverage point in team dynamics the Boss can use — 1-2 sentences]\n"
+            "2. [Second distinct opportunity]\n"
+            "3. [Third distinct opportunity]\n"
+            "4. [Fourth distinct opportunity]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "THREATS:\n"
+            "1. [Risk to team cohesion or performance if unaddressed — 1-2 sentences]\n"
+            "2. [Second distinct threat]\n"
+            "3. [Third distinct threat]\n"
+            "4. [Fourth distinct threat]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "HARD RULES — follow exactly:\n"
+            "- MINIMUM 4 and MAXIMUM 6 points per quadrant. STOP after item 6. Never write item 7, 8, 9, or more.\n"
+            "- Numbering RESETS to 1 at each new quadrant header. Do NOT number continuously across quadrants (e.g., items in WEAKNESSES start at 1, not 7).\n"
+            "- ALL FOUR quadrants (STRENGTHS, WEAKNESSES, OPPORTUNITIES, THREATS) are MANDATORY. Never omit or merge any.\n"
+            "- Each quadrant header must appear on its own line followed by a colon.\n"
+            "- No prose paragraphs inside quadrants — numbered points only.\n"
+            "- Ground every point in boss and employee assessment data."
         ),
         data_keys=("boss", "employees"),
     ),
@@ -1506,7 +1149,7 @@ SECTION_SPECS_TEAM: List[SectionSpec] = [
     ),
     SectionSpec(
         id="root_cause",
-        title="Root Cause Assessment",
+        title="Key Drivers Behind the Relationship",
         min_words=200, max_words=300,
         guidance="Explore underlying factors driving team dynamics, challenges, and patterns.",
         data_keys=("behavioral_stage", "employee_questionnaire"),
@@ -1521,11 +1164,44 @@ SECTION_SPECS_TEAM: List[SectionSpec] = [
     SectionSpec(
         id="swot",
         title="Collective SWOT Analysis",
-        min_words=280, max_words=400,
+        min_words=380, max_words=540,
         guidance=(
-            "Provide a collective SWOT for the team. Include ALL four sections with at least 3 numbered points each: "
-            "Strengths, Weaknesses, Opportunities, and Threats. Ground every point in team data. "
-            "Do NOT skip any quadrant. This section is MANDATORY."
+            "Generate a Collective Team SWOT Analysis using EXACTLY this structure.\n\n"
+            "STRENGTHS:\n"
+            "1. [Team strength grounded in assessment data — 1-2 sentences]\n"
+            "2. [Second distinct strength]\n"
+            "3. [Third distinct strength]\n"
+            "4. [Fourth distinct strength]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "WEAKNESSES:\n"
+            "1. [Team blind spot or gap visible in the data — 1-2 sentences]\n"
+            "2. [Second distinct weakness]\n"
+            "3. [Third distinct weakness]\n"
+            "4. [Fourth distinct weakness]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "OPPORTUNITIES:\n"
+            "1. [Opportunity for team improvement based on data — 1-2 sentences]\n"
+            "2. [Second distinct opportunity]\n"
+            "3. [Third distinct opportunity]\n"
+            "4. [Fourth distinct opportunity]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "THREATS:\n"
+            "1. [Risk to team performance or cohesion — 1-2 sentences]\n"
+            "2. [Second distinct threat]\n"
+            "3. [Third distinct threat]\n"
+            "4. [Fourth distinct threat]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "HARD RULES — follow exactly:\n"
+            "- MINIMUM 4 and MAXIMUM 6 points per quadrant. STOP after item 6. Never write item 7, 8, 9, or more.\n"
+            "- Numbering RESETS to 1 at each new quadrant header. Do NOT number continuously across quadrants.\n"
+            "- ALL FOUR quadrants (STRENGTHS, WEAKNESSES, OPPORTUNITIES, THREATS) are MANDATORY. Never omit or merge any.\n"
+            "- Each quadrant header must appear on its own line followed by a colon.\n"
+            "- No prose paragraphs inside quadrants — numbered points only.\n"
+            "- Ground every point in team assessment data."
         ),
         data_keys=("behavioral_stage", "employee_questionnaire"),
     ),
@@ -1615,10 +1291,41 @@ SECTION_SPECS_ORGANIZATION: List[SectionSpec] = [
         title="Cumulative SWOT Overlay",
         min_words=300, max_words=420,
         guidance=(
-            "Provide a cumulative SWOT across Employee, Boss, Dept, and Company. "
-            "Include ALL four quadrants: Strengths, Weaknesses, Opportunities, and Threats. "
-            "IMPORTANT: Each quadrant MUST be written as numbered points (1. 2. 3.) — NOT as paragraphs. "
-            "Provide at least 3 numbered points per quadrant. This section is MANDATORY."
+            "Generate a Cumulative SWOT Overlay across Employee, Boss, Dept, and Company using EXACTLY this structure.\n\n"
+            "STRENGTHS:\n"
+            "1. [Organizational strength grounded in assessment data — 1-2 sentences]\n"
+            "2. [Second distinct strength]\n"
+            "3. [Third distinct strength]\n"
+            "4. [Fourth distinct strength]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "WEAKNESSES:\n"
+            "1. [Organizational blind spot visible in the data — 1-2 sentences]\n"
+            "2. [Second distinct weakness]\n"
+            "3. [Third distinct weakness]\n"
+            "4. [Fourth distinct weakness]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "OPPORTUNITIES:\n"
+            "1. [Organizational growth opportunity grounded in data — 1-2 sentences]\n"
+            "2. [Second distinct opportunity]\n"
+            "3. [Third distinct opportunity]\n"
+            "4. [Fourth distinct opportunity]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "THREATS:\n"
+            "1. [Organizational risk grounded in data — 1-2 sentences]\n"
+            "2. [Second distinct threat]\n"
+            "3. [Third distinct threat]\n"
+            "4. [Fourth distinct threat]\n"
+            "5. [Fifth — include ONLY if data supports a fifth point]\n"
+            "6. [Sixth — include ONLY if data supports a sixth point]\n\n"
+            "HARD RULES — follow exactly:\n"
+            "- MINIMUM 4 and MAXIMUM 6 points per quadrant. STOP after item 6. Never write item 7, 8, 9, or more.\n"
+            "- Numbering RESETS to 1 at each new quadrant header. Do NOT number continuously across quadrants.\n"
+            "- ALL FOUR quadrants (STRENGTHS, WEAKNESSES, OPPORTUNITIES, THREATS) are MANDATORY. Never omit or merge any.\n"
+            "- Each quadrant header must appear on its own line followed by a colon.\n"
+            "- No prose paragraphs inside quadrants — numbered points only."
         ),
         data_keys=("behavioral_stage", "employee_questionnaire", "revised_employee_model_weights"),
     ),
@@ -1946,10 +1653,14 @@ def _build_section_prompt(
     rag_block = rag_context if spec.needs_rag else ""
 
     prompt_parts = [
+        GLOBAL_INSTRUCTION.strip(),
         f"SECTION {index}/{total}: {spec.title}",
         f"SECTION GOAL: {spec.guidance}",
         f"WORD COUNT: {spec.min_words}-{spec.max_words} words.",
-        "FORMAT: Write in full paragraphs only. Do not include bullet points or headings.",
+        (
+            "FORMAT: Follow the format specified in the SECTION GOAL above. "
+            "Default is full paragraphs. Use bullet points only if the section goal explicitly requires them."
+        ),
         f"PRIOR SECTIONS ALREADY WRITTEN: {prior_block}",
         (
             "UNIQUENESS RULE: The sections listed above have already been written. "
@@ -2163,6 +1874,18 @@ def _generate_one_section(
         words = _word_count(section_text)
         attempts += 1
 
+    # Optional quality-review pass — enabled via ENABLE_QUALITY_REVIEW=true
+    if _ENABLE_QUALITY_REVIEW:
+        print(f"   Running quality review for '{spec.title}'")
+        section_text = _quality_review_section(
+            section_title=spec.title,
+            section_text=section_text,
+            prior_sections=prior_sections,
+            report_type=report_type,
+            dimension=data.get("dimension"),
+        )
+        words = _word_count(section_text)
+
     parsed_paragraphs = _parse_section_json(section_text)
     return {
         "_order": idx,          # used to sort back into correct order
@@ -2180,6 +1903,57 @@ def _generate_one_section(
 # absorb the extra RPM and TPM.
 _SECTION_WORKERS = _positive_int_env("SECTION_PARALLEL_WORKERS", 1)
 _SECTION_EXPANSION_MAX_ATTEMPTS = _non_negative_int_env("SECTION_EXPANSION_MAX_ATTEMPTS", 0)
+_ENABLE_QUALITY_REVIEW = os.getenv("ENABLE_QUALITY_REVIEW", "false").lower() == "true"
+
+
+def _quality_review_section(
+    section_title: str,
+    section_text: str,
+    prior_sections: List[str],
+    report_type: str,
+    dimension: Any,
+) -> str:
+    """
+    Run a quality-review pass on a generated section.
+    Enabled via ENABLE_QUALITY_REVIEW=true environment variable.
+    Returns improved paragraph JSON, or the original text if the review call fails.
+    """
+    prior_block = ", ".join(prior_sections) if prior_sections else "None"
+
+    user_prompt = (
+        f"SECTION TITLE: {section_title}\n\n"
+        f"PRIOR SECTIONS ALREADY WRITTEN: {prior_block}\n\n"
+        + QUALITY_REVIEW_PROMPT.strip()
+        + "\n\nCURRENT SECTION TEXT:\n"
+        + section_text
+        + "\n\nOUTPUT FORMAT (MANDATORY):\n"
+        + "Return ONLY a valid JSON array of the improved paragraph strings, "
+        + 'e.g. ["Para 1.", "Para 2."]\n'
+        + "No commentary, no markdown fences, no text outside the JSON array."
+    )
+
+    system_prompt = "\n\n".join(filter(None, [
+        SYSTEM_PROMPT,
+        REPORT_STYLE.get(report_type, ""),
+    ])).strip()
+
+    try:
+        reviewed_text, _ = _call_groq_with_model_fallback(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.1,
+            max_tokens=2000,
+            dimension=dimension,
+            report_type=report_type,
+            max_retries=2,
+            request_label=f"Quality review '{section_title}'",
+        )
+        return reviewed_text
+    except Exception as exc:
+        print(f"Quality review failed for '{section_title}': {exc}. Using original.")
+        return section_text
 
 
 def generate_structured_report(data: dict, report_type: str, rag_context: str) -> Dict[str, Any]:
@@ -2218,7 +1992,7 @@ def generate_structured_report(data: dict, report_type: str, rag_context: str) -
     results: List[Dict[str, Any]] = [None] * total_specs  # pre-allocate
 
     # Pre-fill hardcoded sections so they never reach the LLM.
-    hardcoded_map = _HARDCODED_EMPLOYEE_SECTIONS if report_type == "employee" else {}
+    hardcoded_map = HARDCODED_EMPLOYEE_SECTIONS if report_type == "employee" else {}
     llm_specs = {}
     for idx, spec in enumerate(specs, start=1):
         paragraphs = hardcoded_map.get(spec.id)

@@ -28,7 +28,7 @@ _DIMENSION_VIEW_CONFIG: Dict[str, Dict[str, Any]] = {
         "dimension_label": "1D - Individual Assessment",
     },
     "2d": {
-        "report_types": ["boss"],
+        "report_types": ["boss", "boss_overview"],
         "heading": "Employee-Boss Relationship Insights",
         "dimension_label": "2D - Employee-Boss Relationship",
     },
@@ -45,7 +45,7 @@ _DIMENSION_VIEW_CONFIG: Dict[str, Dict[str, Any]] = {
 }
 
 _REPORT_TYPE_TO_DIMENSION = {
-    "employee": "1d", "boss": "2d", "team": "3d", "organization": "4d",
+    "employee": "1d", "boss": "2d", "boss_overview": "2d", "team": "3d", "organization": "4d",
 }
 
 _DIMENSION_PRIORITY = {"1d": 1, "2d": 2, "3d": 3, "4d": 4}
@@ -191,10 +191,10 @@ def _with_download_link(
 )
 async def html_report_auto(
     employee_id: str,
-    submission_id: str = Query(..., description="Submission identifier"),
+    submission_id: Optional[str] = Query(None, description="Submission identifier"),
     cycle_name: Optional[str] = None,
 ) -> HTMLResponse:
-    normalized_submission = _required_query_submission_id(submission_id)
+    normalized_submission = _normalize_optional_str(submission_id)
     payload = load_employee_json(employee_id, submission_id=normalized_submission, cycle_name=cycle_name)
     dim_key = _infer_dimension_key_from_payload(payload)
     payload = _with_download_link(payload, employee_id, normalized_submission, cycle_name)
@@ -220,10 +220,10 @@ async def html_report_auto(
 )
 async def html_report_auto_pdf(
     employee_id: str,
-    submission_id: str = Query(..., description="Submission identifier"),
+    submission_id: Optional[str] = Query(None, description="Submission identifier"),
     cycle_name: Optional[str] = None,
 ) -> Response:
-    normalized_submission = _required_query_submission_id(submission_id)
+    normalized_submission = _normalize_optional_str(submission_id)
     payload = load_employee_json(employee_id, submission_id=normalized_submission, cycle_name=cycle_name)
     dim_key = _infer_dimension_key_from_payload(payload)
     payload = _with_download_link(payload, employee_id, normalized_submission, cycle_name)

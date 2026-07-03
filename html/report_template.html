@@ -583,7 +583,7 @@
                 <div class="value">{{ header.designation }}</div>
             </div>
             {% endif %}
-            {% if header.dominant_stage %}
+            {% if header.dominant_stage and header.dominant_stage not in ('-', 'N/A', 'Unknown') %}
             <div class="info-cell">
                 <label>Behavioural Stage</label>
                 <div class="value">{{ header.dominant_stage }}</div>
@@ -613,33 +613,22 @@
                 <p class="section-content">
                     <strong>Questionnaires Considered:</strong> {{ header.questionnaire_text }}
                 </p>
-                {% if header.boss_dominant_stage and header.boss_dominant_stage != '-' %}
                 <p class="section-content">
                     <strong>Employee Dominant Stage:</strong>&nbsp;
-                    <span class="stage-badge">{{ header.dominant_stage }}</span>
+                    <span class="stage-badge">{{ header.dominant_stage if header.dominant_stage and header.dominant_stage not in ('-', 'N/A') else 'Not Available' }}</span>
                 </p>
                 <p class="section-content">
                     <strong>Employee Dominant Sub-Stage:</strong>&nbsp;
-                    <span class="substage-badge">{{ header.dominant_sub_stage }}</span>
+                    <span class="substage-badge">{{ header.dominant_sub_stage if header.dominant_sub_stage and header.dominant_sub_stage not in ('-', 'N/A') else 'Not Available' }}</span>
                 </p>
                 <p class="section-content">
                     <strong>Boss Dominant Stage:</strong>&nbsp;
-                    <span class="stage-badge">{{ header.boss_dominant_stage }}</span>
+                    <span class="stage-badge">{{ header.boss_dominant_stage or 'Not Submitted' }}</span>
                 </p>
                 <p class="section-content">
                     <strong>Boss Dominant Sub-Stage:</strong>&nbsp;
-                    <span class="substage-badge">{{ header.boss_dominant_sub_stage }}</span>
+                    <span class="substage-badge">{{ header.boss_dominant_sub_stage or 'Not Submitted' }}</span>
                 </p>
-                {% else %}
-                <p class="section-content">
-                    <strong>Dominant Stage:</strong>&nbsp;
-                    <span class="stage-badge">{{ header.dominant_stage }}</span>
-                </p>
-                <p class="section-content">
-                    <strong>Dominant Sub-Stage:</strong>&nbsp;
-                    <span class="substage-badge">{{ header.dominant_sub_stage }}</span>
-                </p>
-                {% endif %}
             </div>
 
             {# Stage Score Table #}

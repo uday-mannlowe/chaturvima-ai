@@ -370,7 +370,7 @@ def map_frappe_swot_doc(swot_doc: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def fetch_boss_2d_report(manager_employee: str, cycle_name: str, user_auth: str = "") -> Dict[str, Any]:
+async def fetch_boss_2d_report(manager_employee: str, cycle_name: str, user_auth: str = "", submission_id: str = "") -> Dict[str, Any]:
     """
     Fetch boss + all direct-report employees' 2D data from Frappe.
     Returns the parsed message dict: { boss: {...}, employees: [...], submission_group_id: ... }
@@ -380,6 +380,8 @@ async def fetch_boss_2d_report(manager_employee: str, cycle_name: str, user_auth
     params: Dict[str, str] = {"manager_employee": manager_employee}
     if cycle_name:
         params["cycle_name"] = cycle_name
+    if submission_id:
+        params["submission_id"] = submission_id
 
     async with httpx.AsyncClient(timeout=30) as client:
         try:

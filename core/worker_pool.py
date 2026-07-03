@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import traceback
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -150,17 +151,19 @@ RULES:
         except Exception:
             parsed = {}
 
-    parsed_threats = parsed.get("threat", parsed.get("threats", []))
-    threat_rows = [{"description": s} for s in parsed_threats]
+    parsed_threats = parsed.get("threat") or parsed.get("threats") or []
+    if not isinstance(parsed_threats, list):
+        parsed_threats = []
+    threat_rows = [{"description": s} for s in parsed_threats if s]
     return {
         "sub_stage": sub_stage, "source": "llm_generated",
-        "strengths":     [{"description": s} for s in parsed.get("strengths",     [])],
-        "weaknesses":    [{"description": s} for s in parsed.get("weaknesses",    [])],
-        "opportunities": [{"description": s} for s in parsed.get("opportunities", [])],
+        "strengths":     [{"description": s} for s in (parsed.get("strengths")     or []) if s],
+        "weaknesses":    [{"description": s} for s in (parsed.get("weaknesses")    or []) if s],
+        "opportunities": [{"description": s} for s in (parsed.get("opportunities") or []) if s],
         "threat": threat_rows, "threats": threat_rows,
-        "recommendations":           parsed.get("recommendations",           []),
-        "actionable_steps":          parsed.get("actionable_steps",          []),
-        "strategic_recommendations": parsed.get("strategic_recommendations", ""),
+        "recommendations":           parsed.get("recommendations")           or [],
+        "actionable_steps":          parsed.get("actionable_steps")          or [],
+        "strategic_recommendations": parsed.get("strategic_recommendations") or "",
     }
 
 
@@ -340,12 +343,12 @@ def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
 
     _quad_intro = re.compile(
         r'^(there are|one|another|additionally|furthermore|the|these)?\s*'
-        r'(strengths?|weaknesses?|blind.?spots?|opportunities?|threats?)'
+        r'(strengths?|weaknesses?|blind.?spots?|opportunities?|threats?|risks?)'
         r'\s*(of|for|to|include|in|is|are|:)', re.IGNORECASE,
     )
     _quad_kw = [
         (re.compile(r'\bopportunit', re.IGNORECASE), "opportunities"),
-        (re.compile(r'\bthreat',     re.IGNORECASE), "threat"),
+        (re.compile(r'\bthreat|\brisk', re.IGNORECASE), "threat"),
         (re.compile(r'\bweakness|\bblind.?spot', re.IGNORECASE), "weaknesses"),
         (re.compile(r'\bstrength',   re.IGNORECASE), "strengths"),
     ]
@@ -355,7 +358,7 @@ def _normalize_swot_lists(raw_swot: Any) -> Dict[str, List[str]]:
         if m:
             w = m.group(2).lower()
             if 'opportunit' in w: return 'opportunities'
-            if 'threat'     in w: return 'threat'
+            if 'threat' in w or 'risk' in w: return 'threat'
             if 'weakness' in w or 'blind' in w: return 'weaknesses'
             if 'strength'   in w: return 'strengths'
         for pat, k in _quad_kw:
@@ -625,6 +628,7 @@ class WorkerPool:
                     job.error        = str(exc)
                     job.completed_at = datetime.now()
                     print(f"Worker {worker_id} error on job {job.job_id}: {exc}")
+                    traceback.print_exc()
 
             except asyncio.TimeoutError:
                 continue
@@ -802,7 +806,7 @@ class WorkerPool:
                         )
                         if not has_real:
                             print(f"Worker {worker_id}: generating {rtype} SWOT via LLM")
-                            swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), rtype)
+                            swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage") or {}, rtype)
                 else:
                     existing_sec   = next((s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))), None)
                     existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
@@ -813,7 +817,7 @@ class WorkerPool:
                     )
                     if not has_real:
                         print(f"Worker {worker_id}: generating {rtype} SWOT via LLM")
-                        swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), rtype)
+                        swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage") or {}, rtype)
 
                 if swot_to_inject:
                     for sec in clean_sections:
@@ -887,24 +891,32 @@ class WorkerPool:
         from generate_groq import REPORT_TITLE_MAP, generate_report_as_json, rag_lock, retrieve_rag_context, validate_input_data
         from datetime import datetime as _dt
 
-        manager_employee = job.payload["manager_employee"]
-        cycle_name       = _normalize_optional_str(job.payload.get("cycle_name"))
-        runtime_auth     = _normalize_optional_str(job.payload.get("_frappe_auth"))
+        manager_employee       = job.payload.get("employee") or job.payload.get("manager_employee", "")
+        cycle_name             = _normalize_optional_str(job.payload.get("cycle_name"))
+        runtime_auth           = _normalize_optional_str(job.payload.get("_frappe_auth"))
+        requested_submission   = _normalize_optional_str(job.payload.get("submission_id"))
 
-        print(f"Worker {worker_id}: fetching boss 2D data for manager={manager_employee}")
-        msg = await fetch_boss_2d_report(manager_employee, cycle_name or "", user_auth=runtime_auth or "")
+        print(f"Worker {worker_id}: fetching boss 2D data for manager={manager_employee}, submission_id={requested_submission or '(none)'}")
+        msg = await fetch_boss_2d_report(
+            manager_employee,
+            cycle_name or "",
+            user_auth=runtime_auth or "",
+            submission_id=requested_submission or "",
+        )
 
-        boss_data      = msg.get("boss", {})
-        employees_data = msg.get("employees", [])
+        boss_data      = msg.get("boss") or {}
+        employees_data = msg.get("employees") or []
         group_id       = _normalize_optional_str(msg.get("submission_group_id")) or ""
+
+        print(f"Worker {worker_id}: boss_data keys={list(boss_data.keys()) if boss_data else '(empty)'}, behavioral_stage={boss_data.get('behavioral_stage')!r}, employees_count={len(employees_data)}")
 
         nd_data = {
             "dimension": "2D",
             "boss": boss_data,
             "employees": employees_data,
-            "employee_context": boss_data.get("employee_context", {}),
-            "behavioral_stage": boss_data.get("behavioral_stage", {}),
-            "revised_employee_model_weights": boss_data.get("revised_employee_model_weights", {}),
+            "employee_context": boss_data.get("employee_context") or {},
+            "behavioral_stage": boss_data.get("behavioral_stage") or {},
+            "revised_employee_model_weights": boss_data.get("revised_employee_model_weights") or {},
         }
         nd_data = validate_input_data(nd_data)
 
@@ -937,14 +949,17 @@ class WorkerPool:
 
             existing_sec   = next((s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))), None)
             existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
-            has_real = any(
-                existing_lists.get(k) and not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
-                for k in ("strengths", "weaknesses", "opportunities", "threat", "threats")
-                if existing_lists.get(k)
-            )
+
+            def _quadrant_is_real(lists: dict, key: str) -> bool:
+                items = lists.get(key) or lists.get("threats" if key == "threat" else key) or []
+                if not items:
+                    return False
+                return not str(items[0]).lower().endswith("not explicitly available in this report output.")
+
+            has_real = all(_quadrant_is_real(existing_lists, k) for k in ("strengths", "weaknesses", "opportunities", "threat"))
             if not has_real:
                 print(f"Worker {worker_id}: generating {rtype} SWOT via LLM")
-                swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), rtype)
+                swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage") or {}, rtype)
                 for sec in clean_sections:
                     if is_swot_section(sec.get("id", ""), sec.get("title", "")):
                         threat_rows = swot_to_inject.get("threat") or swot_to_inject.get("threats", [])
@@ -969,47 +984,63 @@ class WorkerPool:
                 "sections":    clean_sections,
             })
 
-        boss_ctx   = boss_data.get("employee_context", {})
-        raw_boss_stage = boss_data.get("behavioral_stage", {})
+        boss_ctx       = boss_data.get("employee_context") or {}
+        raw_boss_stage = boss_data.get("behavioral_stage") or {}
         boss_stage = dict(raw_boss_stage)
         if "dominant_stage" in boss_stage and "stage" not in boss_stage:
             boss_stage["stage"]     = boss_stage["dominant_stage"]
             boss_stage["sub_stage"] = boss_stage.get("dominant_sub_stage", "")
 
-        boss_revised = boss_data.get("revised_employee_model_weights", {})
+        boss_revised    = boss_data.get("revised_employee_model_weights") or {}
+        boss_ctx_stage  = boss_ctx.get("behavioral_stage") or {}
         boss_dominant_stage = (
             boss_stage.get("dominant_stage") or
             boss_stage.get("stage") or
             boss_revised.get("dominant_stage") or
+            boss_ctx_stage.get("dominant_stage") or
+            boss_ctx_stage.get("stage") or
+            boss_ctx.get("dominant_stage") or
+            boss_data.get("dominant_stage") or
             "-"
         )
         boss_dominant_sub_stage = (
             boss_stage.get("dominant_sub_stage") or
             boss_stage.get("sub_stage") or
             boss_revised.get("dominant_sub_stage") or
+            boss_ctx_stage.get("dominant_sub_stage") or
+            boss_ctx_stage.get("sub_stage") or
+            boss_ctx.get("dominant_sub_stage") or
+            boss_data.get("dominant_sub_stage") or
             "-"
         )
+        print(f"Worker {worker_id}: boss_dominant_stage resolved to '{boss_dominant_stage}' (sub='{boss_dominant_sub_stage}')")
 
-        boss_questionnaire  = boss_data.get("employee_questionnaire", [])
+        boss_questionnaire  = boss_data.get("employee_questionnaire") or []
         boss_submission_id  = ""
         if isinstance(boss_questionnaire, list) and boss_questionnaire:
             first_q = boss_questionnaire[0] if isinstance(boss_questionnaire[0], dict) else {}
             boss_submission_id = _normalize_optional_str(
-                first_q.get("submission_name") or first_q.get("submission_id")
-            ) or group_id
+                first_q.get("submission_name") or first_q.get("submission_id") or first_q.get("name")
+            )
+        if not boss_submission_id:
+            boss_submission_id = _normalize_optional_str(
+                boss_data.get("submission_id") or boss_data.get("submission_name") or
+                _extract_submission_id(msg) or requested_submission
+            )
+        print(f"Worker {worker_id}: boss_submission_id resolved to '{boss_submission_id}' (group_id='{group_id}')")
 
         json_payload = {
             "status": "ok",
             "header": {
                 "employee_id":        manager_employee,
-                "submission_id":      boss_submission_id or group_id,
+                "submission_id":      requested_submission or boss_submission_id or group_id,
                 "cycle_name":         cycle_name or "",
                 "employee_name":      boss_ctx.get("employee_name") or boss_ctx.get("name", manager_employee),
                 "designation":        boss_ctx.get("designation", "Manager"),
                 "report_type":        "2D Boss Leadership Report",
                 "dimension_label":    "2D - Employee-Boss Relationship",
-                "dominant_stage":     boss_dominant_stage,
-                "dominant_sub_stage": boss_dominant_sub_stage,
+                "dominant_stage":     _rename_stage_for_display(str(boss_dominant_stage)),
+                "dominant_sub_stage": _rename_stage_for_display(str(boss_dominant_sub_stage)),
                 "questionnaire_text": "BOSS",
                 "generated_date":     _dt.now().strftime("%d %B %Y"),
                 "stage_scores":       [],
@@ -1017,7 +1048,7 @@ class WorkerPool:
             "reports": report_sections_list,
         }
 
-        path = save_employee_json(json_payload, manager_employee, submission_id=boss_submission_id or group_id, cycle_name=cycle_name)
+        path = save_employee_json(json_payload, manager_employee, submission_id=requested_submission or boss_submission_id or group_id, cycle_name=cycle_name)
         print(f"Worker {worker_id}: saved boss_overview report → {path}")
         job.result = json_payload
 
@@ -1032,14 +1063,16 @@ class WorkerPool:
         print(f"Worker {worker_id}: fetching employee 2D context for employee={employee_id}")
         msg = await fetch_employee_2d_context(employee_id, cycle_name or "", user_auth=runtime_auth or "")
 
-        boss_data      = msg.get("boss", {})
-        employees_list = msg.get("employees", [])
+        boss_data      = msg.get("boss") or {}
+        employees_list = msg.get("employees") or []
         employee_data  = employees_list[0] if employees_list else {}
         group_id       = _normalize_optional_str(msg.get("submission_group_id")) or ""
 
+        print(f"Worker {worker_id}: employee_2d — employee_data keys={list(employee_data.keys()) if employee_data else '(empty)'}, behavioral_stage={employee_data.get('behavioral_stage')!r}")
+
         # Extract submission_name from employee's questionnaire to use as
         # submission_id so the frontend can fetch with the same key it knows.
-        emp_questionnaire = employee_data.get("employee_questionnaire", [])
+        emp_questionnaire = employee_data.get("employee_questionnaire") or []
         emp_submission_id = ""
         if isinstance(emp_questionnaire, list) and emp_questionnaire:
             first_q = emp_questionnaire[0] if isinstance(emp_questionnaire[0], dict) else {}
@@ -1049,7 +1082,7 @@ class WorkerPool:
 
         # Normalize behavioral_stage: add "stage"/"sub_stage" aliases so RAG
         # context extraction works (it looks for behavioral_stage.stage).
-        raw_emp_stage = employee_data.get("behavioral_stage", {})
+        raw_emp_stage = employee_data.get("behavioral_stage") or {}
         emp_stage_normalized = dict(raw_emp_stage)
         if "dominant_stage" in emp_stage_normalized and "stage" not in emp_stage_normalized:
             emp_stage_normalized["stage"]     = emp_stage_normalized["dominant_stage"]
@@ -1059,9 +1092,9 @@ class WorkerPool:
             "dimension": "2D",
             "boss": boss_data,
             "employee": employee_data,
-            "employee_context": employee_data.get("employee_context", {}),
+            "employee_context": employee_data.get("employee_context") or {},
             "behavioral_stage": emp_stage_normalized,
-            "revised_employee_model_weights": employee_data.get("revised_employee_model_weights", {}),
+            "revised_employee_model_weights": employee_data.get("revised_employee_model_weights") or {},
             "employee_questionnaire": emp_questionnaire,
         }
         nd_data = validate_input_data(nd_data)
@@ -1095,14 +1128,17 @@ class WorkerPool:
 
             existing_sec   = next((s for s in clean_sections if is_swot_section(s.get("id", ""), s.get("title", ""))), None)
             existing_lists = existing_sec.get("swot_lists", {}) if existing_sec else {}
-            has_real = any(
-                existing_lists.get(k) and not str(existing_lists[k][0]).lower().endswith("not explicitly available in this report output.")
-                for k in ("strengths", "weaknesses", "opportunities", "threat", "threats")
-                if existing_lists.get(k)
-            )
+
+            def _quadrant_is_real(lists: dict, key: str) -> bool:
+                items = lists.get(key) or lists.get("threats" if key == "threat" else key) or []
+                if not items:
+                    return False
+                return not str(items[0]).lower().endswith("not explicitly available in this report output.")
+
+            has_real = all(_quadrant_is_real(existing_lists, k) for k in ("strengths", "weaknesses", "opportunities", "threat"))
             if not has_real:
                 print(f"Worker {worker_id}: generating {rtype} SWOT via LLM")
-                swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage", {}), rtype)
+                swot_to_inject = await asyncio.to_thread(_generate_swot_via_llm, nd_data.get("behavioral_stage") or {}, rtype)
                 for sec in clean_sections:
                     if is_swot_section(sec.get("id", ""), sec.get("title", "")):
                         threat_rows = swot_to_inject.get("threat") or swot_to_inject.get("threats", [])
@@ -1127,36 +1163,69 @@ class WorkerPool:
                 "sections":    clean_sections,
             })
 
-        emp_ctx    = employee_data.get("employee_context", {})
-        emp_stage  = emp_stage_normalized
-        emp_revised = employee_data.get("revised_employee_model_weights", {})
+        emp_ctx       = employee_data.get("employee_context") or {}
+        emp_stage     = emp_stage_normalized
+        emp_revised   = employee_data.get("revised_employee_model_weights") or {}
+        emp_ctx_stage = emp_ctx.get("behavioral_stage") or {}
         emp_dominant_stage = (
             emp_stage.get("dominant_stage") or
             emp_stage.get("stage") or
             emp_revised.get("dominant_stage") or
+            emp_ctx_stage.get("dominant_stage") or
+            emp_ctx_stage.get("stage") or
+            emp_ctx.get("dominant_stage") or
+            employee_data.get("dominant_stage") or
             "-"
         )
         emp_dominant_sub_stage = (
             emp_stage.get("dominant_sub_stage") or
             emp_stage.get("sub_stage") or
             emp_revised.get("dominant_sub_stage") or
+            emp_ctx_stage.get("dominant_sub_stage") or
+            emp_ctx_stage.get("sub_stage") or
+            emp_ctx.get("dominant_sub_stage") or
+            employee_data.get("dominant_sub_stage") or
             "-"
         )
+        print(f"Worker {worker_id}: emp_dominant_stage resolved to '{emp_dominant_stage}' (sub='{emp_dominant_sub_stage}')")
 
-        # Extract boss stage for the 2D Assessment Summary
-        raw_boss_stage_2d = boss_data.get("behavioral_stage", {})
-        boss_revised_2d   = boss_data.get("revised_employee_model_weights", {})
+        # Extract boss stage for the 2D Assessment Summary.
+        # Try multiple nested paths since boss may not have submitted self-assessment.
+        raw_boss_stage_2d    = boss_data.get("behavioral_stage") or boss_data.get("boss_context", {}).get("behavioral_stage") or {}
+        boss_revised_2d      = boss_data.get("revised_employee_model_weights") or boss_data.get("boss_context", {}).get("revised_employee_model_weights") or {}
+        boss_emp_ctx_stage   = boss_data.get("employee_context", {}).get("behavioral_stage") or {}
+        boss_emp_ctx_2d      = boss_data.get("employee_context") or {}
         boss_dominant_stage_2d = (
             raw_boss_stage_2d.get("dominant_stage") or
             raw_boss_stage_2d.get("stage") or
             boss_revised_2d.get("dominant_stage") or
+            boss_emp_ctx_stage.get("dominant_stage") or
+            boss_emp_ctx_stage.get("stage") or
+            boss_emp_ctx_2d.get("dominant_stage") or
+            boss_data.get("dominant_stage") or
             "-"
         )
         boss_dominant_sub_stage_2d = (
             raw_boss_stage_2d.get("dominant_sub_stage") or
             raw_boss_stage_2d.get("sub_stage") or
             boss_revised_2d.get("dominant_sub_stage") or
+            boss_emp_ctx_stage.get("dominant_sub_stage") or
+            boss_emp_ctx_stage.get("sub_stage") or
+            boss_emp_ctx_2d.get("dominant_sub_stage") or
+            boss_data.get("dominant_sub_stage") or
             "-"
+        )
+
+        # Resolve employee display name — Frappe may use different field names
+        emp_display_name = (
+            emp_ctx.get("employee_name") or
+            emp_ctx.get("full_name") or
+            emp_ctx.get("employee_full_name") or
+            emp_ctx.get("name") or
+            employee_data.get("employee_name") or
+            employee_data.get("full_name") or
+            employee_data.get("name") or
+            employee_id
         )
 
         json_payload = {
@@ -1165,14 +1234,14 @@ class WorkerPool:
                 "employee_id":           employee_id,
                 "submission_id":         emp_submission_id,
                 "cycle_name":            cycle_name or "",
-                "employee_name":         emp_ctx.get("employee_name") or emp_ctx.get("name", employee_id),
+                "employee_name":         emp_display_name,
                 "designation":           emp_ctx.get("designation", "Employee"),
                 "report_type":           "2D Employee-Boss Relationship Report",
                 "dimension_label":       "2D - Employee-Boss Relationship",
-                "dominant_stage":        emp_dominant_stage,
-                "dominant_sub_stage":    emp_dominant_sub_stage,
-                "boss_dominant_stage":   boss_dominant_stage_2d,
-                "boss_dominant_sub_stage": boss_dominant_sub_stage_2d,
+                "dominant_stage":        _rename_stage_for_display(str(emp_dominant_stage)),
+                "dominant_sub_stage":    _rename_stage_for_display(str(emp_dominant_sub_stage)),
+                "boss_dominant_stage":   _rename_stage_for_display(str(boss_dominant_stage_2d)),
+                "boss_dominant_sub_stage": _rename_stage_for_display(str(boss_dominant_sub_stage_2d)),
                 "questionnaire_text":    "BOSS",
                 "generated_date":        _dt.now().strftime("%d %B %Y"),
                 "stage_scores":          [],

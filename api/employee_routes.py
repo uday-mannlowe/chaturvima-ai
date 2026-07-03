@@ -345,8 +345,10 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
                     isinstance(row, dict) and not str(row.get("final_value", "")).strip()
                     for row in cached_stage_scores
                 )
+                cached_dominant = str(cached_header.get("dominant_stage") or "").strip()
+                missing_dominant_stage = cached_dominant in ("", "-", "N/A", "Unknown")
 
-                if not dimension_mismatch and not report_scope_mismatch and not missing_final_values:
+                if not dimension_mismatch and not report_scope_mismatch and not missing_final_values and not missing_dominant_stage:
                     cached_urls = build_report_urls(
                         employee_id,
                         submission_id=cached_submission_id or submission_id,
@@ -366,17 +368,45 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
                 if exc.status_code != 404:
                     raise
 
+        role = _normalize_optional_str(payload.get("role"))
+
         job_payload: Dict[str, Any] = {"employee": employee_id}
         if submission_id:
             job_payload["submission_id"] = submission_id
         if cycle_name:
             job_payload["cycle_name"] = cycle_name
         if runtime_frappe_auth:
-            # Store as _frappe_auth so worker_pool picks it up via explicit_auth
             job_payload["_frappe_auth"] = runtime_frappe_auth
 
-        # Validate assessment exists — pass explicit token only, no request object
-        # to prevent Frappe session headers from overriding the API token
+        if role == "boss":
+            job_id = await report_queue.add_job(payload=job_payload, boss_2d_report=True)
+            report_urls = build_report_urls(employee_id, submission_id=submission_id, cycle_name=cycle_name)
+            return {
+                "job_id": job_id,
+                "status": "submitted",
+                "employee": employee_id,
+                "cycle_name": cycle_name,
+                "role": "boss",
+                "message": "Boss 2D overview report job submitted. Use report URLs once generation is complete.",
+                "report_url": report_urls.get("report"),
+                "report_urls": report_urls,
+            }
+
+        if role == "employee_2d":
+            job_id = await report_queue.add_job(payload=job_payload, employee_2d_report=True)
+            report_urls = build_report_urls(employee_id, cycle_name=cycle_name)
+            return {
+                "job_id": job_id,
+                "status": "submitted",
+                "employee": employee_id,
+                "cycle_name": cycle_name,
+                "role": "employee_2d",
+                "message": "Employee 2D relationship report job submitted. Use report URLs once generation is complete.",
+                "report_url": report_urls.get("report"),
+                "report_urls": report_urls,
+            }
+
+        # Standard flow — validate assessment exists first
         await _validate_assessment_exists(
             employee_id=employee_id,
             cycle_name=cycle_name,
@@ -393,76 +423,6 @@ def setup_routes(report_queue: ReportQueue) -> APIRouter:
             "submission_id": submission_id,
             "cycle_name": cycle_name,
             "message": "Job submitted. Use report URLs once generation is complete.",
-            "report_url": report_urls.get("report"),
-            "report_urls": report_urls,
-        }
-
-    @router.post("/generate-2d-boss-report", summary="🚀 Submit boss 2D overview report job")
-    @router.post("/api/generate-2d-boss-report", include_in_schema=False)
-    async def generate_2d_boss_report(
-        request: Request,
-        payload: Dict[str, Any] = Body(
-            ...,
-            examples={
-                "basic": {"summary": "Boss 2D report", "value": {"manager_employee": "HR-EMP-00007", "cycle_name": "Assessment Cycle - 3317"}},
-            },
-        ),
-    ) -> Dict[str, Any]:
-        manager_employee = str(payload.get("manager_employee", "")).strip()
-        if not manager_employee:
-            raise HTTPException(400, "'manager_employee' field is required.")
-        cycle_name = _normalize_optional_str(payload.get("cycle_name"))
-        runtime_frappe_auth = _resolve_runtime_frappe_auth(payload=payload, request=request)
-
-        job_payload: Dict[str, Any] = {"manager_employee": manager_employee}
-        if cycle_name:
-            job_payload["cycle_name"] = cycle_name
-        if runtime_frappe_auth:
-            job_payload["_frappe_auth"] = runtime_frappe_auth
-
-        job_id = await report_queue.add_job(payload=job_payload, boss_2d_report=True)
-        report_urls = build_report_urls(manager_employee, cycle_name=cycle_name)
-        return {
-            "job_id": job_id,
-            "status": "submitted",
-            "manager_employee": manager_employee,
-            "cycle_name": cycle_name,
-            "message": "Boss 2D overview report job submitted. Use report URLs once generation is complete.",
-            "report_url": report_urls.get("report"),
-            "report_urls": report_urls,
-        }
-
-    @router.post("/generate-2d-employee-report", summary="🚀 Submit employee 2D relationship report job")
-    @router.post("/api/generate-2d-employee-report", include_in_schema=False)
-    async def generate_2d_employee_report(
-        request: Request,
-        payload: Dict[str, Any] = Body(
-            ...,
-            examples={
-                "basic": {"summary": "Employee 2D report", "value": {"employee": "HR-EMP-00047", "cycle_name": "Assessment Cycle - 3317"}},
-            },
-        ),
-    ) -> Dict[str, Any]:
-        employee_id = str(payload.get("employee", "")).strip()
-        if not employee_id:
-            raise HTTPException(400, "'employee' field is required.")
-        cycle_name = _normalize_optional_str(payload.get("cycle_name"))
-        runtime_frappe_auth = _resolve_runtime_frappe_auth(payload=payload, request=request)
-
-        job_payload: Dict[str, Any] = {"employee": employee_id}
-        if cycle_name:
-            job_payload["cycle_name"] = cycle_name
-        if runtime_frappe_auth:
-            job_payload["_frappe_auth"] = runtime_frappe_auth
-
-        job_id = await report_queue.add_job(payload=job_payload, employee_2d_report=True)
-        report_urls = build_report_urls(employee_id, cycle_name=cycle_name)
-        return {
-            "job_id": job_id,
-            "status": "submitted",
-            "employee": employee_id,
-            "cycle_name": cycle_name,
-            "message": "Employee 2D relationship report job submitted. Use report URLs once generation is complete.",
             "report_url": report_urls.get("report"),
             "report_urls": report_urls,
         }
