@@ -556,13 +556,11 @@
                 <div class="header-title-block">
                     <h1>{{ header.report_heading or "Employee Personal Insights" }}</h1>
                     <div class="header-subtitle">ChaturVima {{ header.dimension_label }} Diagnostic Report</div>
-                    {# Download PDF button disabled temporarily — not working, re-enable later
                     {% if header.download_pdf_url %}
                     <a class="download-btn" href="{{ header.download_pdf_url }}">
                         ⬇ Download PDF
                     </a>
                     {% endif %}
-                    #}
                 </div>
                 <div class="header-logo">
                     <img

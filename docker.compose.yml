@@ -34,6 +34,9 @@ services:
       # Frappe authentication
       - FRAPPE_API_KEY=${FRAPPE_API_KEY}
       - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
+      # Public report downloads
+      - OWN_PUBLIC_BASE_URL=${OWN_PUBLIC_BASE_URL:-}
+      - PUBLIC_DOWNLOAD_URL_BASE=${PUBLIC_DOWNLOAD_URL_BASE:-}
       # Report storage
       - DATABASE_URL=${DATABASE_URL:-}
     depends_on:
