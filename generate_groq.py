@@ -234,6 +234,55 @@ def _non_negative_int_env(name: str, default: int) -> int:
         return max(0, int(default))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# OUTPUT-SIZE ESTIMATION (used only to skip a single call that cannot fit)
+#
+# Calibrated by generating one report of each type with reasoning disabled:
+#
+#   report type     specs   words   words/spec   tokens (x1.4)   fits 4000?
+#   organization      13     3,298         254           4,617        no
+#   team              14     3,880         277           5,432        no
+#   employee          10     3,445         344           4,823        no
+#   boss              14     4,939         353           6,915        no
+#
+# Sections land at 254-353 words each regardless of their `target_words`,
+# because the prompt rule "3-4 paragraphs, 70-120 words each" dominates the
+# per-section target. 300 sits inside that observed range, so no section is
+# counted as smaller than that.
+#
+# NOTE: an earlier calibration used 250, taken from reports generated *before*
+# reasoning was disabled. Those reports were smaller because reasoning tokens
+# were consuming the budget that content should have used, so 250 under-counted
+# and let the 1D employee report attempt a single call that then truncated at
+# 4,000 tokens and was discarded (measured: 3 calls / 91.9s instead of 2 / 48s).
+# ─────────────────────────────────────────────────────────────────────────────
+_JSON_REPORT_MIN_WORDS_PER_SECTION = _positive_int_env(
+    "JSON_REPORT_MIN_WORDS_PER_SECTION", 300
+)
+_JSON_REPORT_TOKENS_PER_WORD = _non_negative_float_env(
+    "JSON_REPORT_TOKENS_PER_WORD", 1.4
+)
+_JSON_REPORT_SKIP_FUTILE_PRIMARY = os.getenv(
+    "JSON_REPORT_SKIP_FUTILE_PRIMARY", "true"
+).lower() in {"1", "true", "yes", "on"}
+
+
+def _estimate_report_output_tokens(specs: 'List[SectionSpec]', target_words_fn) -> int:
+    """
+    Estimate the output tokens a full single-call report would need.
+
+    Returns 0 when there are no specs to measure, which callers must treat as
+    "unknown" rather than "small".
+    """
+    if not specs:
+        return 0
+    words = sum(
+        max(int(target_words_fn(spec)), _JSON_REPORT_MIN_WORDS_PER_SECTION)
+        for spec in specs
+    )
+    return int(words * _JSON_REPORT_TOKENS_PER_WORD)
+
+
 _GROQ_MAX_IN_FLIGHT = _positive_int_env(
     "GROQ_MAX_IN_FLIGHT",
     getattr(Config, "GROQ_MAX_IN_FLIGHT", 1),
@@ -275,9 +324,54 @@ def _pace_groq_request(request_label: str = "request") -> None:
         _time.sleep(wait)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# REASONING BUDGET
+#
+# deepseek-v4-flash is a reasoning model: it emits `reasoning_content` that is
+# billed and counted against `max_tokens`, but is NOT part of `message.content`.
+# Measured on a single-section refill prompt (max_tokens=2000):
+#
+#   reasoning_effort  reasoning_chars  completion_tokens  finish_reason
+#   (unset)                     7,902              2,000  length   <- content cut off
+#   (unset, rerun)                308                424  stop
+#   "none"                            0                422  stop
+#
+# The size of the reasoning block varied between 308 and 9,910 characters across
+# runs of the same prompt. When it ran long it consumed the whole token budget,
+# the JSON body was truncated mid-string, the parser recovered nothing, and the
+# section was discarded and regenerated — which is what made report generation
+# both slow and unreliable (a 2D run produced 3 of 14 sections in 461s).
+#
+# These prompts ask for structured narrative from data that is already supplied;
+# they do not benefit from extended chain-of-thought. Set
+# DEEPSEEK_REASONING_EFFORT="" to send no parameter at all and restore the old
+# behaviour.
+# ─────────────────────────────────────────────────────────────────────────────
+_DEEPSEEK_REASONING_EFFORT = os.getenv("DEEPSEEK_REASONING_EFFORT", "none").strip()
+_REASONING_EFFORT_SUPPORTED = True
+
+
 def _create_groq_chat_completion(client: OpenAI, request_label: str = "request", **kwargs: Any):
+    global _REASONING_EFFORT_SUPPORTED
+
     with _GROQ_CALL_SEMAPHORE:
         _pace_groq_request(request_label)
+        if _DEEPSEEK_REASONING_EFFORT and _REASONING_EFFORT_SUPPORTED:
+            try:
+                return client.chat.completions.create(
+                    reasoning_effort=_DEEPSEEK_REASONING_EFFORT, **kwargs
+                )
+            except Exception as exc:
+                # Only treat this as "parameter unsupported" — never swallow a
+                # real API failure, which must still propagate to the caller's
+                # retry/fallback logic.
+                if "reasoning_effort" not in str(exc):
+                    raise
+                _REASONING_EFFORT_SUPPORTED = False
+                print(
+                    f"reasoning_effort rejected by the API ({exc}); "
+                    f"continuing without it for the rest of this process."
+                )
         return client.chat.completions.create(**kwargs)
 
 
@@ -2296,7 +2390,38 @@ RULES:
     max_tokens_main = 0 if _is_large_model and not allow_large_single_call else min(configured_main_tokens, main_token_cap)
     max_tokens_batch = min(configured_batch_tokens, batch_token_cap)
     _large_model_batch_size = _positive_int_env("JSON_REPORT_LARGE_BATCH_SIZE", 4)
-    print(f"[{report_type}] budget: main={max_tokens_main}, batch={max_tokens_batch}, batch_size={_large_model_batch_size}, large={_is_large_model}")
+
+    # A single call that cannot physically hold the whole report always comes
+    # back with finish_reason="length". The recovery path below then throws that
+    # response away in full (`result` is reassigned after the batch loop) and
+    # regenerates every section via the batch calls — so the generation was
+    # guaranteed waste before it was even issued.
+    #
+    # Salvaging the truncated response instead is NOT safe: _parse_json_response()
+    # on a truncated payload returns the first *section* object as though it were
+    # the whole report (keys id/title/paragraphs, no "sections"), recovering none
+    # of the sections that were fully intact in the raw text. Reusing it would
+    # require new parsing logic, so we skip the doomed call rather than salvage it.
+    #
+    # Reports that do fit (1D employee) are unaffected and still take the single
+    # fast path.
+    estimated_output_tokens = _estimate_report_output_tokens(
+        specs, _target_words_for_fast_json
+    )
+    skipped_futile_primary = (
+        _JSON_REPORT_SKIP_FUTILE_PRIMARY
+        and max_tokens_main > 0
+        and estimated_output_tokens > max_tokens_main
+    )
+    if skipped_futile_primary:
+        print(
+            f"[{report_type}] skipping single-call attempt: needs ~{estimated_output_tokens} "
+            f"output tokens but max_tokens_main={max_tokens_main} "
+            f"(would truncate and be discarded); going straight to batches."
+        )
+        max_tokens_main = 0
+
+    print(f"[{report_type}] budget: main={max_tokens_main}, batch={max_tokens_batch}, batch_size={_large_model_batch_size}, large={_is_large_model}, est_out={estimated_output_tokens}")
 
     last_exc = None
     raw = ""
@@ -2336,7 +2461,8 @@ RULES:
         else:
             raise RuntimeError(f"[{report_type}] JSON generation failed after {_GROQ_MAX_RETRIES} attempts. Last: {last_exc}")
     else:
-        print(f"[{report_type}] skipping single-call JSON attempt for large model; using batches.")
+        reason = "report does not fit a single call" if skipped_futile_primary else "large model"
+        print(f"[{report_type}] skipping single-call JSON attempt ({reason}); using batches.")
 
     if primary_finish_reason == "length":
         print(f"[{report_type}] primary response hit max token limit (finish_reason=length).")
@@ -2678,6 +2804,45 @@ Return ONLY a valid JSON array with exactly 1 object:
             sec["paragraphs"] = _split_paragraphs(str(sec.get("paragraphs", "")))
         sec.setdefault("paragraphs", [])
         normalized_sections.append(sec)
+
+    # Merge sections that share an id. The model intermittently splits one
+    # section into several objects reusing the same id — most often emitting the
+    # SWOT quadrants as four separate {"id": "swot"} entries — which renders as
+    # the same section repeated. Observed on one 1D run (13 sections for 10
+    # specs, four of them "swot"); an identical rerun produced a clean 10.
+    #
+    # The existing rebuild below the batch loop already de-duplicates, but only
+    # runs when at least one spec is missing, so duplicates survive whenever the
+    # batches return everything.
+    #
+    # Paragraphs are concatenated rather than dropped so quadrant content is
+    # preserved, and sections without an id are always kept as-is. This cannot
+    # remove a section that has unique content, so reports whose ids do not match
+    # the specs at all (the model sometimes invents "section_1", "sec1", ...)
+    # pass through untouched.
+    merged_sections: List[Dict[str, Any]] = []
+    merged_by_id: Dict[str, Dict[str, Any]] = {}
+    for sec in normalized_sections:
+        sid = _section_id(sec)
+        if not sid:
+            merged_sections.append(sec)
+            continue
+        first = merged_by_id.get(sid)
+        if first is None:
+            merged_by_id[sid] = sec
+            merged_sections.append(sec)
+            continue
+        seen = set(first.get("paragraphs", []))
+        for para in sec.get("paragraphs", []):
+            if para not in seen:
+                first.setdefault("paragraphs", []).append(para)
+                seen.add(para)
+    if len(merged_sections) != len(normalized_sections):
+        print(
+            f"[{report_type}] merged {len(normalized_sections) - len(merged_sections)} "
+            f"duplicate section(s) by id."
+        )
+    normalized_sections = merged_sections
 
     # Safety net: if SWOT is still missing after all recovery attempts,
     # make one final dedicated single-section call rather than inserting a placeholder.
