@@ -175,7 +175,7 @@ async def run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit report-generation requests concurrently.")
-    parser.add_argument("--base-url", default=os.getenv("REPORT_API_BASE_URL", "http://localhost:5000"))
+    parser.add_argument("--base-url", default=os.getenv("REPORT_API_BASE_URL", "http://localhost:5001"))
     parser.add_argument("--endpoint", default="/generate-employee-report")
     parser.add_argument("--employee", default="HR-EMP-00031")
     parser.add_argument("--employees", default="", help="Comma-separated employee IDs. Overrides --employee.")
