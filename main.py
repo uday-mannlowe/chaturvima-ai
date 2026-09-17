@@ -180,5 +180,5 @@ def resolve_frappe_auth(
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=False, workers=1)
+    uvicorn.run("main:app", host="0.0.0.0", port=5001, reload=False, workers=1)
 
